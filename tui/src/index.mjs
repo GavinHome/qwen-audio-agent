@@ -559,7 +559,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         const holder = event.holder?.label || '其他前端'
         if (!everOwnedVoice) {
           print(style(
-            `[语音正由${holder}使用；如需接管，请运行 qwenaudio --takeover]`,
+            `[语音正由${holder}使用；如需接管，请运行 qwenaudio tui --takeover]`,
             'yellow',
           ))
           close()

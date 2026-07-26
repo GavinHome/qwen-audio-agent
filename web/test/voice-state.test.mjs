@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   acceptsVoiceState,
+  shouldClaimReleasedVoice,
   visualVoiceState,
 } from '../src/useRealtimeVoice.js'
 
@@ -12,6 +13,21 @@ test('ignores a stale direct-model state from an older voice turn', () => {
     turnId: 'voice-100-1',
     origin: 'model',
   }, 'voice-200-2'), false)
+})
+
+test('claims voice when another frontend releases a user-requested handoff', () => {
+  assert.equal(shouldClaimReleasedVoice({
+    type: 'voice.ownership',
+    state: 'available',
+  }, true), true)
+  assert.equal(shouldClaimReleasedVoice({
+    type: 'voice.ownership',
+    state: 'busy',
+  }, true), false)
+  assert.equal(shouldClaimReleasedVoice({
+    type: 'voice.ownership',
+    state: 'available',
+  }, false), false)
 })
 
 test('shows agent and announcement playback even when it belongs to an older turn', () => {

@@ -24,6 +24,14 @@ export function visualVoiceState(state, inputActive, enabled) {
   return enabled && inputActive ? 'listening' : state
 }
 
+export function shouldClaimReleasedVoice(event, waitingForVoice) {
+  return (
+    waitingForVoice === true
+    && event?.type === 'voice.ownership'
+    && event.state === 'available'
+  )
+}
+
 export default function useRealtimeVoice({
   sessionId,
   enabled,

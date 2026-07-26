@@ -185,7 +185,7 @@ function createSettingsWindow() {
     height: 610,
     minWidth: 460,
     minHeight: 540,
-    title: 'qwen-audio 设置',
+    title: '设置',
     backgroundColor: '#f5f6f7',
     autoHideMenuBar: true,
     show: false,

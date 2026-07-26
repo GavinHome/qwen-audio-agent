@@ -23,7 +23,9 @@ import {
   taskLabel,
   taskView,
 } from './task-view.js'
-import useRealtimeVoice from './useRealtimeVoice.js'
+import useRealtimeVoice, {
+  shouldClaimReleasedVoice,
+} from './useRealtimeVoice.js'
 import { requestedSessionId } from './session.js'
 
 const desktopOrbMode = (
@@ -86,6 +88,7 @@ function upsertTask(items, taskId, update, fallback) {
 export default function App() {
   const [sessionId, setSessionId] = useState(getSessionId)
   const [voiceEnabled, setVoiceEnabled] = useState(false)
+  const [waitingForVoice, setWaitingForVoice] = useState(false)
   const [messages, setMessages] = useState([])
   const [activity, setActivity] = useState('正在检查后台 Agent')
   const [frontend, setFrontend] = useState({ label: 'Realtime Agent' })
@@ -256,6 +259,7 @@ export default function App() {
     }
     if (event.type === 'voice.deactivated') {
       setVoiceEnabled(false)
+      setWaitingForVoice(false)
       setActivity(`${event.holder?.label || '其他入口'}正在使用语音`)
     }
     if (
@@ -264,14 +268,17 @@ export default function App() {
       && voiceEnabled
     ) {
       setVoiceEnabled(false)
+      setWaitingForVoice(false)
       setActivity(`${event.holder?.label || '其他入口'}正在使用语音`)
     }
-    if (
-      event.type === 'voice.ownership'
-      && event.state === 'available'
-      && !voiceEnabled
-    ) {
-      setActivity('待命')
+    if (event.type === 'voice.ownership' && event.state === 'available') {
+      if (shouldClaimReleasedVoice(event, waitingForVoice)) {
+        setWaitingForVoice(false)
+        setVoiceEnabled(true)
+        setActivity('正在接入语音')
+      } else if (!voiceEnabled) {
+        setActivity('待命')
+      }
     }
     if (event.type === 'voice.state') {
       if (
@@ -443,6 +450,7 @@ export default function App() {
     updateUserTranscript,
     updateVoiceMessage,
     voiceEnabled,
+    waitingForVoice,
   ])
 
   const voice = useRealtimeVoice({
@@ -473,11 +481,20 @@ export default function App() {
   }
 
   const enableVoice = () => {
+    if (!voice.activateAudio()) return
     if (voice.ownership.state === 'busy' && !takeoverRequested) {
-      setActivity(`${ownershipLabel || '其他入口'}正在使用语音`)
+      setWaitingForVoice(true)
+      setActivity(`等待${ownershipLabel || '其他入口'}释放语音`)
       return
     }
-    if (voice.activateAudio()) setVoiceEnabled(true)
+    setWaitingForVoice(false)
+    setVoiceEnabled(true)
+  }
+
+  const disableVoice = () => {
+    setWaitingForVoice(false)
+    setVoiceEnabled(false)
+    setActivity('待命')
   }
 
   const turns = useMemo(
@@ -529,8 +546,8 @@ export default function App() {
       voice.interrupt()
       return
     }
-    if (desktopOrbMode && voiceEnabled) {
-      setVoiceEnabled(false)
+    if (desktopOrbMode && (voiceEnabled || waitingForVoice)) {
+      disableVoice()
       return
     }
     enableVoice()
@@ -555,6 +572,7 @@ export default function App() {
             'desktop-orb',
             visualVoiceState,
             voiceEnabled ? 'enabled' : 'input-muted',
+            waitingForVoice ? 'waiting' : '',
             voice.visualError ? 'error' : '',
             orbDragging ? 'dragging' : '',
           ].filter(Boolean).join(' ')}
@@ -566,7 +584,9 @@ export default function App() {
           aria-label={
             voice.state === 'speaking'
               ? '打断 qwen-audio'
-              : voiceEnabled ? '麦克风静音' : '开启麦克风'
+              : voiceEnabled
+                ? '麦克风静音'
+                : waitingForVoice ? '取消等待语音' : '开启麦克风'
           }
         >
           <DesktopFluidOrb />
@@ -575,14 +595,22 @@ export default function App() {
           <button
             className={!voiceEnabled ? 'active' : ''}
             onClick={() => {
-              if (voiceEnabled) {
-                setVoiceEnabled(false)
+              if (voiceEnabled || waitingForVoice) {
+                disableVoice()
                 return
               }
               enableVoice()
             }}
-            aria-label={voiceEnabled ? '麦克风静音' : '开启麦克风'}
-            title={voiceEnabled ? '麦克风静音' : '开启麦克风'}
+            aria-label={
+              voiceEnabled
+                ? '麦克风静音'
+                : waitingForVoice ? '取消等待语音' : '开启麦克风'
+            }
+            title={
+              voiceEnabled
+                ? '麦克风静音'
+                : waitingForVoice ? '取消等待语音' : '开启麦克风'
+            }
           >
             <OrbControlIcon type="microphone" muted={!voiceEnabled} />
           </button>
@@ -651,16 +679,22 @@ export default function App() {
       <div className="status"><i className={visualVoiceState} />{labelFor(visualVoiceState)}</div>
       <button className="ghost" onClick={resetSession}>新会话</button>
       <button
-        className={voiceEnabled ? 'voice active' : 'voice'}
+        className={[
+          'voice',
+          voiceEnabled ? 'active' : '',
+          waitingForVoice ? 'waiting' : '',
+        ].filter(Boolean).join(' ')}
         onClick={() => {
-          if (voiceEnabled) {
-            setVoiceEnabled(false)
+          if (voiceEnabled || waitingForVoice) {
+            disableVoice()
             return
           }
           enableVoice()
         }}
       >
-        {voiceEnabled ? '关闭语音' : '开启语音'}
+        {voiceEnabled
+          ? '关闭语音'
+          : waitingForVoice ? '取消等待' : '开启语音'}
       </button>
     </header>
 
