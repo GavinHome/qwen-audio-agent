@@ -79,6 +79,7 @@ function spawnSpec(root, platform, env) {
   const childEnvironment = {
     ...env,
     QWEN_AUDIO_AGENT_ENV_LOADED: '1',
+    QWEN_AUDIO_AGENT_NODE: process.execPath,
   }
   if (platform === 'win32') {
     return {

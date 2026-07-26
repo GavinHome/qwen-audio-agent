@@ -86,6 +86,9 @@ npm run desktop
 加载 qwen-audio-agent 的专用 Agent、权限和工具配置；若默认端口已被占用，会选择
 另一个空闲本地端口，不结束用户原有进程。
 
+Gateway 优先使用用户明确指定或已经安装在 PATH 中的后台版本；找不到时才通过
+无固定版本的 npm 包启动。源码目录必须显式配置，不依赖特定的本地目录结构。
+
 ```bash
 qwenaudio gateway --backend opencode
 qwenaudio gateway --backend openclaw

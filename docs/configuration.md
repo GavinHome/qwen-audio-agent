@@ -109,12 +109,34 @@ TUI、WebUI 和桌面版只连接 Gateway，不直接连接、启动或停止 Op
 OpenClaw。桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时
 生效；Gateway 地址会立即验证并切换。
 
-OpenCode 默认获取随应用固定的 npm package 版本。高级用户可以使用：
+OpenCode 和 OpenClaw 使用一致的运行时发现顺序：
+
+1. `OPENCODE_BIN` / `OPENCLAW_BIN` 明确指定的可执行文件。
+2. `OPENCODE_SOURCE_DIR` / `OPENCLAW_SOURCE_DIR` 明确指定的源码目录。
+3. PATH 中用户已经安装的 `opencode` / `openclaw`，保留兼容的用户版本。
+4. 本机有 `npx` 时，使用无版本锁定的 `opencode-ai` / `openclaw` npm 包兜底。
+
+源码目录只在用户明确配置后使用，不再推测相邻项目目录。需要强制选择某种启动
+方式时可配置：
 
 ```dotenv
-OPENCODE_RUNTIME=installed
-# 或 source / binary / auto
+# auto（默认）、binary、source、installed 或 package
+OPENCODE_RUNTIME=auto
+OPENCLAW_RUNTIME=auto
 ```
+
+默认 npm 包名不包含版本。如果确实需要锁定或替换包，可显式填写完整 package
+specifier：
+
+```dotenv
+OPENCODE_PACKAGE=opencode-ai@1.18.5
+OPENCLAW_PACKAGE=openclaw@2026.7.1-2
+```
+
+增强 OpenCode 插件当前要求 OpenCode `1.18.0` 或更高版本。`auto` 模式发现更旧的
+安装版本时会保留它、不升级它，并改用 npm 包启动独立兼容版本。显式设置
+`OPENCODE_RUNTIME=installed` 时不会回退，而会给出清晰的版本错误。最低版本可由
+`OPENCODE_MIN_VERSION` 覆盖，用于验证其他兼容版本。
 
 qwen-audio-agent 启动的 OpenCode 默认继承用户原有的全局配置（通常是
 `~/.config/opencode/opencode.json`），因此已经安装的 MCP、Skill、权限、模型和
@@ -129,15 +151,6 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 
 也可以通过 `QWEN_AUDIO_AGENT_OPENCODE_XDG_CONFIG_HOME` 指定另一套 OpenCode 用户
 配置目录。隔离后，原全局配置中的 MCP 和插件不会自动加载。
-
-OpenClaw 默认按以下顺序发现：
-
-1. `OPENCLAW_BIN`
-2. PATH 中的 `openclaw`
-3. `OPENCLAW_SOURCE_DIR`
-
-只有使用源码运行且默认相邻目录不存在时，才需要填写
-`OPENCLAW_SOURCE_DIR`。
 
 ## 高级设置
 

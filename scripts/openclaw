@@ -21,7 +21,7 @@ fi
 
 export OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-${AGENT_API_KEY:-${QWEN_AUDIO_AGENT_AUTH_SECRET:-}}}
 OPENCLAW_RUNTIME=${OPENCLAW_RUNTIME:-auto}
-OPENCLAW_SOURCE_DIR=${OPENCLAW_SOURCE_DIR:-"$QWEN_AUDIO_AGENT_ROOT/../openclaw"}
+OPENCLAW_PACKAGE=${OPENCLAW_PACKAGE:-openclaw}
 
 run_binary() {
   exec "$OPENCLAW_BIN" "$@"
@@ -32,16 +32,29 @@ run_installed() {
 }
 
 run_source() {
-  if [ ! -f "$OPENCLAW_SOURCE_DIR/package.json" ]; then
-    echo "OpenClaw source directory is unavailable: $OPENCLAW_SOURCE_DIR" >&2
+  SOURCE_DIR=${OPENCLAW_SOURCE_DIR:-}
+  if [ -z "$SOURCE_DIR" ]; then
+    echo "OPENCLAW_RUNTIME=source requires OPENCLAW_SOURCE_DIR." >&2
+    exit 1
+  fi
+  if [ ! -f "$SOURCE_DIR/package.json" ]; then
+    echo "OpenClaw source directory is unavailable: $SOURCE_DIR" >&2
     exit 1
   fi
   if ! command -v corepack >/dev/null 2>&1; then
     echo "OpenClaw source mode requires corepack." >&2
     exit 1
   fi
-  cd "$OPENCLAW_SOURCE_DIR"
+  cd "$SOURCE_DIR"
   exec corepack pnpm openclaw "$@"
+}
+
+run_package() {
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "OpenClaw package mode requires npx." >&2
+    exit 1
+  fi
+  exec npx --yes "$OPENCLAW_PACKAGE" "$@"
 }
 
 case "$OPENCLAW_RUNTIME" in
@@ -62,6 +75,9 @@ case "$OPENCLAW_RUNTIME" in
   source)
     run_source "$@"
     ;;
+  package)
+    run_package "$@"
+    ;;
   auto) ;;
   *)
     echo "Unknown OPENCLAW_RUNTIME: $OPENCLAW_RUNTIME" >&2
@@ -73,13 +89,12 @@ if [ -n "${OPENCLAW_BIN:-}" ]; then
   run_binary "$@"
 fi
 
+if [ -n "${OPENCLAW_SOURCE_DIR:-}" ]; then
+  run_source "$@"
+fi
+
 if command -v openclaw >/dev/null 2>&1; then
   run_installed "$@"
 fi
 
-if [ -f "$OPENCLAW_SOURCE_DIR/package.json" ]; then
-  run_source "$@"
-fi
-
-echo "OpenClaw was not found. Install it, set OPENCLAW_BIN, or set OPENCLAW_SOURCE_DIR." >&2
-exit 1
+run_package "$@"
