@@ -35,6 +35,7 @@
     "config/opencode/plugin/",
     "config/opencode-workspace/AGENTS.md",
     "docs/architecture.md",
+    "docs/architecture-overview.png",
     "docs/configuration.md",
     "server/src/",
     "server/package.json",

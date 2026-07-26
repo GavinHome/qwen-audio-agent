@@ -38,6 +38,7 @@ const required = [
   'config/opencode/plugin/qwen-audio-agent-sessions.js',
   'CONTRIBUTING.md',
   'docs/architecture.md',
+  'docs/architecture-overview.png',
   'NOTICE',
   'PRIVACY.md',
   'SECURITY.md',
