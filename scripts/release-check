@@ -81,6 +81,30 @@ if (
 ) {
   throw new Error('signed and local-only desktop build commands are not separated')
 }
+const desktopBuildConfig = readFileSync('desktop/electron-builder.yml', 'utf8')
+const appEntitlements = readFileSync(
+  'desktop/build/entitlements.mac.plist',
+  'utf8',
+)
+const inheritedEntitlements = readFileSync(
+  'desktop/build/entitlements.mac.inherit.plist',
+  'utf8',
+)
+if (
+  !desktopBuildConfig.includes(
+    'entitlementsInherit: desktop/build/entitlements.mac.inherit.plist',
+  )
+  || !appEntitlements.includes('com.apple.security.cs.allow-jit')
+  || !inheritedEntitlements.includes('com.apple.security.cs.allow-jit')
+) {
+  throw new Error('signed Electron builds do not include the required JIT entitlements')
+}
+if (
+  !readFileSync('.github/workflows/release.yml', 'utf8')
+    .includes('GH_REPO: ${{ github.repository }}')
+) {
+  throw new Error('GitHub release job does not explicitly select its repository')
+}
 
 const forbiddenFragments = [
   ['gitlab.alibaba', '-inc.com'].join(''),

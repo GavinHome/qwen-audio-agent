@@ -24,7 +24,7 @@ mac:
   icon: desktop/build/icon.icns
   hardenedRuntime: true
   entitlements: desktop/build/entitlements.mac.plist
-  entitlementsInherit: desktop/build/entitlements.mac.plist
+  entitlementsInherit: desktop/build/entitlements.mac.inherit.plist
   notarize: true
   extendInfo:
     LSUIElement: true
