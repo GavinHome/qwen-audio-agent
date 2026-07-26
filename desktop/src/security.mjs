@@ -27,8 +27,9 @@ export function isSafeExternalUrl(value) {
   }
 }
 
-export function desktopOrbUrl(value) {
+export function desktopOrbUrl(value, { orbStyle } = {}) {
   const url = new URL(value)
   url.searchParams.set('desktop', 'orb')
+  if (orbStyle) url.searchParams.set('orbStyle', orbStyle)
   return url.href
 }

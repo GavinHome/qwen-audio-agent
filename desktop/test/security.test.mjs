@@ -33,7 +33,9 @@ test('limits in-app navigation and external protocols', () => {
 
 test('builds a dedicated desktop orb URL without losing existing parameters', () => {
   assert.equal(
-    desktopOrbUrl('http://127.0.0.1:3101/?channel=desktop'),
-    'http://127.0.0.1:3101/?channel=desktop&desktop=orb',
+    desktopOrbUrl('http://127.0.0.1:3101/?channel=desktop', {
+      orbStyle: 'goo',
+    }),
+    'http://127.0.0.1:3101/?channel=desktop&desktop=orb&orbStyle=goo',
   )
 })
