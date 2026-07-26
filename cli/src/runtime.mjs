@@ -4,6 +4,13 @@ import {
   loadRuntimeEnvironment,
   requireDashScopeCredential,
 } from '../../shared/runtime-environment.mjs'
+import {
+  readGatewayHealth,
+} from '../../shared/gateway-client.mjs'
+
+export {
+  readGatewayHealth,
+} from '../../shared/gateway-client.mjs'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
@@ -61,20 +68,6 @@ export function assertGatewayCompatibility(health, backend) {
       `现有 Gateway 使用 ${actualMode} 模式，`
       + `与当前配置 ${backend.mode} 模式不一致`,
     )
-  }
-}
-
-export async function readGatewayHealth(baseUrl, fetchImpl = fetch) {
-  try {
-    const response = await fetchImpl(`${baseUrl}/api/health`, {
-      signal: AbortSignal.timeout(1500),
-    })
-    const payload = await response.json()
-    return payload && typeof payload === 'object' && payload.backend
-      ? payload
-      : null
-  } catch {
-    return null
   }
 }
 

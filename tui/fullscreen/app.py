@@ -63,6 +63,14 @@ def complete_transcript(streamed, final):
     return final
 
 
+def frontend_label(holder):
+    holder = holder or {}
+    return (holder.get("label")
+            or {"desktop": "桌面端", "cli": "终端", "web": "WebUI"}.get(
+                holder.get("type"))
+            or "其他前端")
+
+
 class VoiceEngine:
     """采集/播放/门控/能量突破。线程回调 → loop.call_soon_threadsafe 回主循环。"""
 
@@ -389,7 +397,7 @@ def build_app(args):
     from textual.containers import Horizontal, Vertical
     from textual.widgets import Footer, Input, RichLog, Static
 
-    STATUS_ZH = {"running": "进行中", "pending": "排队", "completed": "完成",
+    STATUS_ZH = {"running": "进行中", "queued": "排队", "completed": "完成",
                  "failed": "失败", "cancelled": "已取消"}
 
     class QwenAudioAgentApp(App):
@@ -420,7 +428,6 @@ def build_app(args):
         """
         BINDINGS = [
             Binding("ctrl+x", "interrupt", "打断"),
-            Binding("ctrl+b", "background", "转后台"),
             Binding("ctrl+t", "toggle_mute", "静音"),
             Binding("ctrl+q", "quit", "退出"),
         ]
@@ -450,7 +457,7 @@ def build_app(args):
                 tasks = Static("空闲", id="tasks")
                 tasks.border_title = "任务"
                 yield tasks
-            yield Input(placeholder="打字发送 · 空回车打断 · /tasks /bg /cancel", id="inputbox")
+            yield Input(placeholder="打字发送 · 空回车打断 · /tasks /cancel", id="inputbox")
             yield Footer()
 
         # ---------- 状态栏 ----------
@@ -587,7 +594,7 @@ def build_app(args):
                     if self.engine:
                         self.engine.muted = True
                         self.engine.clear()
-                    holder = (m.get("holder") or {}).get("label") or "其他前端"
+                    holder = frontend_label(m.get("holder"))
                     chat.write(
                         f"[yellow]· 语音正由{holder}使用;"
                         "如需接管,请运行 qwenaudio --takeover[/yellow]")
@@ -687,17 +694,13 @@ def build_app(args):
             elif cmd == "/tasks":
                 await self.refresh_tasks()
                 chat.write("[grey62]· 任务面板已刷新(右侧)[/grey62]")
-            elif cmd == "/bg":
-                self._send_json({"type": "task.background",
-                                 **({"jobId": arg} if arg else {})})
-                chat.write("[grey62]· 已请求转后台[/grey62]")
             elif cmd == "/cancel":
                 data = await (await self.http.get(
                     f"{base}/api/tasks?sessionId={args.session}")).json()
                 tasks = data.get("tasks") or []
                 target = next((t for t in tasks if t.get("id") == arg), None) if arg \
                     else next((t for t in tasks
-                               if t.get("status") in ("running", "pending")), None)
+                               if t.get("status") in ("running", "queued")), None)
                 if not target:
                     chat.write("[red]没有可取消的任务[/red]")
                     return
@@ -710,9 +713,6 @@ def build_app(args):
             if self.engine:
                 self.engine.clear("user_interruption")
             self._send_json({"type": "interrupt"})
-
-        def action_background(self):
-            self._send_json({"type": "task.background"})
 
         def action_toggle_mute(self):
             if not self.engine:

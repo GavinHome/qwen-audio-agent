@@ -165,6 +165,10 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   background: radial-gradient(ellipse 60% 50% at 32% 26%, #ffffff4d 0%, transparent 55%);
   box-shadow: inset -8px -10px 26px #ffffff40, inset 8px 10px 22px #5a4fd026;
 }
+.desktop-orb-stage:has(.desktop-orb-controls button:first-child.active) .goo,
+.desktop-orb-stage:has(.desktop-orb-controls button:first-child.active) .goo .fill {
+  animation-play-state: paused;
+}
 
 .desktop-orb-stage {
   position: relative;

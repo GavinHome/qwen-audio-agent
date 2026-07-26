@@ -202,6 +202,12 @@ final timeline content. Package-level `shared` modules are foundational runtime
 utilities; server `core` may depend on them, but they must not depend on server
 layers.
 
+Gateway may serve the immutable `web/dist` artifact as a deployment
+convenience, but this is static hosting only. Gateway source must not import UI
+components, presentation text, styling, terminal behavior, or desktop behavior.
+All three UIs own their rendering and map structured protocol fields to their
+own labels and interaction patterns.
+
 ## 10. Process ownership
 
 The Gateway is the only core service process. In managed mode it owns exactly

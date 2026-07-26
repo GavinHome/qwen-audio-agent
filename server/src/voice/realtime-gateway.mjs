@@ -43,15 +43,10 @@ function clientDescriptor(event = {}) {
   const type = ['desktop', 'cli', 'web'].includes(event.clientType)
     ? event.clientType
     : 'web'
-  const fallback = {
-    desktop: '桌面端',
-    cli: 'CLI',
-    web: 'WebUI',
-  }[type]
-  const label = String(event.clientLabel || fallback).trim().slice(0, 40)
+  const label = String(event.clientLabel || '').trim().slice(0, 40)
   return {
     type,
-    label: label || fallback,
+    ...(label ? { label } : {}),
     instanceId: String(event.clientInstanceId || '').trim().slice(0, 80) || null,
   }
 }

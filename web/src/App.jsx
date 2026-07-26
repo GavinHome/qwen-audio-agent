@@ -63,6 +63,14 @@ function labelFor(state) {
   }[state] || state
 }
 
+function frontendLabel(holder) {
+  return holder?.label || {
+    desktop: '桌面端',
+    cli: '终端',
+    web: 'WebUI',
+  }[holder?.type] || '其他入口'
+}
+
 function OrbControlIcon({ type, muted = false }) {
   if (type === 'microphone') {
     return <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -265,7 +273,7 @@ export default function App() {
     if (event.type === 'voice.deactivated') {
       setVoiceEnabled(false)
       setWaitingForVoice(false)
-      setActivity(`${event.holder?.label || '其他入口'}正在使用语音`)
+      setActivity(`${frontendLabel(event.holder)}正在使用语音`)
     }
     if (
       event.type === 'voice.ownership'
@@ -274,7 +282,7 @@ export default function App() {
     ) {
       setVoiceEnabled(false)
       setWaitingForVoice(false)
-      setActivity(`${event.holder?.label || '其他入口'}正在使用语音`)
+      setActivity(`${frontendLabel(event.holder)}正在使用语音`)
     }
     if (event.type === 'voice.ownership' && event.state === 'available') {
       if (shouldClaimReleasedVoice(event, waitingForVoice)) {
@@ -470,7 +478,9 @@ export default function App() {
   const visualVoiceState = voice.ownership.state === 'busy'
     ? 'occupied'
     : voice.visualState || voice.state
-  const ownershipLabel = voice.ownership.holder?.label
+  const ownershipLabel = voice.ownership.holder
+    ? frontendLabel(voice.ownership.holder)
+    : ''
 
   const resetSession = () => {
     const next = crypto.randomUUID()

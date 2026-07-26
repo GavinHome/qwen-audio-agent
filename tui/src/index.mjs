@@ -67,6 +67,14 @@ function requestLabel(task) {
   return String(task?.objective || '正在处理用户请求')
 }
 
+function frontendLabel(holder) {
+  return holder?.label || {
+    desktop: '桌面端',
+    cli: '终端',
+    web: 'WebUI',
+  }[holder?.type] || '其他前端'
+}
+
 export function completeTranscript(streamed, final) {
   const streamedText = String(streamed || '').trim()
   const finalText = String(final || '').trim()
@@ -560,7 +568,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         ownsVoice = false
         audioBridge.setCaptureEnabled(false)
         playback.clear()
-        const holder = event.holder?.label || '其他前端'
+        const holder = frontendLabel(event.holder)
         if (!everOwnedVoice) {
           print(style(
             `[语音正由${holder}使用；如需接管，请运行 qwenaudio tui --takeover]`,
