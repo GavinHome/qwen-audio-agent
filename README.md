@@ -55,7 +55,7 @@ npm install -g qwen-audio-agent
 成品：
 
 ```bash
-git clone https://github.com/QwenLM/qwen-audio-agent.git
+git clone https://github.com/QwenAudio/qwen-audio-agent.git
 cd qwen-audio-agent
 npm install
 npm run install:global
@@ -177,6 +177,8 @@ OpenClaw，不修改现有服务。
 - `backends/`：后台 Agent 的可变状态与托管配置
 
 这些文件不会写入源码仓库。不要在 `USER.md` 中保存密码、API Key、验证码或令牌。
+麦克风音频和实时对话会发送到配置的 Qwen Audio Realtime 服务；委派任务还可能
+流向用户配置的模型、工具和 MCP 服务。详细数据边界见[隐私说明](PRIVACY.md)。
 
 ## 源码开发
 
@@ -200,6 +202,7 @@ npm run desktop   # macOS 桌面悬浮球
 
 - 开发与提交说明：[CONTRIBUTING.md](CONTRIBUTING.md)
 - 安全问题报告：[SECURITY.md](SECURITY.md)
+- 数据流向说明：[PRIVACY.md](PRIVACY.md)
 - 第三方组件声明：[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## 许可证

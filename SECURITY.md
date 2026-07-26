@@ -9,7 +9,7 @@
 请不要公开提交包含利用细节、用户数据或密钥的 Issue。优先使用 GitHub 仓库的
 **Security → Report a vulnerability** 私密报告功能：
 
-https://github.com/QwenLM/qwen-audio-agent/security/advisories/new
+https://github.com/QwenAudio/qwen-audio-agent/security/advisories/new
 
 报告请包含受影响版本、复现条件、潜在影响和可行的缓解方式。维护者确认并准备好
 修复前，请避免公开漏洞细节。

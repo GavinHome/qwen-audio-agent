@@ -42,7 +42,7 @@ for (const workspace of [
 }
 
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
-const publicRepository = 'git+https://github.com/QwenLM/qwen-audio-agent.git'
+const publicRepository = 'git+https://github.com/QwenAudio/qwen-audio-agent.git'
 const publicRegistry = 'https://registry.npmjs.org/'
 if (manifest.repository?.url !== publicRepository) {
   throw new Error('package.json does not point to the public GitHub repository')
@@ -105,11 +105,22 @@ if (
 ) {
   throw new Error('GitHub release job does not explicitly select its repository')
 }
+for (const workflow of [
+  '.github/workflows/ci.yml',
+  '.github/workflows/release.yml',
+]) {
+  const content = readFileSync(workflow, 'utf8')
+  const unpinnedAction = content.match(/uses:\s+[^#\s]+@(?![0-9a-f]{40}(?:\s|#|$))\S+/)
+  if (unpinnedAction) {
+    throw new Error(`${workflow} contains an unpinned action: ${unpinnedAction[0]}`)
+  }
+}
 
 const forbiddenFragments = [
   ['gitlab.alibaba', '-inc.com'].join(''),
   ['registry.anpm.alibaba', '-inc.com'].join(''),
   ['lx', '513821'].join(''),
+  ['github.com/Qwen', 'LM/qwen-audio-agent'].join(''),
 ]
 const trackedFiles = execFileSync('git', ['ls-files', '-z'])
   .toString()
