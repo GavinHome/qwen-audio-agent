@@ -9,6 +9,7 @@ const DEFAULTS = {
   backendModel: 'qwen3.7-max',
   realtimeModel: 'qwen-audio-3.0-realtime-plus',
   realtimeVoice: 'longanqian',
+  orbStyle: 'fluid',
 }
 
 const SETTING_KEYS = {
@@ -21,6 +22,7 @@ const SETTING_KEYS = {
   backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
   realtimeModel: 'QWEN_AUDIO_REALTIME_MODEL',
   realtimeVoice: 'QWEN_AUDIO_REALTIME_VOICE',
+  orbStyle: 'QWEN_AUDIO_ORB_STYLE',
 }
 
 function cleanUrl(value, fallback, label = '地址') {
@@ -82,6 +84,16 @@ export function parseSettings(content = '', fallback = {}) {
     realtimeVoice: values.QWEN_AUDIO_REALTIME_VOICE
       || fallback.QWEN_AUDIO_REALTIME_VOICE
       || DEFAULTS.realtimeVoice,
+    orbStyle: ['fluid', 'goo'].includes(
+      String(
+        values.QWEN_AUDIO_ORB_STYLE
+        || fallback.QWEN_AUDIO_ORB_STYLE
+        || '',
+      ).toLowerCase(),
+    ) ? String(
+        values.QWEN_AUDIO_ORB_STYLE
+        || fallback.QWEN_AUDIO_ORB_STYLE,
+      ).toLowerCase() : DEFAULTS.orbStyle,
   }
 }
 
@@ -126,6 +138,11 @@ export function normalizeSettings(settings = {}) {
     realtimeVoice: String(
       settings.realtimeVoice || DEFAULTS.realtimeVoice,
     ).trim(),
+    orbStyle: ['fluid', 'goo'].includes(
+      String(settings.orbStyle || DEFAULTS.orbStyle).toLowerCase(),
+    )
+      ? String(settings.orbStyle || DEFAULTS.orbStyle).toLowerCase()
+      : DEFAULTS.orbStyle,
   }
 }
 

@@ -111,7 +111,13 @@ async function showUnavailable(window) {
 
 async function loadQwenAudioAgent(window) {
   try {
-    await window.loadURL(desktopOrbUrl(appOrigin))
+    const settings = parseSettings(
+      readFileSync(runtimeEnvironment.configPath, 'utf8'),
+      process.env,
+    )
+    await window.loadURL(desktopOrbUrl(appOrigin, {
+      orbStyle: settings.orbStyle,
+    }))
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   } catch {
@@ -301,9 +307,11 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     'realtimeModel',
     'realtimeVoice',
   ].some(key => previous[key] !== normalized[key])
+  const orbStyleChanged = previous.orbStyle !== normalized.orbStyle
   appOrigin = nextOrigin
   process.env.QWEN_AUDIO_AGENT_URL = nextOrigin
-  if (gatewayChanged && mainWindow && !mainWindow.isDestroyed()) {
+  process.env.QWEN_AUDIO_ORB_STYLE = normalized.orbStyle
+  if ((gatewayChanged || orbStyleChanged) && mainWindow && !mainWindow.isDestroyed()) {
     void loadQwenAudioAgent(mainWindow)
   }
   return {

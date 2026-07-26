@@ -7,6 +7,7 @@ const backendUrl = document.querySelector('#backend-url')
 const backendModel = document.querySelector('#backend-model')
 const realtimeModel = document.querySelector('#realtime-model')
 const realtimeVoice = document.querySelector('#realtime-voice')
+const orbStyle = document.querySelector('#orb-style')
 const message = document.querySelector('#message')
 const currentRealtime = document.querySelector('#current-realtime')
 const currentGateway = document.querySelector('#current-gateway')
@@ -52,6 +53,7 @@ function formSettings() {
     backendModel: backendModel.value,
     realtimeModel: realtimeModel.value,
     realtimeVoice: realtimeVoice.value,
+    orbStyle: orbStyle.value,
   }
 }
 
@@ -64,6 +66,7 @@ function fingerprint(value) {
     backendModel: value.backendModel,
     realtimeModel: value.realtimeModel,
     realtimeVoice: value.realtimeVoice,
+    orbStyle: value.orbStyle,
     opencodeBaseUrl: value.opencodeBaseUrl,
     openclawBaseUrl: value.openclawBaseUrl,
   })
@@ -119,6 +122,7 @@ function render() {
   backendModel.value = settings.backendModel
   realtimeModel.value = settings.realtimeModel
   realtimeVoice.value = settings.realtimeVoice
+  orbStyle.value = settings.orbStyle
   renderRuntime()
   appliedFingerprint = fingerprint(formSettings())
   updateApplyState()
@@ -147,6 +151,7 @@ for (const control of [
   backendModel,
   realtimeModel,
   realtimeVoice,
+  orbStyle,
 ]) {
   control.addEventListener('input', () => {
     showMessage('')
