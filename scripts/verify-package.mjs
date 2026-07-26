@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { dirname, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const npmExecutable = process.env.npm_execpath
@@ -36,7 +37,9 @@ const required = [
   'config/opencode/agents/qwen-audio-agent-backend.md',
   'config/opencode/plugin/qwen-audio-agent-sessions.js',
   'CONTRIBUTING.md',
+  'docs/architecture.md',
   'NOTICE',
+  'PRIVACY.md',
   'SECURITY.md',
   'THIRD_PARTY_NOTICES.md',
   'scripts/backend',
@@ -59,6 +62,24 @@ const forbidden = [...files].filter(file => (
 ))
 if (forbidden.length) {
   throw new Error(`npm 成品包含不应发布的文件：${forbidden.join(', ')}`)
+}
+const brokenMarkdownLinks = []
+for (const file of files) {
+  if (!file.endsWith('.md')) continue
+  const content = readFileSync(resolve(root, file), 'utf8')
+  for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    const target = match[1].trim().replace(/^<|>$/g, '').split('#')[0]
+    if (!target || /^[a-z][a-z\d+.-]*:/i.test(target)) continue
+    const packagedTarget = posix.normalize(posix.join(posix.dirname(file), target))
+    if (!files.has(packagedTarget)) {
+      brokenMarkdownLinks.push(`${file} -> ${packagedTarget}`)
+    }
+  }
+}
+if (brokenMarkdownLinks.length) {
+  throw new Error(
+    `npm 成品包含失效的 Markdown 链接：${brokenMarkdownLinks.join(', ')}`,
+  )
 }
 
 process.stdout.write(

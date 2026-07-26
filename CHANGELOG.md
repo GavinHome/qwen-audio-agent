@@ -19,6 +19,8 @@
   安全政策、贡献说明和第三方组件声明。
 - macOS 正式构建启用 hardened runtime、Developer ID 签名与公证；保留独立的
   本地未签名构建命令。
+- 公开仓库迁移至 QwenAudio 组织；固定 GitHub Actions 提交并收紧工作流权限，
+  补充隐私说明、Dependabot 和结构化 Issue/PR 模板。
 
 ## 0.2.0
 

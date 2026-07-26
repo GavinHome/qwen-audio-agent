@@ -6,12 +6,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/QwenLM/qwen-audio-agent.git"
+    "url": "git+https://github.com/QwenAudio/qwen-audio-agent.git"
   },
   "bugs": {
-    "url": "https://github.com/QwenLM/qwen-audio-agent/issues"
+    "url": "https://github.com/QwenAudio/qwen-audio-agent/issues"
   },
-  "homepage": "https://github.com/QwenLM/qwen-audio-agent#readme",
+  "homepage": "https://github.com/QwenAudio/qwen-audio-agent#readme",
   "keywords": [
     "qwen",
     "audio",
@@ -34,6 +34,7 @@
     "config/opencode/agents/",
     "config/opencode/plugin/",
     "config/opencode-workspace/AGENTS.md",
+    "docs/architecture.md",
     "docs/configuration.md",
     "server/src/",
     "server/package.json",
@@ -47,6 +48,7 @@
     "LICENSE",
     "NOTICE",
     "CONTRIBUTING.md",
+    "PRIVACY.md",
     "SECURITY.md",
     "THIRD_PARTY_NOTICES.md",
     "README.md"

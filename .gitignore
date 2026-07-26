@@ -5,10 +5,17 @@ dist/
 __pycache__/
 *.py[cod]
 .env
-.env.local
+.env.*
+!.env.example
 runtime/
 *.log
 .DS_Store
+Thumbs.db
+*.pem
+*.p12
+*.key
+*.cer
+*.mobileprovision
 config/openclaw-workspace/
 config/openclaw.json5.last-good
 
