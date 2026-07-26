@@ -9,10 +9,10 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
-test('uses the repository OpenCode workspace by default', () => {
+test('uses the user data directory for the default OpenCode workspace', () => {
   assert.equal(
-    resolveOpenCodeWorkspace({}),
-    resolve(root, 'config/opencode-workspace'),
+    resolveOpenCodeWorkspace({}, '/home/user/.config/qwaudio'),
+    '/home/user/.config/qwaudio/workspaces/opencode',
   )
 })
 

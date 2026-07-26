@@ -32,7 +32,7 @@
         id: "qwen-audio-agent-backend",
         default: true,
         name: "qwen-audio-agent Backend Agent",
-        workspace: "${QWEN_AUDIO_AGENT_ROOT}/config/openclaw-workspace",
+        workspace: "${QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE}",
       },
     ],
   },

@@ -21,6 +21,7 @@ function fixture() {
   const capture = resolve(directory, 'capture.txt')
   mkdirSync(bin)
   return {
+    directory,
     bin,
     capture,
     close: () => rmSync(directory, { recursive: true, force: true }),
@@ -57,6 +58,7 @@ function run(script, target, env = {}, args = []) {
       CAPTURE: target.capture,
       QWEN_AUDIO_AGENT_ENV_LOADED: '1',
       QWEN_AUDIO_AGENT_NODE: process.execPath,
+      QWAUDIO_CONFIG_DIR: resolve(target.directory, 'config'),
       ...env,
     },
   })
@@ -126,6 +128,20 @@ test('OpenClaw auto mode prefers the user-installed command', {
       'gateway',
       'run',
     ])
+    assert.match(
+      readFileSync(
+        resolve(target.directory, 'config/backends/openclaw/openclaw.json5'),
+        'utf8',
+      ),
+      /QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE/,
+    )
+    assert.match(
+      readFileSync(
+        resolve(target.directory, 'config/workspaces/openclaw/AGENTS.md'),
+        'utf8',
+      ),
+      /qwen-audio-agent/,
+    )
   } finally {
     target.close()
   }

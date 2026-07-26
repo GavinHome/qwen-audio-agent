@@ -40,16 +40,44 @@ Realtime 前台负责倾听、理解和表达。能直接回答的问题立即�
 - WebUI、终端 TUI 和 macOS 桌面悬浮球
 - 本地用户档案和跨会话个人记忆
 
-## 快速开始
+## 安装
 
 需要 Node.js 22.22.2、24.15.0 或更高兼容版本、npm 10+ 和 DashScope API Key。
-当前版本请从源码安装：
+
+从 npm registry 安装已发布版本：
 
 ```bash
+npm install -g qwen-audio-agent
+```
+
+尚未发布到当前 registry，或希望直接使用仓库版本时，从源码构建同一种 npm
+成品：
+
+```bash
+git clone <仓库地址>
 cd qwen-audio-agent
 npm install
-npm install -g .
+npm run install:global
 ```
+
+`install:global` 会构建 WebUI、生成临时 tarball，再将 tarball 安装为独立的
+全局成品；不会把 `qwenaudio` 软链接到源码目录。
+
+升级 registry 版本：
+
+```bash
+npm install -g qwen-audio-agent@latest
+```
+
+升级源码版本：
+
+```bash
+git pull
+npm install
+npm run install:global
+```
+
+## 快速开始
 
 创建用户配置：
 
@@ -81,6 +109,20 @@ qwenaudio tui
 ```bash
 qwenaudio webui
 ```
+
+## macOS 桌面版
+
+桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。先按上面的步骤启动
+Gateway，再从发布页下载 `.dmg`，打开后将 **Qwen Audio Agent** 拖入“应用程序”。
+
+从源码生成本机安装包：
+
+```bash
+npm run desktop:build
+```
+
+构建完成后，打开 `dist/desktop/` 中的 `.dmg`，将 **Qwen Audio Agent**
+拖入“应用程序”即可。本地开发可直接运行 `npm run desktop`。
 
 ## 后台常驻
 
@@ -124,6 +166,8 @@ OpenClaw，不修改现有服务。
 - `USER.md`：称呼、所在地、偏好和常用项目
 - `frontend-memory.json`：用户明确要求长期记住的信息
 - `tasks.json`：任务结果和待通知状态
+- `workspaces/`：增强模式下 OpenCode 和 OpenClaw 的默认工作目录
+- `backends/`：后台 Agent 的可变状态与托管配置
 
 这些文件不会写入源码仓库。不要在 `USER.md` 中保存密码、API Key、验证码或令牌。
 

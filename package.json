@@ -1,8 +1,15 @@
 {
   "name": "qwen-audio-agent",
   "version": "0.2.0",
+  "description": "A realtime voice frontend for OpenCode and OpenClaw.",
+  "author": "qwen-audio-agent contributors",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+http://gitlab.alibaba-inc.com/lx513821/qwen-audio-agent.git"
+  },
   "type": "module",
+  "main": "desktop/src/main.mjs",
   "bin": {
     "qwenaudio": "cli/bin/qwenaudio.mjs"
   },
@@ -21,7 +28,7 @@
     "server/package.json",
     "shared/",
     "scripts/",
-    "tui/fullscreen/",
+    "tui/fullscreen/app.py",
     "tui/native/",
     "tui/src/",
     "tui/package.json",
@@ -45,10 +52,12 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev --workspace server\" \"npm run dev --workspace web\"",
     "build": "npm run build --workspace web",
     "prepack": "npm run build",
+    "install:global": "node scripts/install-global.mjs",
     "start": "node scripts/start.mjs",
     "pregateway": "npm run build",
     "gateway": "npm run start --workspace server",
     "desktop": "npm run start --workspace desktop",
+    "desktop:build": "npm run build && electron-builder --config desktop/electron-builder.yml --mac dmg",
     "cli": "npm run start --workspace @qwen-audio-agent/cli --",
     "tui": "npm run start --workspace tui --",
     "backend": "./scripts/backend",
@@ -65,6 +74,7 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "concurrently": "^9.2.0"
+    "concurrently": "^9.2.0",
+    "electron-builder": "^26.15.3"
   }
 }

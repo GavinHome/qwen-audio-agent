@@ -146,6 +146,18 @@ function ensureUserProfile(configDirectory) {
   return profilePath
 }
 
+function ensureManagedWorkspace(directory, templatePath) {
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const instructionsPath = resolve(directory, 'AGENTS.md')
+  try {
+    copyFileSync(templatePath, instructionsPath, constants.COPYFILE_EXCL)
+    chmodSync(instructionsPath, 0o600)
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  return directory
+}
+
 function migratePrivateFile(legacyPath, targetPath) {
   try {
     lstatSync(targetPath)
@@ -198,6 +210,33 @@ export function loadRuntimeEnvironment({
   const userProfilePath = ensureUserProfile(configDirectory)
   const frontendMemoryPath = resolve(configDirectory, 'frontend-memory.json')
   const taskStatePath = resolve(configDirectory, 'tasks.json')
+  const defaultOpenCodeWorkspace = !env.OPENCODE_WORKSPACE
+  const openCodeWorkspace = env.OPENCODE_WORKSPACE
+    ? resolve(root, env.OPENCODE_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/opencode')
+  const defaultOpenClawWorkspace = !env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE
+  const openClawWorkspace = env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE
+    ? resolve(root, env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/openclaw')
+  const openClawStateDirectory = env.OPENCLAW_STATE_DIR
+    ? resolve(root, env.OPENCLAW_STATE_DIR)
+    : resolve(configDirectory, 'backends/openclaw/state')
+  if (defaultOpenCodeWorkspace) {
+    ensureManagedWorkspace(
+      openCodeWorkspace,
+      resolve(root, 'config/opencode-workspace/AGENTS.md'),
+    )
+  }
+  if (defaultOpenClawWorkspace) {
+    ensureManagedWorkspace(
+      openClawWorkspace,
+      resolve(root, 'config/openclaw-workspace/AGENTS.md'),
+    )
+  }
+  mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
+  env.OPENCODE_WORKSPACE = openCodeWorkspace
+  env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE = openClawWorkspace
+  env.OPENCLAW_STATE_DIR = openClawStateDirectory
   const migratedFiles = [
     [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
     [resolve(root, 'runtime/tasks.json'), taskStatePath],
@@ -213,6 +252,9 @@ export function loadRuntimeEnvironment({
     userProfilePath,
     frontendMemoryPath,
     taskStatePath,
+    openCodeWorkspace,
+    openClawWorkspace,
+    openClawStateDirectory,
     migratedFiles,
     loadedFiles,
     generatedSecret: secret.generated,

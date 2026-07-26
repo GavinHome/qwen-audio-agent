@@ -190,7 +190,7 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | 设置 | 默认值 |
 | --- | --- |
 | `HOST` / `PORT` | `127.0.0.1` / `3101` |
-| `OPENCODE_WORKSPACE` | 安装目录的 `config/opencode-workspace` |
+| `OPENCODE_WORKSPACE` | 用户配置目录下的 `workspaces/opencode` |
 | `QWEN_AUDIO_AGENT_BACKEND_MODEL` | `qwen3.7-max` |
 | `OPENCODE_MODEL` / `OPENCLAW_MODEL` | 由对应 Adapter 从公共模型推导 |
 | `QWEN_AUDIO_REALTIME_MODEL` | `qwen-audio-3.0-realtime-plus` |

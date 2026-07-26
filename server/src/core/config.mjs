@@ -15,12 +15,13 @@ function numberSetting(value, fallback, {
   return Math.min(max, Math.max(min, parsed))
 }
 
-export function resolveOpenCodeWorkspace(env = process.env) {
-  return resolve(
-    root,
-    env.OPENCODE_WORKSPACE
-    || 'config/opencode-workspace',
-  )
+export function resolveOpenCodeWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.OPENCODE_WORKSPACE
+    ? resolve(root, env.OPENCODE_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/opencode')
 }
 
 const DEFAULT_BACKEND_MODEL = 'qwen3.7-max'
