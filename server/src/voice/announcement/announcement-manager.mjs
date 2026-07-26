@@ -97,6 +97,10 @@ export class AnnouncementManager {
     taskIds.filter(Boolean).forEach(taskId => this.confirm(taskId))
   }
 
+  dismissActive() {
+    this.confirmMany(this.activeBatch?.taskIds || [])
+  }
+
   retryMany(taskIds = []) {
     if (
       !this.activeBatch

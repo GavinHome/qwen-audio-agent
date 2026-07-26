@@ -100,11 +100,17 @@ export default function useRealtimeVoice({
     return true
   }
 
-  const sendPlaybackEvent = (type, responseId) => {
-    if (responseId) sendSocketEvent({ type, responseId })
+  const sendPlaybackEvent = (type, responseId, reason = '') => {
+    if (responseId) {
+      sendSocketEvent({
+        type,
+        responseId,
+        ...(reason ? { reason } : {}),
+      })
+    }
   }
 
-  const stopPlayback = () => {
+  const stopPlayback = (reason = '') => {
     const playback = playbackRef.current
     const activeResponseIds = new Set([
       ...playback.startTimers.keys(),
@@ -116,7 +122,7 @@ export default function useRealtimeVoice({
     }
     for (const responseId of activeResponseIds) {
       if (!playback.endedResponses.has(responseId)) {
-        sendPlaybackEvent('playback.cancelled', responseId)
+        sendPlaybackEvent('playback.cancelled', responseId, reason)
       }
     }
     playbackRef.current.sources.forEach(source => {
@@ -276,10 +282,14 @@ export default function useRealtimeVoice({
         if (event.type === 'voice.state') {
           if (acceptsVoiceState(event, currentTurnId.current)) {
             setState(event.state)
-            if (event.state === 'listening') stopPlayback()
+            if (event.state === 'listening') {
+              stopPlayback('user_interruption')
+            }
           }
         }
-        if (event.type === 'playback.clear') stopPlayback()
+        if (event.type === 'playback.clear') {
+          stopPlayback(event.reason || '')
+        }
         if (event.type === 'audio.delta') {
           if (outputMutedRef.current) {
             consumeMutedAudio(event.responseId)
@@ -421,7 +431,7 @@ export default function useRealtimeVoice({
   }, [])
 
   const interrupt = () => {
-    stopPlayback()
+    stopPlayback('user_interruption')
     sendSocketEvent({ type: 'interrupt' })
   }
 

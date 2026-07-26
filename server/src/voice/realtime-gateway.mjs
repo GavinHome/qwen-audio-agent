@@ -387,7 +387,7 @@ export function attachRealtimeGateway(server, {
       flushPendingTranscripts(id, context)
     }
 
-    const cancelQueuedPlayback = id => {
+    const cancelQueuedPlayback = (id, { reason = '' } = {}) => {
       const context = responseContexts.get(id)
       announcementWindow.finishPlayback(id, {
         hasFunctionCall: Boolean(context?.hasFunctionCall),
@@ -395,9 +395,13 @@ export function attachRealtimeGateway(server, {
       const playbackTurnId = playbackTurns.get(id) || turnId
       playbackTurns.delete(id)
       if (context?.origin === 'announcement') {
-        announcements.retryMany(contextTaskIds(context))
+        if (reason === 'user_interruption') {
+          announcements.confirmMany(contextTaskIds(context))
+        } else {
+          announcements.retryMany(contextTaskIds(context))
+        }
       }
-      if (context?.origin === 'model' && context.playbackStarted) {
+      if (context?.playbackStarted && reason === 'user_interruption') {
         send(ws, {
           type: 'response.interrupted',
           responseId: id,
@@ -521,7 +525,11 @@ export function attachRealtimeGateway(server, {
         turnId = `voice-${Date.now()}-${turnGeneration}`
         rememberInputTurn(event.item_id, currentTurn())
         announcementWindow.beginTurn(turnId)
-        send(ws, { type: 'playback.clear' })
+        announcements.dismissActive()
+        send(ws, {
+          type: 'playback.clear',
+          reason: 'user_interruption',
+        })
         send(ws, { type: 'turn.started', turnId })
         send(ws, { type: 'voice.state', state: 'listening', turnId })
         frontend?.cancel()
@@ -1003,13 +1011,16 @@ export function attachRealtimeGateway(server, {
         turnGeneration += 1
         committedTurnGeneration = turnGeneration
         announcementWindow.interrupt()
+        announcements.dismissActive()
         frontend?.cancel()
       } else if (event.type === 'playback.started') {
         startPlayback(String(event.responseId || ''))
       } else if (event.type === 'playback.ended') {
         finishPlayback(String(event.responseId || ''))
       } else if (event.type === 'playback.cancelled') {
-        cancelQueuedPlayback(String(event.responseId || ''))
+        cancelQueuedPlayback(String(event.responseId || ''), {
+          reason: String(event.reason || ''),
+        })
       } else if (event.type === 'mute') {
         releaseVoiceClient()
         turnGeneration += 1

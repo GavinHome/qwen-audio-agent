@@ -184,14 +184,17 @@ class VoiceEngine:
         else:
             self.done_marks.add(rid)
 
-    def clear(self):
+    def clear(self, reason=""):
         pending = {rid for rid, _ in self.queue if rid}
         self.queue.clear()
         for rid in pending:
             self.remaining.pop(rid, None)
             self.done_marks.discard(rid)
             self.started_sent.discard(rid)
-            self.send_json({"type": "playback.cancelled", "responseId": rid})
+            event = {"type": "playback.cancelled", "responseId": rid}
+            if reason:
+                event["reason"] = reason
+            self.send_json(event)
 
     def start(self):
         self.instream.start()
@@ -347,7 +350,7 @@ class SwiftAecEngine:
         self.started_sent.discard(rid)
         self.send_json({"type": "playback.ended", "responseId": rid})
 
-    def clear(self):
+    def clear(self, reason=""):
         # 带内 clear 顺序处理,必然清掉之前的全部音频;晚到块由 cancelled 拦截
         self.cancelled.update(rid for rid in self.ends)
         self._send({"type": "clear"})
@@ -355,7 +358,10 @@ class SwiftAecEngine:
             h.cancel()
         self.timers.clear()
         for rid in list(self.ends):
-            self.send_json({"type": "playback.cancelled", "responseId": rid})
+            event = {"type": "playback.cancelled", "responseId": rid}
+            if reason:
+                event["reason"] = reason
+            self.send_json(event)
         self.ends.clear()
         self.started_sent.clear()
         self.cursor = time.monotonic()
@@ -546,7 +552,7 @@ def build_app(args):
             # 能量突破:用户在播放期大声说话 → 立即打断并临时放行麦克风
             if not (self.engine and self.engine.playing):
                 return
-            self.engine.clear()
+            self.engine.clear("user_interruption")
             self.engine.last_play_end = 0.0   # 立刻解除门控尾窗
             self._send_json({"type": "interrupt"})
             self.query_one("#chat", RichLog).write("[grey62]· (检测到插话,已打断)[/grey62]")
@@ -570,7 +576,7 @@ def build_app(args):
                 elif mt == "audio.done" and self.engine:
                     self.engine.mark_done(str(m.get("responseId") or ""))
                 elif mt == "playback.clear" and self.engine:
-                    self.engine.clear()
+                    self.engine.clear(str(m.get("reason") or ""))
                 elif mt == "voice.deactivated":
                     if self.engine:
                         self.engine.muted = True
@@ -702,7 +708,7 @@ def build_app(args):
 
         def action_interrupt(self):
             if self.engine:
-                self.engine.clear()
+                self.engine.clear("user_interruption")
             self._send_json({"type": "interrupt"})
 
         def action_background(self):

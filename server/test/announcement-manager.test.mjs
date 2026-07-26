@@ -123,6 +123,38 @@ test('does not mark a generated result delivered until playback finishes', async
   manager.close()
 })
 
+test('dismisses an active result after user interruption without retrying it', async () => {
+  let attempts = 0
+  const delivered = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        attempts += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    retryBaseMs: 1,
+    retryMaxMs: 1,
+    acknowledgementTimeoutMs: 5,
+    onDelivered: taskIds => delivered.push(...taskIds),
+  })
+  manager.completed({ id: 'work-one', objective: '播报结果', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 2))
+
+  manager.dismissActive()
+  manager.retryMany(['work-one'])
+  await new Promise(resolve => setTimeout(resolve, 15))
+
+  assert.equal(attempts, 1)
+  assert.deepEqual(delivered, ['work-one'])
+  assert.equal(manager.activeBatch, null)
+  assert.equal(manager.pending.size, 0)
+  manager.close()
+})
+
 test('retries a generated result when playback acknowledgement times out', async () => {
   let attempts = 0
   const manager = new AnnouncementManager({

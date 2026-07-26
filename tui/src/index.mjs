@@ -322,7 +322,7 @@ function createPlayback({
   const endTimers = new Map()
   const startedResponses = new Set()
   const responseEndMs = new Map()
-  const stop = () => {
+  const stop = (reason = '') => {
     const activeResponseIds = new Set([
       ...startTimers.keys(),
       ...endTimers.keys(),
@@ -332,7 +332,7 @@ function createPlayback({
     for (const timer of startTimers.values()) clearTimeout(timer)
     for (const timer of endTimers.values()) clearTimeout(timer)
     for (const responseId of activeResponseIds) {
-      onCancelled?.(responseId)
+      onCancelled?.(responseId, reason)
     }
     startTimers.clear()
     endTimers.clear()
@@ -475,9 +475,13 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         socket.send(JSON.stringify({ type: 'playback.ended', responseId }))
       }
     },
-    onCancelled: responseId => {
+    onCancelled: (responseId, reason = '') => {
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'playback.cancelled', responseId }))
+        socket.send(JSON.stringify({
+          type: 'playback.cancelled',
+          responseId,
+          ...(reason ? { reason } : {}),
+        }))
       }
     },
   })
@@ -578,7 +582,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       print(style('[语音已切换到另一窗口]', 'yellow'))
     }
     if (event.type === 'playback.clear') {
-      playback.clear()
+      playback.clear(event.reason || '')
       transcriptRenderer.cancel()
     }
     if (event.type === 'audio.delta') {
