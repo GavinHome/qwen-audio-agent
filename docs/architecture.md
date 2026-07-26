@@ -183,7 +183,7 @@ its single final response contract.
 ## 9. Dependency direction
 
 ```text
-Web / TUI
+WebUI / TUI / Desktop
    ↓ WebSocket and HTTP
 Realtime Gateway
    ↓ spawn_thinking
@@ -214,6 +214,12 @@ queued work or the fixed backend Agent Session. Configuration that changes
 Realtime or backend behavior takes effect on the next Gateway start; changing a
 UI's Gateway URL only reconnects that UI.
 
+The macOS desktop renderer is packaged inside the application. Electron serves
+those immutable assets from a private, random loopback path and proxies only
+Gateway HTTP API and Realtime WebSocket traffic. Desktop UI assets must not be
+loaded from the Gateway: rebuilding the desktop application must be sufficient
+to update its appearance without upgrading the running Gateway frontend.
+
 ## 11. Review checklist
 
 Before merging a change, verify:
@@ -226,6 +232,6 @@ Before merging a change, verify:
 4. Are tool events used only for generic UI progress?
 5. Is completion spoken only from a final backend Agent result?
 6. Did any UI begin managing a Gateway or backend process?
-6. Can interruption postpone speech without cancelling submitted Work?
+7. Can interruption postpone speech without cancelling submitted Work?
 7. Do tests cover FIFO serialization, fixed Session reuse, tool animation, and
    delivery retry?

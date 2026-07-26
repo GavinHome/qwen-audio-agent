@@ -11,13 +11,15 @@ directories:
 
 files:
   - desktop/src/**/*
+  - web/dist/**/*
+  - shared/gateway-client.mjs
   - shared/runtime-environment.mjs
-  - cli/src/runtime.mjs
   - package.json
   - LICENSE
   - NOTICE
   - THIRD_PARTY_NOTICES.md
   - "!node_modules/**/*"
+  - node_modules/ws/**/*
 
 mac:
   category: public.app-category.productivity

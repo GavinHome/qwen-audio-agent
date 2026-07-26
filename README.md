@@ -105,8 +105,10 @@ qwenaudio webui
 
 ## macOS 桌面版
 
-桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。先按上面的步骤启动
-Gateway，再从发布页下载 `.dmg`，打开后将 **Qwen Audio Agent** 拖入“应用程序”。
+桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。桌面 UI 已包含在 `.app`
+中，重新构建即可更新外观；Gateway 只提供 API、实时语音和后台 Agent 能力。
+先按上面的步骤启动 Gateway，再从发布页下载 `.dmg`，打开后将
+**Qwen Audio Agent** 拖入“应用程序”。
 
 从源码生成仅供本机测试的未签名安装包：
 

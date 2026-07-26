@@ -22,11 +22,14 @@ import {
 } from './security.mjs'
 import {
   readGatewayHealth,
-} from '../../cli/src/runtime.mjs'
+} from '../../shared/gateway-client.mjs'
 import {
   parseSettings,
   updateSettingsContent,
 } from './settings-config.mjs'
+import {
+  startDesktopRendererServer,
+} from './renderer-server.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../..')
@@ -38,6 +41,7 @@ const runtimeEnvironment = loadRuntimeEnvironment({
 const fallbackPage = resolve(here, 'orb-unavailable.html')
 const fallbackUrl = pathToFileURL(fallbackPage).href
 const settingsPage = resolve(here, 'settings.html')
+const webRoot = resolve(root, 'web/dist')
 let appOrigin = validateAppUrl(
   process.env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
 )
@@ -45,6 +49,7 @@ const preloadPath = resolve(here, 'preload.cjs')
 
 let mainWindow = null
 let settingsWindow = null
+let rendererServer = null
 let dragState = null
 let reconnectTimer = null
 async function runtimeStatus(target = appOrigin) {
@@ -66,8 +71,11 @@ async function runtimeStatus(target = appOrigin) {
   }
 }
 
-function isQwenAudioAgentUrl(value) {
-  return isSameOrigin(value, appOrigin)
+function isDesktopRendererUrl(value) {
+  return Boolean(
+    rendererServer
+    && isSameOrigin(value, rendererServer.origin),
+  )
 }
 
 function configurePermissions(window) {
@@ -79,7 +87,7 @@ function configurePermissions(window) {
     details,
   ) => {
     const origin = details?.securityOrigin || requestingOrigin
-    return permission === 'media' && isQwenAudioAgentUrl(origin)
+    return permission === 'media' && isDesktopRendererUrl(origin)
   })
   electronSession.setPermissionRequestHandler((
     webContents,
@@ -96,7 +104,7 @@ function configurePermissions(window) {
     callback(
       permission === 'media'
       && audioOnly
-      && isQwenAudioAgentUrl(source),
+      && isDesktopRendererUrl(source),
     )
   })
 }
@@ -116,11 +124,12 @@ async function showUnavailable(window) {
 
 async function loadQwenAudioAgent(window) {
   try {
+    if (!rendererServer) throw new Error('desktop renderer is unavailable')
     const settings = parseSettings(
       readFileSync(runtimeEnvironment.configPath, 'utf8'),
       process.env,
     )
-    await window.loadURL(desktopOrbUrl(appOrigin, {
+    await window.loadURL(desktopOrbUrl(rendererServer.baseUrl, {
       orbStyle: settings.orbStyle,
     }))
     clearTimeout(reconnectTimer)
@@ -171,7 +180,7 @@ function createWindow() {
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', (event, url) => {
-    if (isQwenAudioAgentUrl(url) || url.startsWith(fallbackUrl)) return
+    if (isDesktopRendererUrl(url) || url.startsWith(fallbackUrl)) return
     event.preventDefault()
     if (isSafeExternalUrl(url)) void shell.openExternal(url)
   })
@@ -340,7 +349,11 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus()
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    rendererServer = await startDesktopRendererServer({
+      webRoot,
+      target: () => appOrigin,
+    })
     if (process.platform === 'darwin' && process.defaultApp) {
       app.setActivationPolicy('accessory')
       app.dock?.hide()
@@ -360,5 +373,10 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('before-quit', () => {
+    void rendererServer?.close()
+    rendererServer = null
   })
 }
