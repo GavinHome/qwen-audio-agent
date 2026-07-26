@@ -1,0 +1,174 @@
+import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import test from 'node:test'
+import {
+  assertGatewayCompatibility,
+  ensureRuntime,
+  ManagedRuntime,
+  resolveBackend,
+} from '../src/runtime.mjs'
+
+function childProcess() {
+  const child = new EventEmitter()
+  child.exitCode = null
+  child.signalCode = null
+  child.kill = signal => {
+    child.signalCode = signal
+  }
+  return child
+}
+
+function health(overrides = {}) {
+  return {
+    ok: true,
+    voiceConfigured: true,
+    backend: {
+      kind: 'opencode',
+      mode: 'managed',
+      baseUrl: 'http://127.0.0.1:4096',
+      ok: true,
+      ...overrides,
+    },
+  }
+}
+
+const options = {
+  url: 'http://127.0.0.1:3101',
+  backend: 'opencode',
+  backendMode: 'managed',
+  backendUrl: 'http://127.0.0.1:4096',
+}
+
+function dependencies(overrides = {}) {
+  return {
+    root: '/repo',
+    env: { DASHSCOPE_API_KEY: 'key' },
+    loadEnvironment: () => {},
+    requireCredential: () => {},
+    ...overrides,
+  }
+}
+
+test('reuses one compatible healthy Gateway without starting processes', async () => {
+  const calls = []
+  const runtime = await ensureRuntime(options, {
+    ...dependencies(),
+    fetchImpl: async () => ({ json: async () => health() }),
+    spawnImpl: (...args) => {
+      calls.push(args)
+      return childProcess()
+    },
+  })
+  assert.equal(runtime.ownsProcesses, false)
+  assert.deepEqual(calls, [])
+})
+
+test('reuses a managed Gateway after it selected a private free backend port', async () => {
+  const runtime = await ensureRuntime(options, {
+    ...dependencies(),
+    fetchImpl: async () => ({
+      json: async () => health({
+        baseUrl: 'http://127.0.0.1:45123',
+      }),
+    }),
+  })
+  assert.equal(runtime.ownsProcesses, false)
+})
+
+test('starts only the Gateway and waits for its managed backend', async () => {
+  const calls = []
+  let reads = 0
+  const gateway = childProcess()
+  const runtime = await ensureRuntime(options, {
+    ...dependencies(),
+    fetchImpl: async () => {
+      reads += 1
+      if (reads === 1) throw new Error('offline')
+      return {
+        json: async () => health({
+          baseUrl: 'http://127.0.0.1:45123',
+        }),
+      }
+    },
+    spawnImpl: (command, args, spawnOptions) => {
+      calls.push([command, args, spawnOptions])
+      return gateway
+    },
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][0], process.execPath)
+  assert.deepEqual(calls[0][1], ['/repo/server/src/index.mjs'])
+  assert.equal(calls[0][2].env.OPENCODE_BASE_URL, 'http://127.0.0.1:4096')
+  assert.equal(runtime.ownsProcesses, true)
+})
+
+test('never starts a backend beside an existing Gateway', async () => {
+  await assert.rejects(
+    ensureRuntime(options, {
+      ...dependencies(),
+      fetchImpl: async () => ({
+        json: async () => health({ ok: false }),
+      }),
+    }),
+    /Gateway 管理的后台 Agent 未就绪/,
+  )
+})
+
+test('rejects an existing Gateway with different ownership settings', async () => {
+  await assert.rejects(
+    ensureRuntime(options, {
+      ...dependencies(),
+      fetchImpl: async () => ({
+        json: async () => health({
+          kind: 'openclaw',
+          baseUrl: 'http://127.0.0.1:18789',
+        }),
+      }),
+    }),
+    /与当前配置.*不一致/,
+  )
+})
+
+test('derives selected backend configuration', () => {
+  assert.deepEqual(resolveBackend({
+    backend: 'openclaw',
+    backendMode: 'compatible',
+    backendAgent: 'build',
+    backendUrl: 'http://localhost:18789/path',
+  }, {}), {
+    protocol: 'openclaw',
+    mode: 'compatible',
+    agentId: 'build',
+    baseUrl: 'http://localhost:18789',
+  })
+})
+
+test('requires complete identity before reusing a Gateway', () => {
+  assert.throws(
+    () => assertGatewayCompatibility({ backend: { ok: true } }, {
+      protocol: 'opencode',
+      baseUrl: 'http://127.0.0.1:4096',
+    }),
+    /未报告完整/,
+  )
+})
+
+test('stops the complete POSIX process group for the Gateway', () => {
+  const child = childProcess()
+  child.pid = 4321
+  const signals = []
+  const runtime = new ManagedRuntime([child], {
+    platform: 'darwin',
+    killImpl: (pid, signal) => signals.push([pid, signal]),
+  })
+  runtime.close('SIGINT')
+  assert.deepEqual(signals, [[-4321, 'SIGINT']])
+})
+
+test('uses direct child termination on Windows', () => {
+  const child = childProcess()
+  child.pid = 4321
+  const runtime = new ManagedRuntime([child], { platform: 'win32' })
+  runtime.close()
+  assert.equal(child.signalCode, 'SIGTERM')
+})

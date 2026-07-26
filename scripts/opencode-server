@@ -1,0 +1,124 @@
+#!/bin/sh
+set -eu
+
+QWEN_AUDIO_AGENT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+OPENCODE_SOURCE_DIR=${OPENCODE_SOURCE_DIR:-"$QWEN_AUDIO_AGENT_ROOT/../opencode"}
+OPENCODE_PORT=${OPENCODE_PORT:-4096}
+OPENCODE_RUNTIME=${OPENCODE_RUNTIME:-package}
+
+if [ "${QWEN_AUDIO_AGENT_ENV_LOADED:-}" != "1" ]; then
+  if [ -f "$QWEN_AUDIO_AGENT_ROOT/.env.local" ]; then
+    set -a
+    . "$QWEN_AUDIO_AGENT_ROOT/.env.local"
+    set +a
+  elif [ -f "$QWEN_AUDIO_AGENT_ROOT/.env" ]; then
+    set -a
+    . "$QWEN_AUDIO_AGENT_ROOT/.env"
+    set +a
+  fi
+  export QWEN_AUDIO_AGENT_ENV_LOADED=1
+fi
+
+export OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR:-"$QWEN_AUDIO_AGENT_ROOT/config/opencode"}
+# OpenCode merges this qwen-audio-agent overlay with the user's normal global config,
+# preserving their MCP servers, skills, permissions and plugins. Isolation is
+# available as an explicit troubleshooting option for conflicting user config.
+if [ -n "${QWEN_AUDIO_AGENT_OPENCODE_XDG_CONFIG_HOME:-}" ]; then
+  export XDG_CONFIG_HOME="$QWEN_AUDIO_AGENT_OPENCODE_XDG_CONFIG_HOME"
+elif [ "${QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG:-false}" = "true" ]; then
+  export XDG_CONFIG_HOME="$QWEN_AUDIO_AGENT_ROOT/runtime/opencode-xdg"
+fi
+
+run_binary() {
+  exec "$OPENCODE_BIN" serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+}
+
+source_bun() {
+  if [ -n "${BUN_BIN:-}" ]; then
+    printf '%s\n' "$BUN_BIN"
+  elif command -v bun >/dev/null 2>&1; then
+    command -v bun
+  fi
+}
+
+source_ready() {
+  [ -f "$OPENCODE_SOURCE_DIR/packages/opencode/src/index.ts" ] \
+    && [ -e "$OPENCODE_SOURCE_DIR/node_modules/@opencode-ai/tui" ] \
+    && [ -n "$(source_bun)" ]
+}
+
+run_source() {
+  BUN_COMMAND=$(source_bun)
+  if [ -z "$BUN_COMMAND" ]; then
+    echo "OpenCode source mode requires Bun. Set BUN_BIN or install bun." >&2
+    exit 1
+  fi
+  if [ ! -e "$OPENCODE_SOURCE_DIR/node_modules/@opencode-ai/tui" ]; then
+    echo "OpenCode source dependencies are missing. Run 'bun install' in $OPENCODE_SOURCE_DIR." >&2
+    exit 1
+  fi
+  cd "$OPENCODE_SOURCE_DIR/packages/opencode"
+  exec "$BUN_COMMAND" run --conditions=browser ./src/index.ts serve \
+    --hostname 127.0.0.1 \
+    --port "$OPENCODE_PORT" \
+    "$@"
+}
+
+run_package() {
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "OpenCode package mode requires npx." >&2
+    exit 1
+  fi
+  PACKAGE_VERSION=${OPENCODE_PACKAGE_VERSION:-1.18.4}
+  exec npx --yes "opencode-ai@$PACKAGE_VERSION" serve \
+    --hostname 127.0.0.1 \
+    --port "$OPENCODE_PORT" \
+    "$@"
+}
+
+case "$OPENCODE_RUNTIME" in
+  binary)
+    if [ -z "${OPENCODE_BIN:-}" ]; then
+      echo "OPENCODE_RUNTIME=binary requires OPENCODE_BIN." >&2
+      exit 1
+    fi
+    run_binary "$@"
+    ;;
+  source)
+    run_source "$@"
+    ;;
+  package)
+    run_package "$@"
+    ;;
+  installed)
+    if ! command -v opencode >/dev/null 2>&1; then
+      echo "OPENCODE_RUNTIME=installed requires opencode on PATH." >&2
+      exit 1
+    fi
+    exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+    ;;
+  auto) ;;
+  *)
+    echo "Unknown OPENCODE_RUNTIME: $OPENCODE_RUNTIME" >&2
+    exit 1
+    ;;
+esac
+
+if [ -n "${OPENCODE_BIN:-}" ]; then
+  run_binary "$@"
+fi
+
+if source_ready; then
+  run_source "$@"
+fi
+
+if command -v opencode >/dev/null 2>&1; then
+  exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+fi
+
+if command -v npx >/dev/null 2>&1; then
+  run_package "$@"
+fi
+
+echo "OpenCode was not found. Set OPENCODE_BIN, install OpenCode, or install npm/npx." >&2
+exit 1

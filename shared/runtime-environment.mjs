@@ -1,0 +1,234 @@
+import { randomBytes } from 'node:crypto'
+import {
+  constants,
+  copyFileSync,
+  chmodSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import { parseEnv } from 'node:util'
+
+const SECRET_KEY = 'QWEN_AUDIO_AGENT_AUTH_SECRET'
+const USER_CONFIG_TEMPLATE = [
+  '# qwen-audio-agent 用户配置',
+  'DASHSCOPE_API_KEY=',
+  'QWEN_AUDIO_REALTIME_PROVIDER=dashscope',
+  '',
+  '# 可选：AGENT_PROTOCOL=opencode 或 openclaw',
+  '# AGENT_PROTOCOL=opencode',
+  '# QWEN_AUDIO_AGENT_BACKEND_MODE=managed',
+  '# 兼容模式可选：QWEN_AUDIO_AGENT_BACKEND_AGENT=已有 Agent ID',
+  '',
+].join('\n')
+const USER_PROFILE_TEMPLATE = [
+  '# USER',
+  '',
+  '<!--',
+  '这是你的本地长期档案。只填写希望语音助手长期了解的稳定信息。',
+  '不要在这里保存密码、API Key、验证码或令牌。',
+  '-->',
+  '',
+  '## 基本信息',
+  '',
+  '- 称呼：',
+  '- 所在地：',
+  '',
+  '## 长期偏好',
+  '',
+  '- ',
+  '',
+  '## 常用项目',
+  '',
+  '- ',
+  '',
+].join('\n')
+
+function loadFile(path, env) {
+  let values
+  try {
+    values = parseEnv(readFileSync(path, 'utf8'))
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+  for (const [key, value] of Object.entries(values)) {
+    if (env[key] === undefined) env[key] = value
+  }
+  return true
+}
+
+export function userConfigDirectory(
+  env = process.env,
+  homeDirectory = homedir(),
+) {
+  if (env.QWAUDIO_CONFIG_DIR) return resolve(env.QWAUDIO_CONFIG_DIR)
+  const base = env.XDG_CONFIG_HOME
+    ? resolve(env.XDG_CONFIG_HOME)
+    : resolve(homeDirectory, '.config')
+  return resolve(base, 'qwaudio')
+}
+
+function ensureGeneratedSecret(env, configDirectory) {
+  if (env[SECRET_KEY]) return { generated: false, statePath: null }
+  const statePath = resolve(configDirectory, 'state.env')
+  loadFile(statePath, env)
+  if (env[SECRET_KEY]) {
+    try {
+      chmodSync(statePath, 0o600)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+    return { generated: false, statePath }
+  }
+
+  mkdirSync(configDirectory, { recursive: true, mode: 0o700 })
+  const secret = randomBytes(32).toString('hex')
+  try {
+    writeFileSync(statePath, `${SECRET_KEY}=${secret}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+    loadFile(statePath, env)
+    if (!env[SECRET_KEY]) {
+      throw new Error(`自动生成的本地认证配置无效：${statePath}`)
+    }
+    return { generated: false, statePath }
+  }
+  env[SECRET_KEY] = secret
+  return { generated: true, statePath }
+}
+
+function ensureUserConfig(configDirectory) {
+  const configPath = resolve(configDirectory, 'config.env')
+  try {
+    writeFileSync(configPath, USER_CONFIG_TEMPLATE, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  try {
+    chmodSync(configPath, 0o600)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  return configPath
+}
+
+function ensureUserProfile(configDirectory) {
+  const profilePath = resolve(configDirectory, 'USER.md')
+  try {
+    writeFileSync(profilePath, USER_PROFILE_TEMPLATE, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  try {
+    chmodSync(profilePath, 0o600)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  return profilePath
+}
+
+function migratePrivateFile(legacyPath, targetPath) {
+  try {
+    lstatSync(targetPath)
+    return false
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+
+  try {
+    if (!lstatSync(legacyPath).isFile()) return false
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+
+  try {
+    linkSync(legacyPath, targetPath)
+    unlinkSync(legacyPath)
+  } catch (error) {
+    if (['EEXIST', 'ENOENT'].includes(error.code)) return false
+    if (error.code !== 'EXDEV') throw error
+    try {
+      copyFileSync(legacyPath, targetPath, constants.COPYFILE_EXCL)
+      unlinkSync(legacyPath)
+    } catch (copyError) {
+      if (copyError.code === 'EEXIST') return false
+      throw copyError
+    }
+  }
+  chmodSync(targetPath, 0o600)
+  return true
+}
+
+export function loadRuntimeEnvironment({
+  root,
+  env = process.env,
+  homeDirectory = homedir(),
+  generateSecret = true,
+} = {}) {
+  if (!root) throw new Error('loadRuntimeEnvironment requires root')
+  const configDirectory = userConfigDirectory(env, homeDirectory)
+  const candidates = [
+    resolve(root, '.env.local'),
+    resolve(root, '.env'),
+    resolve(configDirectory, 'config.env'),
+  ]
+  const loadedFiles = candidates.filter(path => loadFile(path, env))
+  mkdirSync(configDirectory, { recursive: true, mode: 0o700 })
+  const configPath = ensureUserConfig(configDirectory)
+  const userProfilePath = ensureUserProfile(configDirectory)
+  const frontendMemoryPath = resolve(configDirectory, 'frontend-memory.json')
+  const taskStatePath = resolve(configDirectory, 'tasks.json')
+  const migratedFiles = [
+    [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
+    [resolve(root, 'runtime/tasks.json'), taskStatePath],
+  ].filter(([legacyPath, targetPath]) => (
+    migratePrivateFile(legacyPath, targetPath)
+  )).map(([, targetPath]) => targetPath)
+  const secret = generateSecret
+    ? ensureGeneratedSecret(env, configDirectory)
+    : { generated: false, statePath: null }
+  return {
+    configDirectory,
+    configPath,
+    userProfilePath,
+    frontendMemoryPath,
+    taskStatePath,
+    migratedFiles,
+    loadedFiles,
+    generatedSecret: secret.generated,
+    statePath: secret.statePath,
+  }
+}
+
+export function hasDashScopeCredential(env = process.env) {
+  return Boolean(
+    env.QWEN_AUDIO_REALTIME_API_KEY
+    || env.DASHSCOPE_API_KEY,
+  )
+}
+
+export function requireDashScopeCredential(env = process.env) {
+  if (hasDashScopeCredential(env)) return
+  throw new Error(
+    '缺少 DASHSCOPE_API_KEY。请运行 qwenaudio config 查看配置文件位置。',
+  )
+}

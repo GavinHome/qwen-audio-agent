@@ -1,0 +1,268 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { TaskManager } from '../src/task/task-manager.mjs'
+
+test('serializes work in the same coordinator lane while accepting immediately', async () => {
+  const manager = new TaskManager()
+  const order = []
+  let releaseFirst
+  const first = manager.create({
+    objective: 'A',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async (_objective, { onEvent }) => {
+      order.push('A:start')
+      onEvent({
+        type: 'backend.activity',
+        activity: { id: 'tool', kind: 'tool', tool: 'read', status: 'running' },
+      })
+      await new Promise(resolve => {
+        releaseFirst = resolve
+      })
+      order.push('A:end')
+      return { content: 'A done' }
+    },
+  })
+  const second = manager.create({
+    objective: 'B',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      order.push('B:start')
+      return { content: 'B done' }
+    },
+  })
+  assert.equal(first.status, 'queued')
+  assert.equal(second.status, 'queued')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.get(first.id).status, 'running')
+  assert.equal(manager.get(second.id).status, 'queued')
+  assert.equal(manager.get(first.id).activity[0].tool, 'read')
+  releaseFirst()
+  await Promise.all([manager.wait(first.id), manager.wait(second.id)])
+  assert.deepEqual(order, ['A:start', 'A:end', 'B:start'])
+})
+
+test('cancels queued work without starting it', async () => {
+  const manager = new TaskManager({ maxConcurrent: 1 })
+  let releaseFirst
+  let secondStarted = false
+  const first = manager.create({
+    objective: 'A',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => new Promise(resolve => {
+      releaseFirst = resolve
+    }),
+  })
+  const second = manager.create({
+    objective: 'B',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => {
+      secondStarted = true
+      return { content: 'B done' }
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.get(second.id).status, 'queued')
+  assert.equal(manager.cancel(second.id, { ownerId: 'owner' }).status, 'cancelled')
+  releaseFirst({ content: 'A done' })
+  await manager.wait(first.id)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(secondStarted, false)
+  assert.equal(manager.get(second.id).notificationStatus, 'none')
+})
+
+test('aborts running work and only then releases its coordinator lane', async () => {
+  const manager = new TaskManager()
+  let aborted = false
+  let secondStarted = false
+  const first = manager.create({
+    objective: 'A',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async (_objective, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => {
+        aborted = true
+        reject(signal.reason)
+      }, { once: true })
+    }),
+  })
+  const second = manager.create({
+    objective: 'B',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      secondStarted = true
+      return { content: 'B done' }
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  manager.cancel(first.id, { ownerId: 'owner' })
+  assert.equal(manager.get(first.id).status, 'cancelled')
+  assert.equal(aborted, true)
+  assert.equal(secondStarted, false)
+  await manager.wait(second.id)
+  assert.equal(secondStarted, true)
+})
+
+test('claims a completed result once and releases an unplayed claim', async () => {
+  const manager = new TaskManager()
+  const task = manager.create({
+    objective: '完成工作',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => ({ content: '结果' }),
+  })
+  await manager.wait(task.id)
+  const claimed = manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    claimantId: 'voice-one',
+  })
+  assert.equal(claimed.length, 1)
+  manager.releaseNotificationClaims([task.id], { claimantId: 'voice-one' })
+  assert.equal(manager.get(task.id).notificationStatus, 'pending')
+})
+
+test('a new voice session can deliver unfinished results for the same owner', async () => {
+  const manager = new TaskManager()
+  const task = manager.create({
+    objective: '跨会话工作',
+    ownerId: 'owner',
+    sessionId: 'old-voice-session',
+    runner: async () => ({ content: '结果' }),
+  })
+  await manager.wait(task.id)
+  const claimed = manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'new-voice-session',
+    includeOtherSessions: true,
+    claimantId: 'new-client',
+  })
+  assert.equal(claimed[0].id, task.id)
+})
+
+test('prefers the originating session unless cross-session recovery is explicit', async () => {
+  const manager = new TaskManager()
+  const task = manager.create({
+    objective: '原会话结果',
+    ownerId: 'owner',
+    sessionId: 'original',
+    runner: async () => ({ content: '结果' }),
+  })
+  await manager.wait(task.id)
+  assert.equal(manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'other',
+    claimantId: 'other-client',
+  }).length, 0)
+  assert.equal(manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'original',
+    claimantId: 'original-client',
+  })[0].id, task.id)
+})
+
+test('reclaims an expired notification delivery lease', async () => {
+  const manager = new TaskManager({ notificationClaimTtlMs: 1 })
+  const task = manager.create({
+    objective: '租约恢复',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => ({ content: '结果' }),
+  })
+  await manager.wait(task.id)
+  manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    claimantId: 'stale-client',
+  })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  const reclaimed = manager.claimNotifications({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    claimantId: 'new-client',
+  })
+  assert.equal(reclaimed[0].id, task.id)
+})
+
+test('does not evict pending notifications to satisfy delivered history limit', async () => {
+  const manager = new TaskManager({ maxTerminalTasksPerOwner: 1 })
+  const tasks = ['一', '二'].map(objective => manager.create({
+    objective,
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => ({ content: '结果' }),
+  }))
+  await Promise.all(tasks.map(task => manager.wait(task.id)))
+  manager.prune()
+  assert.equal(manager.list({ ownerId: 'owner' }).length, 2)
+})
+
+test('reuses a persisted submission key instead of running duplicate work', async () => {
+  let saved = []
+  let runs = 0
+  const store = {
+    load: () => saved,
+    save: tasks => {
+      saved = structuredClone(tasks)
+    },
+  }
+  const first = new TaskManager({ store })
+  const task = first.create({
+    objective: '只执行一次',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    submissionKey: 'delegation:voice:turn-one',
+    runner: async () => {
+      runs += 1
+      return { content: '完成' }
+    },
+  })
+  await first.wait(task.id)
+
+  const restored = new TaskManager({ store })
+  const duplicate = restored.create({
+    objective: '不要再次执行',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    submissionKey: 'delegation:voice:turn-one',
+    runner: async () => {
+      runs += 1
+      return { content: '重复' }
+    },
+  })
+  assert.equal(duplicate.id, task.id)
+  assert.equal(duplicate.reused, true)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(runs, 1)
+})
+
+test('listing tasks does not rewrite unchanged persistent state', async () => {
+  let saves = 0
+  const manager = new TaskManager({
+    store: {
+      load: () => [],
+      save: () => {
+        saves += 1
+      },
+    },
+  })
+  const task = manager.create({
+    objective: '查询',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async () => ({ content: '结果' }),
+  })
+  await manager.wait(task.id)
+  const before = saves
+  manager.list({ ownerId: 'owner' })
+  manager.list({ ownerId: 'owner' })
+  assert.equal(saves, before)
+})

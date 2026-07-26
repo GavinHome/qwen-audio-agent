@@ -1,0 +1,25 @@
+node_modules/
+web/dist/
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+runtime/
+*.log
+.DS_Store
+config/openclaw-workspace/
+
+# Agent workspaces create user deliverables at runtime.
+config/opencode-workspace/*
+!config/opencode-workspace/AGENTS.md
+config/openclaw-workspace/*
+!config/openclaw-workspace/AGENTS.md
+testws/
+config/opencode/opencode.jsonc
+config/opencode/node_modules/
+config/opencode/bun.lock
+config/opencode/.gitignore
+config/opencode/package.json
+config/opencode/package-lock.json
+bun.lock

@@ -1,0 +1,70 @@
+{
+  "name": "qwen-audio-agent",
+  "version": "0.2.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "qwenaudio": "cli/bin/qwenaudio.mjs"
+  },
+  "files": [
+    "cli/bin/",
+    "cli/src/",
+    "cli/package.json",
+    "config/frontend-agent/",
+    "config/openclaw.json5",
+    "config/openclaw-workspace/AGENTS.md",
+    "config/opencode/agents/",
+    "config/opencode/plugin/",
+    "config/opencode-workspace/AGENTS.md",
+    "docs/configuration.md",
+    "server/src/",
+    "server/package.json",
+    "shared/",
+    "scripts/",
+    "tui/fullscreen/",
+    "tui/native/",
+    "tui/src/",
+    "tui/package.json",
+    "web/dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.4",
+  "workspaces": [
+    "server",
+    "web",
+    "tui",
+    "desktop",
+    "cli"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev --workspace server\" \"npm run dev --workspace web\"",
+    "build": "npm run build --workspace web",
+    "prepack": "npm run build",
+    "start": "node scripts/start.mjs",
+    "pregateway": "npm run build",
+    "gateway": "npm run start --workspace server",
+    "desktop": "npm run start --workspace desktop",
+    "cli": "npm run start --workspace @qwen-audio-agent/cli --",
+    "tui": "npm run start --workspace tui --",
+    "backend": "./scripts/backend",
+    "openclaw": "./scripts/openclaw-gateway",
+    "opencode": "./scripts/opencode-server",
+    "test": "npm run test --workspace server && npm run test --workspace web && npm run test --workspace tui && npm run test --workspace desktop && npm run test --workspace @qwen-audio-agent/cli",
+    "release:check": "./scripts/release-check",
+    "tui:full": "npm run fullscreen --workspace tui --",
+    "tui:text": "npm run text --workspace tui --"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.4",
+    "express": "^4.22.2",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

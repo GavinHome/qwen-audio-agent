@@ -1,0 +1,1059 @@
+import { WebSocket, WebSocketServer } from 'ws'
+import { randomUUID } from 'node:crypto'
+import { AnnouncementManager } from './announcement/announcement-manager.mjs'
+import { AnnouncementWindow } from './announcement/announcement-window.mjs'
+import { config } from '../core/config.mjs'
+import { conversationSync } from '../conversation/conversation-sync.mjs'
+import { normalizeClientContext } from '../conversation/frontend-agent-context.mjs'
+import { createRealtimeFrontend } from './realtime-provider.mjs'
+import { isAllowedOrigin } from '../core/request-security.mjs'
+import { taskManager } from '../task/task-manager.mjs'
+import { recordTaskResult } from '../conversation/task-result-projector.mjs'
+import { ToolCallHandler } from './tools/tool-call-handler.mjs'
+import { TurnTranscripts } from './tools/turn-transcripts.mjs'
+import { TurnCorrelation } from './turn-correlation.mjs'
+import { streamingInputTranscript } from './input-transcript.mjs'
+import {
+  ensureResponseContext,
+  mergeResponseContext,
+} from './response-context.mjs'
+import {
+  ActiveVoiceClients,
+  clientVoiceCapabilities,
+} from './active-voice-clients.mjs'
+
+const MAX_PENDING_AUDIO_CHUNKS = 30
+const RESPONSE_START_WATCHDOG_MS = 12000
+const RESPONSE_CONTEXT_CLEANUP_MS = 30000
+
+function send(ws, event) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
+}
+
+function responseId(event) {
+  return event.response_id || event.response?.id || event.item?.response_id || ''
+}
+
+function rejectUpgrade(socket, status, message) {
+  socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${message}`)
+  socket.destroy()
+}
+
+function clientDescriptor(event = {}) {
+  const type = ['desktop', 'cli', 'web'].includes(event.clientType)
+    ? event.clientType
+    : 'web'
+  const fallback = {
+    desktop: '桌面端',
+    cli: 'CLI',
+    web: 'WebUI',
+  }[type]
+  const label = String(event.clientLabel || fallback).trim().slice(0, 40)
+  return {
+    type,
+    label: label || fallback,
+    instanceId: String(event.clientInstanceId || '').trim().slice(0, 80) || null,
+  }
+}
+
+export function attachRealtimeGateway(server, {
+  identityManager,
+  memoryStore,
+  coordinator,
+  coordinatorAvailable = async () => true,
+}) {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
+  const activeVoiceClients = new ActiveVoiceClients()
+  const voiceConnections = new Map()
+
+  const broadcastVoiceOwnership = ownerId => {
+    const active = activeVoiceClients.active(ownerId)
+    const holder = active?.descriptor || null
+    for (const client of voiceConnections.get(ownerId) || []) {
+      send(client.ws, {
+        type: 'voice.ownership',
+        state: active === client
+          ? 'active'
+          : holder ? 'busy' : 'available',
+        holder,
+      })
+    }
+  }
+
+  server.on('upgrade', (request, socket, head) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (url.pathname !== '/api/realtime') return
+    if (!isAllowedOrigin(request)) {
+      rejectUpgrade(socket, '403 Forbidden', 'origin not allowed')
+      return
+    }
+    const identity = identityManager.resolveUpgrade(request)
+    if (!identity) {
+      rejectUpgrade(socket, '401 Unauthorized', 'identity required')
+      return
+    }
+    wss.handleUpgrade(request, socket, head, ws => {
+      wss.emit('connection', ws, url, identity)
+    })
+  })
+
+  wss.on('connection', (ws, url, identity) => {
+    const ownerId = identity.ownerId
+    const sessionId = url.searchParams.get('sessionId') || 'main'
+    let frontend
+    let connectPromise
+    let pendingAudio = []
+    let turnId = ''
+    let turnGeneration = 0
+    let committedTurnId = ''
+    let committedTurnGeneration = 0
+    let userSpeaking = false
+    let inputEnabled = false
+    let outputEnabled = false
+    let textOnlySession = false
+    let descriptor = clientDescriptor()
+    let responseTurnCandidate = null
+    let responseStartWatchdog = null
+    const announcementWindow = new AnnouncementWindow()
+    const playbackTurns = new Map()
+    const notificationClaimantId = `voice_${randomUUID()}`
+    let clientContext = normalizeClientContext()
+    const responseContexts = new Map()
+    const inputTurns = new TurnCorrelation()
+    const transcripts = new TurnTranscripts()
+    const activeTaskContext = () => taskManager.list({
+      ownerId,
+      sessionId,
+      active: true,
+    }).slice(0, 5)
+    const activeTaskSignature = tasks => JSON.stringify(tasks.map(task => [
+      task.id,
+      task.status,
+    ]))
+    let lastActiveTaskSignature = ''
+    const refreshActiveTaskContext = () => {
+      if (!frontend?.ready) return
+      const activeTasks = activeTaskContext()
+      const signature = activeTaskSignature(activeTasks)
+      if (signature === lastActiveTaskSignature) return
+      lastActiveTaskSignature = signature
+      frontend.updateAgentContext({ activeTasks })
+    }
+    const announcements = new AnnouncementManager({
+      getFrontend: () => frontend,
+      isDeliveryBlocked: () => !outputEnabled || announcementWindow.isBlocked(),
+      announceIntoContext: config.announceIntoContext,
+      resultContextMaxChars: config.resultContextMaxChars,
+      maxBatchItems: config.announcementMaxBatchItems,
+      batchWindowMs: config.announcementBatchMs,
+      acknowledgementTimeoutMs: config.announcementAcknowledgementTimeoutMs,
+      maxRetryAttempts: config.announcementMaxRetryAttempts,
+      leaseRenewIntervalMs: Math.max(
+        1000,
+        Math.floor(config.taskNotificationClaimTtlMs / 3),
+      ),
+      onDelivered: taskIds => taskManager.markNotificationsDelivered(taskIds, {
+        claimantId: notificationClaimantId,
+      }),
+      onLeaseRenew: taskIds => taskManager.renewNotificationClaims(taskIds, {
+        claimantId: notificationClaimantId,
+      }),
+      onRelease: taskIds => taskManager.releaseNotificationClaims(taskIds, {
+        claimantId: notificationClaimantId,
+      }),
+      onError: error => send(ws, {
+        type: 'error',
+        message: `后台结果暂时无法播报，正在自动重试：${error.message}`,
+      }),
+    })
+    const voiceClient = {
+      ws,
+      descriptor,
+      deactivate: replacement => {
+        inputEnabled = false
+        outputEnabled = false
+        pendingAudio = []
+        announcementWindow.reset()
+        announcements.pause()
+        frontend?.cancel()
+        send(ws, { type: 'playback.clear' })
+        send(ws, {
+          type: 'voice.deactivated',
+          holder: replacement?.descriptor || null,
+        })
+      },
+    }
+    if (!voiceConnections.has(ownerId)) voiceConnections.set(ownerId, new Set())
+    voiceConnections.get(ownerId).add(voiceClient)
+
+    const activateVoiceClient = ({ takeover = false } = {}) => {
+      const result = activeVoiceClients.activate(
+        ownerId,
+        voiceClient,
+        { takeover },
+      )
+      inputEnabled = result.granted
+      outputEnabled = result.granted
+      broadcastVoiceOwnership(ownerId)
+      return result.granted
+    }
+    const releaseVoiceClient = () => {
+      inputEnabled = false
+      outputEnabled = false
+      if (activeVoiceClients.release(ownerId, voiceClient)) {
+        broadcastVoiceOwnership(ownerId)
+      }
+    }
+    const toolCalls = new ToolCallHandler({
+      taskManager,
+      ownerId,
+      sessionId,
+      transcripts,
+      getFrontend: () => frontend,
+      getTurnId: () => committedTurnId,
+      getTurnGeneration: () => committedTurnGeneration,
+      memoryStore,
+      getClientContext: () => clientContext,
+      getConversationContext: () => conversationSync.frontendContext({
+        ownerId,
+        sessionId,
+      }),
+      onMemoryChanged: () => frontend?.updateAgentContext({
+        memories: memoryStore?.list(ownerId) || [],
+      }),
+      coordinator,
+      coordinatorAvailable,
+    })
+    const currentTurn = () => ({
+      turnId,
+      turnGeneration,
+    })
+    const rememberInputTurn = (itemId, context) => {
+      inputTurns.remember(itemId, context)
+    }
+    const inputTurn = event => (
+      inputTurns.resolve(event.item_id, currentTurn())
+    )
+    const commitTurn = context => {
+      if (!context?.turnId) return
+      if (
+        committedTurnId === context.turnId
+        && committedTurnGeneration === context.turnGeneration
+      ) return
+      if (context.turnGeneration < committedTurnGeneration) return
+      committedTurnId = context.turnId
+      committedTurnGeneration = context.turnGeneration
+    }
+    const clearResponseCandidate = () => {
+      clearTimeout(responseStartWatchdog)
+      responseStartWatchdog = null
+      responseTurnCandidate = null
+    }
+    const expectResponseFor = context => {
+      clearResponseCandidate()
+      responseTurnCandidate = context
+      responseStartWatchdog = setTimeout(() => {
+        if (responseTurnCandidate !== context) return
+        clearResponseCandidate()
+        send(ws, {
+          type: 'error',
+          message: '实时模型没有开始回复，语音连接已自动恢复，请再说一次。',
+        })
+        send(ws, {
+          type: 'voice.state',
+          state: 'idle',
+          turnId: context.turnId,
+          origin: 'model',
+        })
+        const staleFrontend = frontend
+        frontend = null
+        staleFrontend?.close()
+        ensureFrontend().catch(error => send(ws, {
+          type: 'error',
+          message: error.message,
+        }))
+      }, RESPONSE_START_WATCHDOG_MS)
+      responseStartWatchdog.unref?.()
+    }
+
+    const queueNotification = task => {
+      if (task.status === 'completed') {
+        announcements.completed(task)
+      }
+      if (task.status === 'failed') announcements.failed(task)
+    }
+
+    const recordResult = task => recordTaskResult({
+      conversationSync,
+      ownerId,
+      sessionId,
+      task,
+    })
+
+    const contextTaskIds = context => (
+      context?.taskIds?.length ? context.taskIds : [context?.taskId].filter(Boolean)
+    )
+
+    const publicResponseContext = context => ({
+      turnId: context.turnId,
+      taskId: context.taskId,
+      taskIds: context.taskIds,
+      turnIds: context.turnIds,
+      origin: context.origin,
+      turnGeneration: context.turnGeneration,
+      deliverySequence: context.deliverySequence,
+    })
+
+    const fallbackResponseContext = () => ({
+      turnId: committedTurnId || turnId,
+      taskId: null,
+      origin: 'model',
+      turnGeneration: committedTurnId
+        ? committedTurnGeneration
+        : turnGeneration,
+    })
+
+    const emitAssistantTranscript = ({
+      id,
+      context,
+      content,
+      final,
+    }) => {
+      if (final) {
+        conversationSync.record({
+          ownerId,
+          sessionId,
+          id: `voice:assistant:${id}`,
+          role: 'assistant',
+          content,
+          source: context.origin === 'model' ? 'realtime-direct' : 'agent-presentation',
+          ...context,
+        })
+      }
+      send(ws, {
+        type: final ? 'transcript.final' : 'transcript.delta',
+        role: 'assistant',
+        content: content || '',
+        responseId: id,
+        ...publicResponseContext(context),
+      })
+    }
+
+    const flushPendingTranscripts = (id, context) => {
+      for (const transcript of context?.pendingTranscripts || []) {
+        emitAssistantTranscript({
+          id,
+          context,
+          content: transcript.content,
+          final: transcript.final,
+        })
+      }
+      if (context) context.pendingTranscripts = []
+    }
+
+    const finishResponseContextIfComplete = (id, context) => {
+      if (
+        context
+        && context.playbackEnded
+        && context.responseDone
+        && context.transcriptDone
+      ) {
+        responseContexts.delete(id)
+      }
+    }
+
+    const scheduleResponseContextCleanup = (id, context) => {
+      const timer = setTimeout(() => {
+        if (responseContexts.get(id) === context) responseContexts.delete(id)
+      }, RESPONSE_CONTEXT_CLEANUP_MS)
+      timer.unref?.()
+    }
+
+    const startPlayback = id => {
+      const context = responseContexts.get(id)
+      // A cancelled response remains as a short-lived tombstone so late
+      // provider audio and client receipts cannot resurrect it.
+      if (context?.suppressed) return
+      announcementWindow.startPlayback(id)
+      const playbackTurnId = context?.turnId || playbackTurns.get(id) || turnId
+      send(ws, {
+        type: 'voice.state',
+        state: 'speaking',
+        turnId: playbackTurnId,
+        origin: context?.origin || 'model',
+      })
+      if (!context || context.playbackStarted) return
+      context.playbackStarted = true
+      flushPendingTranscripts(id, context)
+    }
+
+    const cancelQueuedPlayback = id => {
+      const context = responseContexts.get(id)
+      announcementWindow.finishPlayback(id, {
+        hasFunctionCall: Boolean(context?.hasFunctionCall),
+      })
+      const playbackTurnId = playbackTurns.get(id) || turnId
+      playbackTurns.delete(id)
+      if (context?.origin === 'announcement') {
+        announcements.retryMany(contextTaskIds(context))
+      }
+      if (context?.origin === 'model' && context.playbackStarted) {
+        send(ws, {
+          type: 'response.interrupted',
+          responseId: id,
+          ...publicResponseContext(context),
+        })
+      }
+      if (context) {
+        context.suppressed = true
+        context.playbackEnded = true
+        context.pendingTranscripts = []
+        scheduleResponseContextCleanup(id, context)
+      }
+      send(ws, {
+        type: 'voice.state',
+        state: userSpeaking ? 'listening' : 'idle',
+        turnId: userSpeaking ? turnId : playbackTurnId,
+        origin: context?.origin || 'model',
+      })
+      const timer = setTimeout(
+        () => announcements.flush(),
+        config.announcementQuietMs,
+      )
+      timer.unref?.()
+    }
+
+    const finishPlayback = id => {
+      const playbackTurnId = playbackTurns.get(id) || turnId
+      const context = responseContexts.get(id)
+      if (context?.suppressed) {
+        playbackTurns.delete(id)
+        return
+      }
+      announcementWindow.finishPlayback(id, {
+        hasFunctionCall: Boolean(context?.hasFunctionCall),
+      })
+      playbackTurns.delete(id)
+      if (context) {
+        context.playbackEnded = true
+        if (context.origin === 'announcement') {
+          announcements.confirmMany(contextTaskIds(context))
+        }
+        finishResponseContextIfComplete(id, context)
+        if (responseContexts.get(id) === context) {
+          scheduleResponseContextCleanup(id, context)
+        }
+      }
+      send(ws, {
+        type: 'voice.state',
+        state: userSpeaking ? 'listening' : 'idle',
+        turnId: userSpeaking ? turnId : playbackTurnId,
+        origin: context?.origin || 'model',
+      })
+      const timer = setTimeout(
+        () => announcements.flush(),
+        config.announcementQuietMs,
+      )
+      timer.unref?.()
+    }
+
+    const claimPendingNotifications = (
+      taskIds,
+      { includeOtherSessions = !taskIds?.length } = {},
+    ) => {
+      if (!outputEnabled || !frontend?.ready) return
+      const claimed = taskManager.claimNotifications({
+        ownerId,
+        sessionId,
+        includeOtherSessions,
+        claimantId: notificationClaimantId,
+        taskIds,
+      })
+      claimed.forEach(task => {
+        recordResult(task)
+        queueNotification(task)
+      })
+    }
+
+    const unsubscribeTasks = taskManager.subscribe(event => {
+      const task = event.task
+      if (event.ownerId !== ownerId) return
+      if (event.type === 'task.notification.pending') {
+        if (task.sessionId === sessionId) {
+          claimPendingNotifications([task.id])
+        }
+        return
+      }
+      if (task.sessionId !== sessionId) return
+      send(ws, { type: event.type, task })
+      if (['task.completed', 'task.failed'].includes(event.type)) {
+        recordResult(task)
+        const inline = task.resultMetadata?.presentation?.inline
+        if (inline?.content) {
+          send(ws, {
+            type: 'timeline.inline',
+            item: {
+              id: `inline_${task.id}`,
+              taskId: task.id,
+              turnId: task.turnId || null,
+              ...inline,
+            },
+          })
+        }
+        claimPendingNotifications([task.id])
+      }
+      if ([
+        'task.running',
+        'task.progress',
+        'task.completed',
+        'task.failed',
+        'task.cancelled',
+      ].includes(event.type)) {
+        refreshActiveTaskContext()
+      }
+    })
+
+    const handleEvent = event => {
+      if (event.type === 'input_audio_buffer.speech_started') {
+        userSpeaking = true
+        clearResponseCandidate()
+        turnGeneration += 1
+        turnId = `voice-${Date.now()}-${turnGeneration}`
+        rememberInputTurn(event.item_id, currentTurn())
+        announcementWindow.beginTurn(turnId)
+        send(ws, { type: 'playback.clear' })
+        send(ws, { type: 'turn.started', turnId })
+        send(ws, { type: 'voice.state', state: 'listening', turnId })
+        frontend?.cancel()
+      } else if (event.type === 'input_audio_buffer.speech_stopped') {
+        const stoppedTurn = inputTurn(event)
+        userSpeaking = false
+        announcementWindow.endSpeech()
+        if (event.reason === 'turn_invalid') {
+          if (event.item_id) {
+            inputTurns.invalidate(event.item_id)
+          }
+          send(ws, {
+            type: 'transcript.discard',
+            role: 'user',
+            turnId: stoppedTurn.turnId,
+          })
+          send(ws, {
+            type: 'voice.state',
+            state: 'idle',
+            turnId: stoppedTurn.turnId,
+            origin: 'model',
+          })
+        } else {
+          expectResponseFor(stoppedTurn)
+          send(ws, {
+            type: 'voice.state',
+            state: 'thinking',
+            turnId: stoppedTurn.turnId,
+            origin: 'model',
+          })
+        }
+      } else if (event.type === 'input_audio_buffer.committed') {
+        const committedInputTurn = inputTurn(event)
+        userSpeaking = false
+        announcementWindow.endSpeech()
+        if (!inputTurns.isInvalid(event.item_id)) {
+          send(ws, {
+            type: 'voice.state',
+            state: 'thinking',
+            turnId: committedInputTurn.turnId,
+            origin: 'model',
+          })
+        }
+      } else if (event.type === 'conversation.item.ambient_audio_transcription.completed') {
+        inputTurns.complete(event.item_id, currentTurn())
+      } else if (
+        event.type === 'conversation.item.input_audio_transcription.delta'
+        || event.type === 'conversation.item.input_audio_transcription.text'
+      ) {
+        if (inputTurns.isInvalid(event.item_id)) return
+        const transcriptTurn = inputTurns.resolve(event.item_id, currentTurn())
+        const transcript = streamingInputTranscript(event)
+        if (!transcriptTurn?.turnId || !transcript) return
+        send(ws, {
+          type: 'transcript.delta',
+          role: 'user',
+          content: transcript,
+          turnId: transcriptTurn.turnId,
+          replace: true,
+        })
+      } else if (event.type === 'conversation.item.input_audio_transcription.completed') {
+        const completedInput = inputTurns.complete(event.item_id, currentTurn())
+        const transcriptTurn = completedInput.context
+        if (completedInput.invalid) return
+        const transcript = String(event.transcript || '').trim()
+        if (!transcript) {
+          send(ws, {
+            type: 'transcript.discard',
+            role: 'user',
+            turnId: transcriptTurn.turnId,
+          })
+          return
+        }
+        commitTurn(transcriptTurn)
+        transcripts.record(transcriptTurn.turnId, transcript)
+        conversationSync.record({
+          ownerId,
+          sessionId,
+          id: `voice:user:${transcriptTurn.turnId}`,
+          role: 'user',
+          content: transcript,
+          source: 'voice-user',
+          turnId: transcriptTurn.turnId,
+        })
+        send(ws, {
+          type: 'transcript.final',
+          role: 'user',
+          content: transcript,
+          turnId: transcriptTurn.turnId,
+        })
+      } else if (event.type === 'conversation.item.input_audio_transcription.failed') {
+        const failedInput = inputTurns.complete(event.item_id, currentTurn())
+        send(ws, {
+          type: 'transcript.discard',
+          role: 'user',
+          turnId: failedInput.context?.turnId,
+        })
+      } else if (event.type === 'response.created') {
+        const id = responseId(event)
+        const automaticResponse = (
+          (event.__voiceOrigin || 'model') === 'model'
+          && !event.__voiceContext?.turnId
+        )
+        const automaticTurn = automaticResponse
+          ? responseTurnCandidate
+          : null
+        const context = mergeResponseContext(responseContexts, id, {
+          turnId: event.__voiceContext?.turnId
+            || automaticTurn?.turnId
+            || committedTurnId
+            || turnId,
+          taskId: event.__voiceContext?.taskId || null,
+          origin: event.__voiceOrigin || 'model',
+          turnGeneration: Number.isInteger(event.__voiceContext?.turnGeneration)
+            ? event.__voiceContext.turnGeneration
+            : automaticTurn?.turnGeneration
+              ?? (committedTurnId ? committedTurnGeneration : turnGeneration),
+        })
+        if (automaticTurn) {
+          // Qwen may begin inference and emit a function call before its final
+          // ASR event. response.created proves Smart Turn accepted this turn.
+          commitTurn(automaticTurn)
+          clearResponseCandidate()
+        }
+        if (Array.isArray(event.__voiceContext?.taskIds)) {
+          context.taskIds = event.__voiceContext.taskIds
+        }
+        if (Array.isArray(event.__voiceContext?.turnIds)) {
+          context.turnIds = event.__voiceContext.turnIds
+        }
+        if (event.__voiceContext?.deliverySequence) {
+          context.deliverySequence = event.__voiceContext.deliverySequence
+        }
+        send(ws, {
+          type: 'response.started',
+          responseId: id,
+          ...publicResponseContext(context),
+        })
+      } else if (event.type === 'response.function_call_arguments.done') {
+        const id = responseId(event)
+        const callContext = responseContexts.get(id)
+          || { turnId: '', turnGeneration: -1 }
+        if (responseContexts.has(id)) {
+          responseContexts.get(id).hasFunctionCall = true
+        }
+        toolCalls.handle(event, callContext).catch(error => {
+          send(ws, { type: 'error', message: error.message })
+        })
+      } else if (
+        event.type === 'response.audio.delta'
+        || event.type === 'response.output_audio.delta'
+      ) {
+        const id = responseId(event)
+        const responseContext = ensureResponseContext(
+          responseContexts,
+          id,
+          fallbackResponseContext(),
+        )
+        if (responseContext?.suppressed) return
+        const responseTurnId = responseContext.turnId || turnId
+        if (id) {
+          responseContext.hasAudio = true
+          playbackTurns.set(id, responseTurnId)
+          announcementWindow.queueAudio(id, {
+            turnId: responseTurnId,
+            origin: responseContext.origin || 'model',
+          })
+        }
+        send(ws, {
+          type: 'audio.delta',
+          audio: event.delta,
+          sampleRate: 24000,
+          responseId: id,
+          turnId: responseTurnId,
+        })
+      } else if (
+        event.type === 'response.audio_transcript.delta'
+        || event.type === 'response.output_audio_transcript.delta'
+      ) {
+        const id = responseId(event)
+        const context = ensureResponseContext(
+          responseContexts,
+          id,
+          fallbackResponseContext(),
+        )
+        if (context.suppressed) return
+        if (!context.playbackStarted) {
+          context.pendingTranscripts.push({
+            content: event.delta || '',
+            final: false,
+          })
+        } else {
+          emitAssistantTranscript({
+            id,
+            context,
+            content: event.delta || '',
+            final: false,
+          })
+        }
+      } else if (
+        event.type === 'response.audio_transcript.done'
+        || event.type === 'response.output_audio_transcript.done'
+      ) {
+        const id = responseId(event)
+        const context = ensureResponseContext(
+          responseContexts,
+          id,
+          fallbackResponseContext(),
+        )
+        if (context.suppressed) return
+        context.transcriptDone = true
+        if (!context.playbackStarted) {
+          context.pendingTranscripts.push({
+            content: event.transcript || '',
+            final: true,
+          })
+        } else {
+          emitAssistantTranscript({
+            id,
+            context,
+            content: event.transcript || '',
+            final: true,
+          })
+        }
+        finishResponseContextIfComplete(id, context)
+      } else if (event.type === 'response.text.delta') {
+        const id = responseId(event)
+        const context = ensureResponseContext(
+          responseContexts,
+          id,
+          fallbackResponseContext(),
+        )
+        if (context.suppressed) return
+        emitAssistantTranscript({
+          id,
+          context,
+          content: event.delta || '',
+          final: false,
+        })
+      } else if (event.type === 'response.text.done') {
+        const id = responseId(event)
+        const context = ensureResponseContext(
+          responseContexts,
+          id,
+          fallbackResponseContext(),
+        )
+        if (context.suppressed) return
+        context.transcriptDone = true
+        emitAssistantTranscript({
+          id,
+          context,
+          content: event.text || '',
+          final: true,
+        })
+      } else if (event.type === 'response.done') {
+        const id = responseId(event)
+        const responseContext = responseContexts.get(id)
+        const responseTurnId = responseContext?.turnId || turnId
+        const responseStatus = event.response?.status
+        const responseFailed = ['failed', 'cancelled', 'incomplete'].includes(
+          responseStatus,
+        )
+        if (!responseContext?.suppressed) {
+          send(ws, { type: 'audio.done', responseId: id, turnId: responseTurnId })
+          if (!responseContext?.hasAudio) {
+            send(ws, {
+              type: 'voice.state',
+              state: 'idle',
+              turnId: responseTurnId,
+              origin: responseContext?.origin || 'model',
+            })
+          }
+        }
+        if (responseContext?.hasAudio && !responseFailed) {
+          responseContext.responseDone = true
+          finishResponseContextIfComplete(id, responseContext)
+        } else {
+          const completedTextAnnouncement = (
+            responseContext?.origin === 'announcement'
+            && textOnlySession
+            && !responseFailed
+          )
+          if (
+            responseContext
+            && !responseFailed
+            && (
+              responseContext.origin !== 'announcement'
+              || completedTextAnnouncement
+            )
+          ) {
+            flushPendingTranscripts(id, responseContext)
+          }
+          if (responseContext?.origin === 'announcement') {
+            if (completedTextAnnouncement) {
+              announcements.confirmMany(contextTaskIds(responseContext))
+            } else {
+              announcements.retryMany(contextTaskIds(responseContext))
+            }
+          }
+          responseContexts.delete(id)
+        }
+        announcementWindow.responseDone({
+          turnId: responseTurnId,
+          origin: responseContext?.origin || 'model',
+          hasAudio: Boolean(responseContext?.hasAudio),
+          hasFunctionCall: Boolean(responseContext?.hasFunctionCall),
+          suppressed: Boolean(responseContext?.suppressed),
+          failed: responseFailed,
+        })
+        const timer = setTimeout(
+          () => announcements.flush(),
+          config.announcementQuietMs,
+        )
+        timer.unref?.()
+      } else if (event.type === 'error') {
+        // 取消撞上已完成响应的良性竞态:提供方回"无进行中响应",对用户无意义,
+        // 也不应触发失败簿记(此时本就没有响应在跑)。
+        const benignCancelRace = /no active response/i.test(
+          event.error?.message || event.message || '',
+        )
+        if (benignCancelRace) return
+        const id = responseId(event)
+        const context = responseContexts.get(id)
+        if (context?.origin === 'announcement') {
+          send(ws, { type: 'playback.clear' })
+          announcementWindow.finishPlayback(id)
+          playbackTurns.delete(id)
+          responseContexts.delete(id)
+          announcements.retryMany(contextTaskIds(context))
+        } else {
+          if (id && context?.hasAudio) {
+            send(ws, {
+              type: 'audio.done',
+              responseId: id,
+              turnId: context.turnId || turnId,
+            })
+          }
+          announcementWindow.responseDone({
+            turnId: context?.turnId || turnId,
+            origin: context?.origin || 'model',
+            hasAudio: Boolean(context?.hasAudio),
+            hasFunctionCall: Boolean(context?.hasFunctionCall),
+            failed: true,
+          })
+        }
+        const timer = setTimeout(
+          () => announcements.flush(),
+          config.announcementQuietMs,
+        )
+        timer.unref?.()
+        send(ws, { type: 'error', message: event.error?.message || event.message || '实时语音服务错误' })
+      }
+    }
+
+    const ensureFrontend = () => {
+      if (frontend?.ready) return Promise.resolve()
+      if (connectPromise) return connectPromise
+      const activeTasks = activeTaskContext()
+      lastActiveTaskSignature = activeTaskSignature(activeTasks)
+      frontend = createRealtimeFrontend({
+        agentContext: {
+          client: clientContext,
+          textOnly: textOnlySession,
+          memories: memoryStore?.list(ownerId) || [],
+          recentMessages: conversationSync.frontendContext({ ownerId, sessionId }),
+          activeTasks,
+        },
+        onEvent: handleEvent,
+        onError: error => send(ws, { type: 'error', message: error.message }),
+        onClose: () => send(ws, { type: 'voice.state', state: 'idle' }),
+      })
+      connectPromise = frontend.connect()
+        .then(() => {
+          refreshActiveTaskContext()
+          pendingAudio.forEach(audio => frontend.appendAudio(audio))
+          pendingAudio = []
+          if (outputEnabled) claimPendingNotifications()
+          send(ws, {
+            type: 'voice.ready',
+            inputSampleRate: frontend.provider.inputSampleRate,
+          })
+        })
+        .finally(() => {
+          connectPromise = null
+        })
+      return connectPromise
+    }
+
+    send(ws, { type: 'voice.state', state: 'idle' })
+    ws.on('message', raw => {
+      let event
+      try {
+        event = JSON.parse(raw.toString())
+      } catch {
+        return
+      }
+      if (event.type === 'connect') {
+        descriptor = clientDescriptor(event)
+        voiceClient.descriptor = descriptor
+        textOnlySession = event.textOnly === true
+        const capabilities = clientVoiceCapabilities({
+          voiceEnabled: event.voiceEnabled,
+          textOnly: textOnlySession,
+        })
+        if (capabilities.participatesInVoiceArbitration) {
+          activateVoiceClient({ takeover: event.takeover === true })
+        } else {
+          releaseVoiceClient()
+          inputEnabled = capabilities.inputEnabled
+          outputEnabled = capabilities.outputEnabled
+          broadcastVoiceOwnership(ownerId)
+        }
+        clientContext = normalizeClientContext({
+          timeZone: event.timeZone,
+          locale: event.locale,
+        })
+        frontend?.updateAgentContext({
+          client: clientContext,
+          textOnly: textOnlySession,
+        })
+        if (inputEnabled || outputEnabled) {
+          ensureFrontend().catch(error => send(ws, {
+            type: 'error',
+            message: error.message,
+          }))
+        }
+      } else if (event.type === 'unmute') {
+        if (textOnlySession) {
+          inputEnabled = false
+          outputEnabled = true
+          broadcastVoiceOwnership(ownerId)
+        } else {
+          activateVoiceClient({ takeover: event.takeover === true })
+        }
+        ensureFrontend()
+          .then(() => {
+            claimPendingNotifications()
+            announcements.flush()
+          })
+          .catch(error => send(ws, { type: 'error', message: error.message }))
+      } else if (event.type === 'audio.append') {
+        if (!inputEnabled || !activeVoiceClients.isActive(ownerId, voiceClient)) {
+          return
+        }
+        if (frontend?.ready) frontend.appendAudio(event.audio)
+        else {
+          pendingAudio.push(event.audio)
+          if (pendingAudio.length > MAX_PENDING_AUDIO_CHUNKS) {
+            pendingAudio.splice(0, pendingAudio.length - MAX_PENDING_AUDIO_CHUNKS)
+          }
+          ensureFrontend().catch(error => send(ws, { type: 'error', message: error.message }))
+        }
+      } else if (event.type === 'text.message') {
+        const text = String(event.text || '').trim()
+        if (!text) return
+        const turnId = `text_${randomUUID().replaceAll('-', '')}`
+        conversationSync.record({
+          ownerId,
+          sessionId,
+          id: `voice:user:${turnId}`,
+          role: 'user',
+          content: text,
+          source: 'text-user',
+          turnId,
+        })
+        send(ws, { type: 'transcript.final', role: 'user', content: text, turnId })
+        ensureFrontend()
+          .then(() => frontend.sendUserText(
+            text,
+            { turnId },
+            {
+              modalities: textOnlySession && event.textOnly === true
+                ? ['text']
+                : undefined,
+            },
+          ))
+          .catch(error => send(ws, { type: 'error', message: error.message }))
+      } else if (event.type === 'interrupt') {
+        turnGeneration += 1
+        committedTurnGeneration = turnGeneration
+        announcementWindow.interrupt()
+        frontend?.cancel()
+      } else if (event.type === 'playback.started') {
+        startPlayback(String(event.responseId || ''))
+      } else if (event.type === 'playback.ended') {
+        finishPlayback(String(event.responseId || ''))
+      } else if (event.type === 'playback.cancelled') {
+        cancelQueuedPlayback(String(event.responseId || ''))
+      } else if (event.type === 'mute') {
+        releaseVoiceClient()
+        turnGeneration += 1
+        committedTurnGeneration = turnGeneration
+        pendingAudio = []
+        announcementWindow.reset()
+        frontend?.cancel()
+      }
+    })
+
+    ws.on('close', () => {
+      releaseVoiceClient()
+      const connections = voiceConnections.get(ownerId)
+      connections?.delete(voiceClient)
+      if (!connections?.size) voiceConnections.delete(ownerId)
+      unsubscribeTasks()
+      clearResponseCandidate()
+      turnGeneration += 1
+      committedTurnGeneration = turnGeneration
+      transcripts.close()
+      announcementWindow.reset()
+      playbackTurns.clear()
+      inputTurns.clear()
+      announcements.close()
+      frontend?.close()
+    })
+  })
+
+  return {
+    status() {
+      const byType = { desktop: 0, cli: 0, web: 0 }
+      let connected = 0
+      for (const clients of voiceConnections.values()) {
+        for (const client of clients) {
+          connected += 1
+          const type = client.descriptor?.type || 'web'
+          byType[type] = (byType[type] || 0) + 1
+        }
+      }
+      return {
+        connected,
+        activeOwners: activeVoiceClients.size,
+        byType,
+      }
+    },
+  }
+}

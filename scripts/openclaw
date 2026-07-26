@@ -1,0 +1,85 @@
+#!/bin/sh
+set -eu
+
+QWEN_AUDIO_AGENT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export QWEN_AUDIO_AGENT_ROOT
+export OPENCLAW_STATE_DIR=${OPENCLAW_STATE_DIR:-"$QWEN_AUDIO_AGENT_ROOT/runtime/openclaw/state"}
+export OPENCLAW_CONFIG_PATH=${OPENCLAW_CONFIG_PATH:-"$QWEN_AUDIO_AGENT_ROOT/config/openclaw.json5"}
+
+if [ "${QWEN_AUDIO_AGENT_ENV_LOADED:-}" != "1" ]; then
+  if [ -f "$QWEN_AUDIO_AGENT_ROOT/.env.local" ]; then
+    set -a
+    . "$QWEN_AUDIO_AGENT_ROOT/.env.local"
+    set +a
+  elif [ -f "$QWEN_AUDIO_AGENT_ROOT/.env" ]; then
+    set -a
+    . "$QWEN_AUDIO_AGENT_ROOT/.env"
+    set +a
+  fi
+  export QWEN_AUDIO_AGENT_ENV_LOADED=1
+fi
+
+export OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-${AGENT_API_KEY:-${QWEN_AUDIO_AGENT_AUTH_SECRET:-}}}
+OPENCLAW_RUNTIME=${OPENCLAW_RUNTIME:-auto}
+OPENCLAW_SOURCE_DIR=${OPENCLAW_SOURCE_DIR:-"$QWEN_AUDIO_AGENT_ROOT/../openclaw"}
+
+run_binary() {
+  exec "$OPENCLAW_BIN" "$@"
+}
+
+run_installed() {
+  exec openclaw "$@"
+}
+
+run_source() {
+  if [ ! -f "$OPENCLAW_SOURCE_DIR/package.json" ]; then
+    echo "OpenClaw source directory is unavailable: $OPENCLAW_SOURCE_DIR" >&2
+    exit 1
+  fi
+  if ! command -v corepack >/dev/null 2>&1; then
+    echo "OpenClaw source mode requires corepack." >&2
+    exit 1
+  fi
+  cd "$OPENCLAW_SOURCE_DIR"
+  exec corepack pnpm openclaw "$@"
+}
+
+case "$OPENCLAW_RUNTIME" in
+  binary)
+    if [ -z "${OPENCLAW_BIN:-}" ]; then
+      echo "OPENCLAW_RUNTIME=binary requires OPENCLAW_BIN." >&2
+      exit 1
+    fi
+    run_binary "$@"
+    ;;
+  installed)
+    if ! command -v openclaw >/dev/null 2>&1; then
+      echo "OPENCLAW_RUNTIME=installed requires openclaw on PATH." >&2
+      exit 1
+    fi
+    run_installed "$@"
+    ;;
+  source)
+    run_source "$@"
+    ;;
+  auto) ;;
+  *)
+    echo "Unknown OPENCLAW_RUNTIME: $OPENCLAW_RUNTIME" >&2
+    exit 1
+    ;;
+esac
+
+if [ -n "${OPENCLAW_BIN:-}" ]; then
+  run_binary "$@"
+fi
+
+if command -v openclaw >/dev/null 2>&1; then
+  run_installed "$@"
+fi
+
+if [ -f "$OPENCLAW_SOURCE_DIR/package.json" ]; then
+  run_source "$@"
+fi
+
+echo "OpenClaw was not found. Install it, set OPENCLAW_BIN, or set OPENCLAW_SOURCE_DIR." >&2
+exit 1

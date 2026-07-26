@@ -1,0 +1,130 @@
+export function normalizeTranscript(content) {
+  return String(content || '').replace(/\s+/g, ' ').trim()
+}
+
+export function finalAssistantContent(content, streamedContent = '') {
+  const final = String(content || '').replace(/\r\n?/g, '\n').trim()
+  return final || String(streamedContent || '')
+}
+
+function turnTimestamp(turnId) {
+  const match = String(turnId || '').match(/^voice-(\d+)-/)
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY
+}
+
+export function insertByTurn(items, message) {
+  if (message.origin === 'announcement') {
+    const sequence = Number(message.deliverySequence)
+    const insertAt = Number.isFinite(sequence)
+      ? items.findIndex(item => (
+          item.origin === 'announcement'
+          && Number(item.deliverySequence) > sequence
+        ))
+      : -1
+    if (insertAt < 0) return [...items, message]
+    const next = [...items]
+    next.splice(insertAt, 0, message)
+    return next
+  }
+  if (!message.turnId) return [...items, message]
+  const matching = items
+    .map((item, index) => item.turnId === message.turnId ? index : -1)
+    .filter(index => index >= 0)
+  let insertAt
+  if (matching.length) {
+    insertAt = message.role === 'user' ? matching[0] : matching.at(-1) + 1
+  } else {
+    const timestamp = turnTimestamp(message.turnId)
+    insertAt = items.findIndex(item => turnTimestamp(item.turnId) > timestamp)
+    if (insertAt < 0) insertAt = items.length
+  }
+  const next = [...items]
+  next.splice(insertAt, 0, message)
+  return next
+}
+
+export function upsertUserTranscript(items, {
+  id,
+  content,
+  turnId,
+  final = false,
+}) {
+  const normalized = normalizeTranscript(content)
+  if (!normalized) return items
+  const message = {
+    id,
+    role: 'user',
+    content: normalized,
+    turnId,
+    voice: true,
+    final,
+    live: !final,
+  }
+  const index = items.findIndex(item => item.id === id)
+  if (index < 0) return insertByTurn(items, message)
+  const next = [...items]
+  next[index] = { ...next[index], ...message }
+  return next
+}
+
+export function discardUserTranscript(items, turnId) {
+  if (!turnId) return items
+  const id = `user:${turnId}`
+  return items.filter(item => item.id !== id || item.final)
+}
+
+export function buildConversationTimeline(messages, tasks) {
+  const timeline = messages.map(message => ({ type: 'message', value: message }))
+  tasks.forEach(task => {
+    let insertAt = -1
+    if (task.turnId) {
+      const matching = timeline
+        .map((item, index) => (
+          item.type === 'message' && item.value.turnId === task.turnId
+            ? index
+            : -1
+        ))
+        .filter(index => index >= 0)
+      if (matching.length) insertAt = matching.at(-1) + 1
+    }
+    if (insertAt < 0) insertAt = timeline.length
+    timeline.splice(insertAt, 0, { type: 'task', value: task })
+  })
+  return timeline
+}
+
+export function buildConversationTurns(messages, tasks) {
+  const turns = []
+  const byTurnId = new Map()
+  const createTurn = (id, standalone = false) => {
+    const turn = { id, standalone, messages: [], tasks: [] }
+    turns.push(turn)
+    if (!standalone) byTurnId.set(id, turn)
+    return turn
+  }
+
+  messages.forEach(message => {
+    const standalone = message.origin === 'announcement' || !message.turnId
+    const id = standalone ? `message:${message.id}` : message.turnId
+    const turn = standalone
+      ? createTurn(id, true)
+      : byTurnId.get(id) || createTurn(id)
+    turn.messages.push(message)
+  })
+
+  tasks.forEach(task => {
+    const id = task.turnId || `task:${task.id}`
+    const turn = task.turnId
+      ? byTurnId.get(id) || createTurn(id)
+      : createTurn(id, true)
+    turn.tasks.push(task)
+  })
+
+  return turns.map(turn => {
+    return {
+      ...turn,
+      beforeActivities: turn.messages,
+      afterActivities: [],
+    }
+  })
+}

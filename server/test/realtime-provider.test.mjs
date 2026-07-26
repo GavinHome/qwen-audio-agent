@@ -1,0 +1,473 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  buildFrontendInstructions,
+  REALTIME_PROVIDERS,
+  RealtimeFrontend,
+} from '../src/voice/realtime-provider.mjs'
+
+const FRONTEND_TOOL_NAMES = [
+  'spawn_thinking',
+  'cancel_agent_task',
+  'get_current_time',
+  'user_memory',
+]
+
+function createQwenFrontend(options = {}) {
+  return new RealtimeFrontend({
+    provider: REALTIME_PROVIDERS.qwen,
+    ...options,
+  })
+}
+
+test('carries originating turn metadata to a created realtime response', () => {
+  const frontend = createQwenFrontend()
+  frontend.pendingResponses.push({
+    origin: 'agent',
+    context: { turnId: 'voice-100-1', taskId: 'job_1' },
+    resolve: () => {},
+  })
+  const event = { type: 'response.created', response: { id: 'response_1' } }
+  frontend.handleLifecycle(event)
+
+  assert.equal(event.__voiceOrigin, 'agent')
+  assert.deepEqual(event.__voiceContext, {
+    turnId: 'voice-100-1',
+    taskId: 'job_1',
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response_1', status: 'completed' },
+  })
+})
+
+test('only reports a queued announcement as completed after response.done', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  frontend.ready = true
+  frontend.send = () => {}
+
+  const outcome = frontend.speak('任务完成', 'agent', {
+    turnId: 'voice-100-1',
+    taskId: 'job-1',
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-1' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-1', status: 'completed' },
+  })
+
+  assert.deepEqual(await outcome, {
+    completed: true,
+    responseId: 'response-1',
+  })
+})
+
+test('reports an unstarted response timeout as uncertain rather than successful', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 2,
+  })
+  frontend.ready = true
+  frontend.send = () => {}
+
+  const outcome = await frontend.speak('任务完成')
+  assert.deepEqual(outcome, {
+    timedOut: true,
+    phase: 'start',
+  })
+})
+
+test('configures Qwen Audio Realtime with Smart Turn only', () => {
+  const session = REALTIME_PROVIDERS.qwen.buildSession({ configured: false })
+
+  assert.deepEqual(session.turn_detection, { type: 'smart_turn' })
+  assert.equal(session.turn_detection.threshold, undefined)
+  assert.equal(session.turn_detection.silence_duration_ms, undefined)
+  assert.equal(REALTIME_PROVIDERS.qwen.inputSampleRate, 16000)
+  assert.deepEqual(
+    session.tools.map(tool => tool.function.name),
+    FRONTEND_TOOL_NAMES,
+  )
+  assert.deepEqual(
+    session.tools[0].function.parameters.required,
+    ['objective'],
+  )
+})
+
+test('configures a text-only Qwen session without Smart Turn', () => {
+  const session = REALTIME_PROVIDERS.qwen.buildSession({
+    configured: false,
+    agentContext: { textOnly: true },
+  })
+
+  assert.deepEqual(session.modalities, ['text'])
+  assert.equal(session.turn_detection, null)
+  assert.deepEqual(
+    REALTIME_PROVIDERS.qwen
+      .buildSpeakResponse('完成', { textOnly: true })
+      .modalities,
+    ['text'],
+  )
+  assert.deepEqual(
+    REALTIME_PROVIDERS.qwen
+      .buildResultInjection('结果', { textOnly: true })
+      .response.modalities,
+    ['text'],
+  )
+})
+
+test('adds an event id to realtime client events', () => {
+  const frontend = createQwenFrontend()
+  let sent
+  frontend.ws = {
+    readyState: 1,
+    send: value => {
+      sent = JSON.parse(value)
+    },
+  }
+
+  frontend.appendAudio('pcm')
+
+  assert.match(sent.event_id, /^event_[a-f0-9]+$/)
+  assert.equal(sent.type, 'input_audio_buffer.append')
+  assert.equal(sent.audio, 'pcm')
+})
+
+test('builds frontend identity, time, memory and reconnect context', () => {
+  const prompt = buildFrontendInstructions({
+    client: { timeZone: 'Asia/Shanghai', locale: 'zh-CN' },
+    now: new Date('2026-07-23T04:00:00.000Z'),
+    memories: [{
+      scope: 'profile',
+      content: '用户希望被称为小明',
+    }],
+    recentMessages: [{
+      role: 'user',
+      content: '我们刚才在讨论下载目录',
+    }],
+  })
+
+  assert.match(prompt, /你叫千问Audio/)
+  assert.match(prompt, /用户正在双工语音交谈的统一助手/)
+  assert.match(prompt, /不要把自己描述成前台模型、语音模型/)
+  assert.match(prompt, /始终是同一个千问Audio/)
+  assert.match(prompt, /Asia\/Shanghai/)
+  assert.match(prompt, /2026年7月23日/)
+  assert.match(prompt, /\[profile\] 用户希望被称为小明/)
+  assert.match(prompt, /我们刚才在讨论下载目录/)
+  assert.match(prompt, /get_current_time/)
+  assert.match(prompt, /user_memory/)
+  assert.match(prompt, /每次用户说完后选择一种方式/)
+  assert.match(prompt, /始终保持可继续/)
+  assert.match(prompt, /避免“好的、收到、没问题”/)
+  assert.match(prompt, /# Operating model/)
+  assert.match(prompt, /# Speaking style/)
+  assert.match(prompt, /没有值得告诉用户的新信息时，不要说话/)
+  assert.match(prompt, /不要规定后台 Agent 使用哪个工具/)
+  assert.match(prompt, /\[COMPLETE\]/)
+  assert.doesNotMatch(prompt, /get_agent_tasks|reply_agent_permission/)
+  assert.match(prompt, /cancel_agent_task/)
+  const memory = REALTIME_PROVIDERS.qwen
+    .buildSession({ configured: false })
+    .tools.find(tool => tool.function.name === 'user_memory')
+  assert.deepEqual(
+    memory.function.parameters.properties.action.enum,
+    ['recall', 'remember', 'replace', 'forget'],
+  )
+  assert.deepEqual(
+    memory.function.parameters.properties.scope.enum,
+    ['profile', 'long_term', 'all'],
+  )
+  assert.equal(
+    memory.function.parameters.properties.memory_ids.items.type,
+    'string',
+  )
+
+  const delegate = REALTIME_PROVIDERS.qwen
+    .buildSession({ configured: false })
+    .tools.find(tool => tool.function.name === 'spawn_thinking')
+  assert.match(delegate.function.description, /屏幕/)
+  assert.match(delegate.function.description, /已有工作状态/)
+  assert.match(delegate.function.description, /不要使用“好的、收到”/)
+  assert.match(delegate.function.description, /结合本轮已有发言判断/)
+  assert.match(delegate.function.description, /先问一个必要问题/)
+  assert.match(
+    delegate.function.parameters.properties.objective.description,
+    /忠实保留本轮用户要求/,
+  )
+  assert.match(
+    delegate.function.parameters.properties.objective.description,
+    /必须是已经可以执行的目标/,
+  )
+  assert.match(
+    delegate.function.parameters.properties.objective.description,
+    /后台 Agent 会同时收到近期对话/,
+  )
+  assert.match(prompt, /查询、继续或修改已有工作/)
+  assert.match(prompt, /不要因为推测自己缺少某种能力而拒绝/)
+})
+
+test('refreshes live session instructions after frontend context changes', async () => {
+  const frontend = createQwenFrontend({
+    agentContext: {
+      client: { timeZone: 'Asia/Shanghai', locale: 'zh-CN' },
+      memories: [{ scope: 'profile', content: '用户希望被称为旧称呼' }],
+    },
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.sessionConfigured = true
+  frontend.send = payload => sent.push(payload)
+
+  frontend.updateAgentContext({
+    memories: [{ scope: 'profile', content: '用户希望被称为新称呼' }],
+  })
+  await frontend.outputQueue
+
+  assert.equal(sent[0].type, 'session.update')
+  assert.match(sent[0].session.instructions, /\[profile\] 用户希望被称为新称呼/)
+  assert.doesNotMatch(sent[0].session.instructions, /旧称呼/)
+})
+
+test('can close a stale function call without creating a new model response', async () => {
+  const frontend = createQwenFrontend()
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.sendFunctionOutput(
+    'call-stale',
+    { status: 'superseded' },
+    { turnId: 'turn-old' },
+    { createResponse: false },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].type, 'conversation.item.create')
+  assert.equal(sent[0].item.type, 'function_call_output')
+  frontend.handleLifecycle({
+    type: 'conversation.item.created',
+    item: { id: sent[0].item.id, type: 'function_call_output' },
+  })
+  await outcome
+})
+
+test('can give the model contextual guidance after an accepted tool call', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.sendFunctionOutput(
+    'call-accepted',
+    { status: 'accepted' },
+    { turnId: 'turn-one' },
+    {
+      response: {
+        instructions: '判断是否还需要确认。',
+      },
+    },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.handleLifecycle({
+    type: 'conversation.item.created',
+    item: { ...sent[0].item, status: 'completed' },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(sent[1], {
+    type: 'response.create',
+    response: {
+      instructions: '判断是否还需要确认。',
+    },
+  })
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-followup' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-followup', status: 'completed' },
+  })
+  assert.deepEqual(await outcome, {
+    completed: true,
+    responseId: 'response-followup',
+  })
+})
+
+test('submits text through the documented Qwen conversation protocol', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.sendUserText(
+    '  你好，文字模式  ',
+    { turnId: 'text-1' },
+    { modalities: ['text'] },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].type, 'conversation.item.create')
+  assert.equal(sent[0].item.type, 'message')
+  assert.equal(sent[0].item.role, 'user')
+  assert.deepEqual(sent[0].item.content, [{
+    type: 'input_text',
+    text: '你好，文字模式',
+  }])
+  assert.doesNotMatch(
+    sent.map(event => event.type).join(','),
+    /input_audio_buffer/,
+  )
+
+  frontend.handleLifecycle({
+    type: 'conversation.item.created',
+    item: { ...sent[0].item, status: 'completed' },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(sent[1], {
+    type: 'response.create',
+    response: { modalities: ['text'] },
+  })
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-text' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-text', status: 'completed' },
+  })
+  assert.deepEqual(await outcome, {
+    completed: true,
+    responseId: 'response-text',
+  })
+})
+
+test('does not trigger inference when Qwen rejects a text conversation item', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.sendUserText('失败输入')
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.handleLifecycle({
+    type: 'error',
+    error: { message: 'invalid conversation item' },
+  })
+
+  assert.deepEqual(await outcome, {
+    failed: true,
+    phase: 'input',
+    error: 'invalid conversation item',
+  })
+  assert.deepEqual(sent.map(event => event.type), ['conversation.item.create'])
+})
+
+test('injects a completed work result into Qwen conversation with tools disabled', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.injectResult(
+    '后台任务完成：第二点是保持上下文。',
+    'announcement',
+    { turnId: 'turn-result', taskId: 'job-result' },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(sent[0].type, 'conversation.item.create')
+  assert.equal(sent[0].item.type, 'message')
+  assert.equal(sent[0].item.role, 'user')
+  assert.deepEqual(sent[0].item.content, [{
+    type: 'input_text',
+    text: '后台任务完成：第二点是保持上下文。',
+  }])
+  frontend.handleLifecycle({
+    type: 'conversation.item.created',
+    item: { ...sent[0].item, status: 'completed' },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(sent[1].type, 'response.create')
+  assert.equal(sent[1].response.conversation, undefined)
+  assert.equal(sent[1].response.tool_choice, 'none')
+  assert.deepEqual(sent[1].response.modalities, ['text', 'audio'])
+  assert.match(sent[1].response.instructions, /结合当前对话自然回应/)
+  assert.doesNotMatch(sent[1].response.instructions, /最多两三个|先结论/)
+
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-result' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-result', status: 'completed' },
+  })
+  assert.deepEqual(await outcome, {
+    completed: true,
+    responseId: 'response-result',
+    contextInjected: true,
+  })
+})
+
+test('cancelling a response before response.created releases its queue entry', async () => {
+  const frontend = createQwenFrontend()
+  frontend.ready = true
+  frontend.send = () => {}
+
+  const outcome = frontend.speak('稍后播报')
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.cancel()
+
+  assert.deepEqual(await outcome, {
+    cancelled: true,
+    phase: 'start',
+  })
+  assert.equal(frontend.pendingResponses.length, 0)
+})
+
+test('associates an unscoped provider error with the sole active response', async () => {
+  const frontend = createQwenFrontend()
+  frontend.ready = true
+  frontend.send = () => {}
+
+  const outcome = frontend.speak('测试')
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-error' },
+  })
+  frontend.handleLifecycle({
+    type: 'error',
+    error: { message: 'provider failed' },
+  })
+
+  assert.deepEqual(await outcome, {
+    failed: true,
+    responseId: 'response-error',
+    status: undefined,
+  })
+  assert.equal(frontend.activeResponses.size, 0)
+})

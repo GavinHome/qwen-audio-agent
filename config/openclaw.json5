@@ -1,0 +1,50 @@
+{
+  models: {
+    mode: "merge",
+    providers: {
+      bailian: {
+        baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
+        apiKey: { source: "env", provider: "default", id: "DASHSCOPE_API_KEY" },
+        api: "anthropic-messages",
+        models: [
+          {
+            id: "qwen3.7-max",
+            name: "Qwen3.7-Max",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 1000000,
+            maxTokens: 65536,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            compat: { thinkingFormat: "openai" },
+          },
+        ],
+      },
+    },
+  },
+  agents: {
+    defaults: {
+      skipBootstrap: true,
+      model: { primary: "bailian/qwen3.7-max" },
+      models: { "bailian/qwen3.7-max": {} },
+    },
+    list: [
+      {
+        id: "qwen-audio-agent-backend",
+        default: true,
+        name: "qwen-audio-agent Backend Agent",
+        workspace: "${QWEN_AUDIO_AGENT_ROOT}/config/openclaw-workspace",
+      },
+    ],
+  },
+  tools: {
+    sessions: { visibility: "all" },
+  },
+  gateway: {
+    mode: "local",
+    bind: "loopback",
+    auth: {
+      mode: "token",
+      token: "${OPENCLAW_GATEWAY_TOKEN}",
+    },
+  },
+}

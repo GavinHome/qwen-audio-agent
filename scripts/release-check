@@ -1,0 +1,61 @@
+#!/bin/sh
+set -eu
+
+QWEN_AUDIO_AGENT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$QWEN_AUDIO_AGENT_ROOT"
+
+node <<'NODE'
+const { readFileSync } = require('node:fs')
+
+const expected = '0.2.0'
+const manifests = [
+  'package.json',
+  'server/package.json',
+  'web/package.json',
+  'tui/package.json',
+  'desktop/package.json',
+  'cli/package.json',
+]
+
+for (const file of manifests) {
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  if (manifest.version !== expected) {
+    throw new Error(`${file} has version ${manifest.version}; expected ${expected}`)
+  }
+}
+
+const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+if (lock.version !== expected || lock.packages?.['']?.version !== expected) {
+  throw new Error('package-lock.json does not match the release version')
+}
+for (const workspace of [
+  'server',
+  'web',
+  'tui',
+  'desktop',
+  'cli',
+]) {
+  if (lock.packages?.[workspace]?.version !== expected) {
+    throw new Error(`package-lock.json has the wrong version for ${workspace}`)
+  }
+}
+
+const internalRegistry = 'registry.anpm.alibaba-inc.com'
+for (const file of ['package-lock.json']) {
+  if (readFileSync(file, 'utf8').includes(internalRegistry)) {
+    throw new Error(`${file} contains the internal npm registry`)
+  }
+}
+NODE
+
+sh -n scripts/opencode-server
+sh -n scripts/openclaw
+sh -n scripts/openclaw-gateway
+sh -n scripts/backend
+node --check shared/runtime-environment.mjs
+node --check cli/src/runtime.mjs
+git diff --check
+npm test
+npm run build
+
+printf '%s\n' 'qwen-audio-agent 0.2.0 release checks passed.'
