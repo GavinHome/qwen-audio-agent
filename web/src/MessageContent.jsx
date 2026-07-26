@@ -1,4 +1,4 @@
-import { Fragment, memo } from 'react'
+import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -15,8 +15,29 @@ function isSafeUrl(href) {
   }
 }
 
-function ImageEmbed({ src, alt }) {
+function MediaEmbed({ src, alt, type }) {
+  const [approved, setApproved] = useState(false)
   if (!src || !isSafeUrl(src)) return <span>{alt || src}</span>
+  if (!approved) {
+    return (
+      <span className="media-consent">
+        <button type="button" onClick={() => setApproved(true)}>
+          加载远程{type === 'image' ? '图片' : type === 'audio' ? '音频' : '视频'}
+        </button>
+        <a href={src} target="_blank" rel="noopener noreferrer">打开链接</a>
+      </span>
+    )
+  }
+  if (type === 'audio') {
+    return <audio controls preload="none" src={src} className="media-audio" />
+  }
+  if (type === 'video') {
+    return (
+      <video controls preload="none" src={src} className="media-video">
+        <track kind="captions" />
+      </video>
+    )
+  }
   return (
     <a href={src} target="_blank" rel="noopener noreferrer">
       <img
@@ -26,20 +47,6 @@ function ImageEmbed({ src, alt }) {
         className="media-image"
       />
     </a>
-  )
-}
-
-function AudioEmbed({ src }) {
-  if (!src || !isSafeUrl(src)) return <span>{src}</span>
-  return <audio controls preload="none" src={src} className="media-audio" />
-}
-
-function VideoEmbed({ src }) {
-  if (!src || !isSafeUrl(src)) return <span>{src}</span>
-  return (
-    <video controls preload="none" src={src} className="media-video">
-      <track kind="captions" />
-    </video>
   )
 }
 
@@ -53,16 +60,22 @@ function detectMediaType(href) {
 const mdComponents = {
   p: ({ children }) => <p>{children}</p>,
   img: ({ src, alt }) => {
-    if (MEDIA_AUDIO.test(src || '')) return <AudioEmbed src={src} />
-    if (MEDIA_VIDEO.test(src || '')) return <VideoEmbed src={src} />
-    return <ImageEmbed src={src} alt={alt} />
+    if (MEDIA_AUDIO.test(src || '')) return <MediaEmbed src={src} type="audio" />
+    if (MEDIA_VIDEO.test(src || '')) return <MediaEmbed src={src} type="video" />
+    return <MediaEmbed src={src} alt={alt} type="image" />
   },
   a: ({ href, children }) => {
     if (!href) return <span>{children}</span>
     const mediaType = detectMediaType(href)
-    if (mediaType === 'image') return <ImageEmbed src={href} alt={String(children)} />
-    if (mediaType === 'audio') return <AudioEmbed src={href} />
-    if (mediaType === 'video') return <VideoEmbed src={href} />
+    if (mediaType) {
+      return (
+        <MediaEmbed
+          src={href}
+          alt={String(children)}
+          type={mediaType}
+        />
+      )
+    }
     return (
       <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
     )

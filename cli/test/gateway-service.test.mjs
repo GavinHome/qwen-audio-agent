@@ -30,6 +30,10 @@ test('builds a launchd user service that runs the Gateway in foreground', () => 
     assert.match(definition.content, /<string>\/opt\/server\/index.mjs<\/string>/)
     assert.match(definition.content, /<key>KeepAlive<\/key>/)
     assert.match(definition.content, /<key>RunAtLoad<\/key>/)
+    assert.match(
+      definition.content,
+      /<key>WorkingDirectory<\/key>\s*<string>\/opt\/server<\/string>/,
+    )
     assert.match(definition.content, /<key>PORT<\/key>\s*<string>3199<\/string>/)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -91,6 +95,7 @@ test('installs a systemd user service with restart protection', async () => {
     const unit = readFileSync(installed.servicePath, 'utf8')
     assert.match(unit, /ExecStart="\/usr\/bin\/node"/)
     assert.match(unit, /"\/opt\/server\/index.mjs"/)
+    assert.match(unit, /WorkingDirectory="\/opt\/server"/)
     assert.match(unit, /Restart=on-failure/)
     assert.deepEqual(calls.at(-1), [
       'systemctl',

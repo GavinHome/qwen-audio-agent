@@ -6,6 +6,7 @@ cd "$QWEN_AUDIO_AGENT_ROOT"
 
 node <<'NODE'
 const { readFileSync } = require('node:fs')
+const { execFileSync } = require('node:child_process')
 
 const expected = '0.2.0'
 const manifests = [
@@ -40,10 +41,67 @@ for (const workspace of [
   }
 }
 
-const internalRegistry = 'registry.anpm.alibaba-inc.com'
-for (const file of ['package-lock.json']) {
-  if (readFileSync(file, 'utf8').includes(internalRegistry)) {
-    throw new Error(`${file} contains the internal npm registry`)
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+const publicRepository = 'git+https://github.com/QwenLM/qwen-audio-agent.git'
+const publicRegistry = 'https://registry.npmjs.org/'
+if (manifest.repository?.url !== publicRepository) {
+  throw new Error('package.json does not point to the public GitHub repository')
+}
+if (manifest.publishConfig?.registry !== publicRegistry) {
+  throw new Error('package.json does not force publishing to the public npm registry')
+}
+if (manifest.publishConfig?.access !== 'public') {
+  throw new Error('package.json is not configured for public npm access')
+}
+if (readFileSync('.npmrc', 'utf8').trim() !== 'registry=https://registry.npmjs.org/') {
+  throw new Error('.npmrc does not select the public npm registry')
+}
+if (manifest.main !== undefined) {
+  throw new Error('CLI package must not expose the Electron process as its main entry')
+}
+if (readFileSync('.nvmrc', 'utf8').trim() !== '22.22.2') {
+  throw new Error('.nvmrc does not match the minimum supported Node release')
+}
+if (!readFileSync('scripts/opencode-server', 'utf8').includes('opencode-ai@1.18.5')) {
+  throw new Error('OpenCode fallback package is not pinned')
+}
+if (!readFileSync('scripts/openclaw', 'utf8').includes('openclaw@2026.7.1-2')) {
+  throw new Error('OpenClaw fallback package is not pinned')
+}
+if (
+  manifest.devDependencies?.['electron-builder'] !== '26.15.7'
+  || manifest.overrides?.['@electron/asar'] !== '4.2.1'
+  || manifest.overrides?.['@electron/universal'] !== '3.0.6'
+) {
+  throw new Error('desktop build dependencies are not pinned to the reviewed versions')
+}
+if (
+  manifest.scripts['desktop:build'].includes('hardenedRuntime=false')
+  || !manifest.scripts['desktop:build:local'].includes('hardenedRuntime=false')
+) {
+  throw new Error('signed and local-only desktop build commands are not separated')
+}
+
+const forbiddenFragments = [
+  ['gitlab.alibaba', '-inc.com'].join(''),
+  ['registry.anpm.alibaba', '-inc.com'].join(''),
+  ['lx', '513821'].join(''),
+]
+const trackedFiles = execFileSync('git', ['ls-files', '-z'])
+  .toString()
+  .split('\0')
+  .filter(Boolean)
+for (const file of trackedFiles) {
+  let content
+  try {
+    content = readFileSync(file, 'utf8')
+  } catch {
+    continue
+  }
+  for (const fragment of forbiddenFragments) {
+    if (content.includes(fragment)) {
+      throw new Error(`${file} contains private repository metadata`)
+    }
   }
 }
 NODE

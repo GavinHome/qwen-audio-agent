@@ -113,6 +113,27 @@ qwenaudio tui --takeover
 同一用户只能运行一个 TUI。Gateway、桌面应用和 WebUI 可以同时驻留；桌面球会在
 TUI 接管语音期间显示占用状态。
 
+## 远程访问安全
+
+Gateway 默认只信任字面量 loopback Host/Origin，避免恶意网页通过 DNS rebinding
+连接本机语音与后台 Agent。若要从其他设备访问，不要直接设置 `HOST=0.0.0.0`
+后暴露端口；应使用具备访问认证的 HTTPS 反向代理，并配置公开 Origin：
+
+```dotenv
+HOST=127.0.0.1
+QWEN_AUDIO_AGENT_ALLOWED_ORIGINS=https://voice.example.com
+```
+
+反向代理必须：
+
+- 在转发前完成用户认证；
+- 只接受 HTTPS，并正确转发 WebSocket；
+- 保留公开 `Host`；
+- 将流量转发至本机 `127.0.0.1:3101`。
+
+`QWEN_AUDIO_AGENT_AUTH_SECRET` 只用于签署本地身份，不是远程访问密码。不得用它
+替代反向代理认证。多个可信 Origin 可使用英文逗号分隔。
+
 ## Gateway 运行方式
 
 Gateway 默认使用增强模式并启动带专用后台 Agent 的服务。若目标端口已被其他
@@ -145,7 +166,8 @@ OpenCode 和 OpenClaw 使用一致的运行时发现顺序：
 1. `OPENCODE_BIN` / `OPENCLAW_BIN` 明确指定的可执行文件。
 2. `OPENCODE_SOURCE_DIR` / `OPENCLAW_SOURCE_DIR` 明确指定的源码目录。
 3. PATH 中用户已经安装的 `opencode` / `openclaw`，保留兼容的用户版本。
-4. 本机有 `npx` 时，使用无版本锁定的 `opencode-ai` / `openclaw` npm 包兜底。
+4. 本机有 `npx` 时，使用当前 qwen-audio-agent 版本验证过的固定版本
+   `opencode-ai` / `openclaw` npm 包兜底。
 
 源码目录只在用户明确配置后使用，不再推测相邻项目目录。需要强制选择某种启动
 方式时可配置：
@@ -156,8 +178,8 @@ OPENCODE_RUNTIME=auto
 OPENCLAW_RUNTIME=auto
 ```
 
-默认 npm 包名不包含版本。如果确实需要锁定或替换包，可显式填写完整 package
-specifier：
+每个 qwen-audio-agent 版本都会锁定经过测试的后台包版本。需要验证其他兼容版本
+或内部镜像时，可以显式覆盖完整 package specifier：
 
 ```dotenv
 OPENCODE_PACKAGE=opencode-ai@1.18.5
@@ -190,6 +212,7 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | 设置 | 默认值 |
 | --- | --- |
 | `HOST` / `PORT` | `127.0.0.1` / `3101` |
+| `QWEN_AUDIO_AGENT_ALLOWED_ORIGINS` | 空；只允许 loopback |
 | `OPENCODE_WORKSPACE` | 用户配置目录下的 `workspaces/opencode` |
 | `QWEN_AUDIO_AGENT_BACKEND_MODEL` | `qwen3.7-max` |
 | `OPENCODE_MODEL` / `OPENCLAW_MODEL` | 由对应 Adapter 从公共模型推导 |

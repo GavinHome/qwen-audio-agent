@@ -6,10 +6,21 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+http://gitlab.alibaba-inc.com/lx513821/qwen-audio-agent.git"
+    "url": "git+https://github.com/QwenLM/qwen-audio-agent.git"
   },
+  "bugs": {
+    "url": "https://github.com/QwenLM/qwen-audio-agent/issues"
+  },
+  "homepage": "https://github.com/QwenLM/qwen-audio-agent#readme",
+  "keywords": [
+    "qwen",
+    "audio",
+    "voice",
+    "agent",
+    "opencode",
+    "openclaw"
+  ],
   "type": "module",
-  "main": "desktop/src/main.mjs",
   "bin": {
     "qwenaudio": "cli/bin/qwenaudio.mjs"
   },
@@ -34,6 +45,10 @@
     "tui/package.json",
     "web/dist/",
     "LICENSE",
+    "NOTICE",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "THIRD_PARTY_NOTICES.md",
     "README.md"
   ],
   "engines": {
@@ -41,6 +56,10 @@
     "npm": ">=10"
   },
   "packageManager": "npm@10.9.4",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "workspaces": [
     "server",
     "web",
@@ -57,7 +76,8 @@
     "pregateway": "npm run build",
     "gateway": "npm run start --workspace server",
     "desktop": "npm run start --workspace desktop",
-    "desktop:build": "npm run build && electron-builder --config desktop/electron-builder.yml --config.mac.identity=- --config.mac.hardenedRuntime=false --mac dmg",
+    "desktop:build": "node scripts/check-desktop-release-env.mjs && npm run build && electron-builder --config desktop/electron-builder.yml --mac dmg",
+    "desktop:build:local": "npm run build && electron-builder --config desktop/electron-builder.yml --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false --mac dmg",
     "cli": "npm run start --workspace @qwen-audio-agent/cli --",
     "tui": "npm run start --workspace tui --",
     "backend": "./scripts/backend",
@@ -69,12 +89,16 @@
     "tui:text": "npm run text --workspace tui --"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.18.4",
+    "@opencode-ai/plugin": "1.18.5",
     "express": "^4.22.2",
     "ws": "^8.21.1"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "26.15.7"
+  },
+  "overrides": {
+    "@electron/asar": "4.2.1",
+    "@electron/universal": "3.0.6"
   }
 }

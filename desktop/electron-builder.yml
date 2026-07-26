@@ -3,6 +3,8 @@ productName: Qwen Audio Agent
 electronVersion: 43.2.0
 asar: true
 npmRebuild: false
+extraMetadata:
+  main: desktop/src/main.mjs
 
 directories:
   output: dist/desktop
@@ -12,11 +14,18 @@ files:
   - shared/runtime-environment.mjs
   - cli/src/runtime.mjs
   - package.json
+  - LICENSE
+  - NOTICE
+  - THIRD_PARTY_NOTICES.md
   - "!node_modules/**/*"
 
 mac:
   category: public.app-category.productivity
   icon: desktop/build/icon.icns
+  hardenedRuntime: true
+  entitlements: desktop/build/entitlements.mac.plist
+  entitlementsInherit: desktop/build/entitlements.mac.plist
+  notarize: true
   extendInfo:
     LSUIElement: true
     NSMicrophoneUsageDescription: Qwen Audio Agent 需要使用麦克风进行实时语音对话。

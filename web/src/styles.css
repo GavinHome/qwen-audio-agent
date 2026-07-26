@@ -594,6 +594,24 @@ article.user .message-body .inline-code { background: #5e44c9; color: #f0eaff; }
   border-radius: 10px;
   margin: 0.4em 0;
 }
+
+.message-body .media-consent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #ffffff18;
+  border-radius: 9px;
+  background: #ffffff08;
+}
+
+.message-body .media-consent button {
+  padding: 4px 8px;
+  color: inherit;
+  border: 1px solid #ffffff24;
+  border-radius: 7px;
+  background: #ffffff0d;
+}
 .message-body.streaming-empty { color: #888493; }
 
 @keyframes pulse {
