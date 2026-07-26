@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   screen,
   shell,
@@ -29,7 +30,11 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../..')
-const runtimeEnvironment = loadRuntimeEnvironment({ root })
+const runtimeEnvironment = loadRuntimeEnvironment({
+  root,
+  prepareBackendRuntime: false,
+  generateSecret: false,
+})
 const fallbackPage = resolve(here, 'orb-unavailable.html')
 const fallbackUrl = pathToFileURL(fallbackPage).href
 const settingsPage = resolve(here, 'settings.html')
@@ -328,7 +333,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && process.defaultApp) {
       app.setActivationPolicy('accessory')
       app.dock?.hide()
     }
@@ -338,6 +343,11 @@ if (!app.requestSingleInstanceLock()) {
         mainWindow = createWindow()
       }
     })
+  }).catch(error => {
+    const message = error?.stack || error?.message || String(error)
+    console.error('Failed to start Qwen Audio Agent:', message)
+    dialog.showErrorBox('Qwen Audio Agent 无法启动', message)
+    app.quit()
   })
 
   app.on('window-all-closed', () => {

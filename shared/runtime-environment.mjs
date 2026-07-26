@@ -196,6 +196,7 @@ export function loadRuntimeEnvironment({
   env = process.env,
   homeDirectory = homedir(),
   generateSecret = true,
+  prepareBackendRuntime = true,
 } = {}) {
   if (!root) throw new Error('loadRuntimeEnvironment requires root')
   const configDirectory = userConfigDirectory(env, homeDirectory)
@@ -221,28 +222,31 @@ export function loadRuntimeEnvironment({
   const openClawStateDirectory = env.OPENCLAW_STATE_DIR
     ? resolve(root, env.OPENCLAW_STATE_DIR)
     : resolve(configDirectory, 'backends/openclaw/state')
-  if (defaultOpenCodeWorkspace) {
-    ensureManagedWorkspace(
-      openCodeWorkspace,
-      resolve(root, 'config/opencode-workspace/AGENTS.md'),
-    )
+  let migratedFiles = []
+  if (prepareBackendRuntime) {
+    if (defaultOpenCodeWorkspace) {
+      ensureManagedWorkspace(
+        openCodeWorkspace,
+        resolve(root, 'config/opencode-workspace/AGENTS.md'),
+      )
+    }
+    if (defaultOpenClawWorkspace) {
+      ensureManagedWorkspace(
+        openClawWorkspace,
+        resolve(root, 'config/openclaw-workspace/AGENTS.md'),
+      )
+    }
+    mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
+    env.OPENCODE_WORKSPACE = openCodeWorkspace
+    env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE = openClawWorkspace
+    env.OPENCLAW_STATE_DIR = openClawStateDirectory
+    migratedFiles = [
+      [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
+      [resolve(root, 'runtime/tasks.json'), taskStatePath],
+    ].filter(([legacyPath, targetPath]) => (
+      migratePrivateFile(legacyPath, targetPath)
+    )).map(([, targetPath]) => targetPath)
   }
-  if (defaultOpenClawWorkspace) {
-    ensureManagedWorkspace(
-      openClawWorkspace,
-      resolve(root, 'config/openclaw-workspace/AGENTS.md'),
-    )
-  }
-  mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
-  env.OPENCODE_WORKSPACE = openCodeWorkspace
-  env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE = openClawWorkspace
-  env.OPENCLAW_STATE_DIR = openClawStateDirectory
-  const migratedFiles = [
-    [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
-    [resolve(root, 'runtime/tasks.json'), taskStatePath],
-  ].filter(([legacyPath, targetPath]) => (
-    migratePrivateFile(legacyPath, targetPath)
-  )).map(([, targetPath]) => targetPath)
   const secret = generateSecret
     ? ensureGeneratedSecret(env, configDirectory)
     : { generated: false, statePath: null }

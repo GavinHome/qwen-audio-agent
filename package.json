@@ -57,7 +57,7 @@
     "pregateway": "npm run build",
     "gateway": "npm run start --workspace server",
     "desktop": "npm run start --workspace desktop",
-    "desktop:build": "npm run build && electron-builder --config desktop/electron-builder.yml --mac dmg",
+    "desktop:build": "npm run build && electron-builder --config desktop/electron-builder.yml --config.mac.identity=- --config.mac.hardenedRuntime=false --mac dmg",
     "cli": "npm run start --workspace @qwen-audio-agent/cli --",
     "tui": "npm run start --workspace tui --",
     "backend": "./scripts/backend",

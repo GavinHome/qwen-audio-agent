@@ -146,6 +146,31 @@ test('keeps managed backend data outside the installation directory', () => {
   )
 })
 
+test('desktop client setup does not require packaged backend templates', () => {
+  const base = mkdtempSync(resolve(tmpdir(), 'qwaudio-desktop-config-'))
+  const root = resolve(base, 'app')
+  const homeDirectory = resolve(base, 'home')
+  mkdirSync(root, { recursive: true })
+  mkdirSync(homeDirectory, { recursive: true })
+  const env = {}
+
+  const result = loadRuntimeEnvironment({
+    root,
+    homeDirectory,
+    env,
+    generateSecret: false,
+    prepareBackendRuntime: false,
+  })
+
+  assert.equal(existsSync(result.configPath), true)
+  assert.equal(existsSync(result.userProfilePath), true)
+  assert.equal(existsSync(result.openCodeWorkspace), false)
+  assert.equal(existsSync(result.openClawWorkspace), false)
+  assert.equal(env.OPENCODE_WORKSPACE, undefined)
+  assert.equal(env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE, undefined)
+  assert.equal(env.OPENCLAW_STATE_DIR, undefined)
+})
+
 test('migrates private runtime data into the user config directory', () => {
   const target = fixture()
   const legacyDirectory = resolve(target.root, 'runtime')
