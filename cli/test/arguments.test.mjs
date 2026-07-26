@@ -5,6 +5,7 @@ import { helpText, parseArguments } from '../src/arguments.mjs'
 test('defaults to the Gateway command and managed OpenCode', () => {
   const options = parseArguments([], {})
   assert.equal(options.command, 'gateway')
+  assert.equal(options.gatewayAction, 'run')
   assert.equal(options.url, 'http://127.0.0.1:3101')
   assert.equal(options.backend, 'opencode')
   assert.equal(options.backendMode, 'managed')
@@ -43,6 +44,26 @@ test('parses Gateway backend ownership settings', () => {
   assert.equal(options.backendUrl, 'http://localhost:18888')
 })
 
+test('parses foreground and service Gateway commands', () => {
+  assert.equal(parseArguments(['gateway'], {}).gatewayAction, 'run')
+  assert.equal(parseArguments(['gateway', 'run'], {}).gatewayAction, 'run')
+  assert.equal(
+    parseArguments(['gateway', 'install'], {}).gatewayAction,
+    'install',
+  )
+  assert.equal(parseArguments(['gateway', 'start'], {}).gatewayAction, 'start')
+  assert.equal(parseArguments(['gateway', 'stop'], {}).gatewayAction, 'stop')
+  assert.equal(
+    parseArguments(['gateway', 'restart'], {}).gatewayAction,
+    'restart',
+  )
+  assert.equal(
+    parseArguments(['gateway', 'uninstall'], {}).gatewayAction,
+    'uninstall',
+  )
+  assert.equal(parseArguments(['status'], {}).gatewayAction, 'status')
+})
+
 test('rejects client-only flags on unrelated commands', () => {
   assert.throws(
     () => parseArguments(['webui', '--mode', 'full'], {}),
@@ -56,12 +77,18 @@ test('rejects client-only flags on unrelated commands', () => {
     () => parseArguments(['status', '--takeover'], {}),
     /只适用于 tui 或 webui/,
   )
+  assert.throws(
+    () => parseArguments(['gateway', 'install', '--backend', 'openclaw'], {}),
+    /config\.env/,
+  )
 })
 
 test('documents the service and client commands', () => {
   const text = helpText()
   assert.match(text, /^qwenaudio$/m)
   assert.match(text, /qwenaudio \[gateway\]/)
+  assert.match(text, /gateway install/)
+  assert.match(text, /gateway uninstall/)
   assert.match(text, /qwenaudio tui/)
   assert.match(text, /qwenaudio webui/)
   assert.match(text, /qwenaudio status/)

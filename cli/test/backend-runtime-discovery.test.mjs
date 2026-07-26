@@ -27,7 +27,7 @@ function fixture() {
   }
 }
 
-function command(path, { version = '' } = {}) {
+function command(path, { version = '', captureModels = false } = {}) {
   writeFileSync(path, [
     '#!/bin/sh',
     ...(version ? [
@@ -37,6 +37,11 @@ function command(path, { version = '' } = {}) {
       'fi',
     ] : []),
     'printf "%s\\n" "$(basename "$0")" "$@" > "$CAPTURE"',
+    ...(captureModels ? [
+      'printf "%s\\n" "OPENCODE_MODEL=${OPENCODE_MODEL:-}" >> "$CAPTURE"',
+      'printf "%s\\n" "OPENCLAW_MODEL=${QWEN_AUDIO_AGENT_OPENCLAW_MODEL:-}" >> "$CAPTURE"',
+      'printf "%s\\n" "OPENCLAW_MODEL_ID=${QWEN_AUDIO_AGENT_OPENCLAW_MODEL_ID:-}" >> "$CAPTURE"',
+    ] : []),
     '',
   ].join('\n'))
   chmodSync(path, 0o755)
@@ -155,6 +160,37 @@ test('package mode uses unversioned configurable npm package names', {
       'openclaw',
       'gateway',
       'run',
+    ])
+  } finally {
+    openCode.close()
+    openClaw.close()
+  }
+})
+
+test('maps one common backend model into each native backend model', {
+  skip: process.platform === 'win32',
+}, () => {
+  const openCode = fixture()
+  const openClaw = fixture()
+  try {
+    command(resolve(openCode.bin, 'opencode'), {
+      version: '1.20.0',
+      captureModels: true,
+    })
+    command(resolve(openClaw.bin, 'openclaw'), { captureModels: true })
+    assert.deepEqual(run('scripts/opencode-server', openCode, {
+      QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen-custom',
+    }).slice(-3), [
+      'OPENCODE_MODEL=alibaba-cn/qwen-custom',
+      'OPENCLAW_MODEL=',
+      'OPENCLAW_MODEL_ID=',
+    ])
+    assert.deepEqual(run('scripts/openclaw', openClaw, {
+      QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen-custom',
+    }, ['gateway', 'run']).slice(-3), [
+      'OPENCODE_MODEL=',
+      'OPENCLAW_MODEL=bailian/qwen-custom',
+      'OPENCLAW_MODEL_ID=qwen-custom',
     ])
   } finally {
     openCode.close()

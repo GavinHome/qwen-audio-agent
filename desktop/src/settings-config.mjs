@@ -6,6 +6,7 @@ const DEFAULTS = {
   protocol: 'opencode',
   opencodeBaseUrl: 'http://127.0.0.1:4096',
   openclawBaseUrl: 'http://127.0.0.1:18789',
+  backendModel: 'qwen3.7-max',
   realtimeModel: 'qwen-audio-3.0-realtime-plus',
   realtimeVoice: 'longanqian',
 }
@@ -17,6 +18,7 @@ const SETTING_KEYS = {
   protocol: 'AGENT_PROTOCOL',
   opencodeBaseUrl: 'OPENCODE_BASE_URL',
   openclawBaseUrl: 'OPENCLAW_BASE_URL',
+  backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
   realtimeModel: 'QWEN_AUDIO_REALTIME_MODEL',
   realtimeVoice: 'QWEN_AUDIO_REALTIME_VOICE',
 }
@@ -36,10 +38,10 @@ function encoded(value) {
   return `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
-function cleanModel(value) {
-  const model = String(value || DEFAULTS.realtimeModel).trim()
+function cleanModel(value, fallback, label) {
+  const model = String(value || fallback).trim()
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(model)) {
-    throw new Error('实时模型名称格式无效')
+    throw new Error(`${label}名称格式无效`)
   }
   return model
 }
@@ -71,6 +73,9 @@ export function parseSettings(content = '', fallback = {}) {
       || DEFAULTS.opencodeBaseUrl,
     openclawBaseUrl: values.OPENCLAW_BASE_URL || fallback.OPENCLAW_BASE_URL
       || DEFAULTS.openclawBaseUrl,
+    backendModel: values.QWEN_AUDIO_AGENT_BACKEND_MODEL
+      || fallback.QWEN_AUDIO_AGENT_BACKEND_MODEL
+      || DEFAULTS.backendModel,
     realtimeModel: values.QWEN_AUDIO_REALTIME_MODEL
       || fallback.QWEN_AUDIO_REALTIME_MODEL
       || DEFAULTS.realtimeModel,
@@ -108,7 +113,16 @@ export function normalizeSettings(settings = {}) {
       settings.openclawBaseUrl,
       DEFAULTS.openclawBaseUrl,
     ),
-    realtimeModel: cleanModel(settings.realtimeModel),
+    backendModel: cleanModel(
+      settings.backendModel,
+      DEFAULTS.backendModel,
+      '后台模型',
+    ),
+    realtimeModel: cleanModel(
+      settings.realtimeModel,
+      DEFAULTS.realtimeModel,
+      '实时模型',
+    ),
     realtimeVoice: String(
       settings.realtimeVoice || DEFAULTS.realtimeVoice,
     ).trim(),

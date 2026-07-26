@@ -1,15 +1,20 @@
 import { spawn } from 'node:child_process'
 import { stat, mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SOURCE_PATH = fileURLToPath(
   new URL('../native/macos-voice-io.swift', import.meta.url),
 )
-const DEFAULT_BINARY_PATH = resolve(
-  fileURLToPath(new URL('../..', import.meta.url)),
-  'runtime/tui/macos-voice-io',
-)
+export function macVoiceIOBinaryPath({
+  homeDirectory = homedir(),
+} = {}) {
+  return resolve(
+    homeDirectory,
+    'Library/Caches/qwaudio/tui/macos-voice-io',
+  )
+}
 
 function run(command, args) {
   return new Promise((resolvePromise, reject) => {
@@ -28,7 +33,8 @@ function run(command, args) {
 
 export async function ensureMacVoiceIO({
   sourcePath = SOURCE_PATH,
-  binaryPath = process.env.QWEN_AUDIO_AGENT_TUI_AEC_BINARY || DEFAULT_BINARY_PATH,
+  binaryPath = process.env.QWEN_AUDIO_AGENT_TUI_AEC_BINARY
+    || macVoiceIOBinaryPath(),
 } = {}) {
   if (process.platform !== 'darwin') {
     throw new Error('CoreAudio Voice Processing 仅支持 macOS')

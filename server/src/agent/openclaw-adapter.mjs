@@ -62,6 +62,7 @@ export class OpenClawAdapter extends BackendAdapter {
       label: this.label,
       baseUrl: this.baseUrl,
       uiPath: '/api/backend/ui',
+      model: this.model || null,
       mode: this.mode,
       backendAgent: this.resolvedAgentId || this.agentId || null,
       sessionModel: 'one-persistent-backend-agent',

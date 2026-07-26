@@ -208,7 +208,7 @@ class VoiceEngine:
 def ensure_swift_helper():
     """定位(必要时用 swiftc 编译)0.2.0 的 CoreAudio 助手,返回二进制路径。
 
-    查找顺序:QWEN_AUDIO_AGENT_TUI_AEC_BINARY 环境变量 → 仓库 runtime/tui/ 缓存
+    查找顺序:QWEN_AUDIO_AGENT_TUI_AEC_BINARY 环境变量 → 用户缓存目录
     (源码 tui/native/macos-voice-io.swift,过期自动重编)→ 脚本同目录。
     """
     env = os.environ.get("QWEN_AUDIO_AGENT_TUI_AEC_BINARY")
@@ -216,8 +216,9 @@ def ensure_swift_helper():
         return pathlib.Path(env)
     here = pathlib.Path(__file__).resolve().parent   # tui/fullscreen/
     repo = here.parent.parent
+    cache_root = pathlib.Path.home() / "Library/Caches/qwaudio"
     candidates = [
-        (repo / "runtime/tui/macos-voice-io",
+        (cache_root / "tui/macos-voice-io",
          repo / "tui/native/macos-voice-io.swift"),
         (here / "macos-voice-io", here / "macos-voice-io.swift"),
     ]

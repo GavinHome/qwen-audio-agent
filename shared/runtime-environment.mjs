@@ -23,6 +23,7 @@ const USER_CONFIG_TEMPLATE = [
   '# 可选：AGENT_PROTOCOL=opencode 或 openclaw',
   '# AGENT_PROTOCOL=opencode',
   '# QWEN_AUDIO_AGENT_BACKEND_MODE=managed',
+  '# QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max',
   '# 兼容模式可选：QWEN_AUDIO_AGENT_BACKEND_AGENT=已有 Agent ID',
   '',
 ].join('\n')

@@ -23,12 +23,38 @@ export function resolveOpenCodeWorkspace(env = process.env) {
   )
 }
 
+const DEFAULT_BACKEND_MODEL = 'qwen3.7-max'
+
+function backendModelName(value) {
+  const model = String(value || DEFAULT_BACKEND_MODEL).trim()
+  const separator = model.indexOf('/')
+  return separator >= 0 ? model.slice(separator + 1) : model
+}
+
+export function resolveBackendModels(env = process.env) {
+  const common = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_MODEL || DEFAULT_BACKEND_MODEL,
+  ).trim() || DEFAULT_BACKEND_MODEL
+  return {
+    common,
+    openCode: String(
+      env.OPENCODE_MODEL
+      || `alibaba-cn/${backendModelName(common)}`,
+    ).trim(),
+    openClaw: String(
+      env.OPENCLAW_MODEL
+      || `bailian/${backendModelName(common)}`,
+    ).trim(),
+  }
+}
+
 const backendMode = (
   String(process.env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed').toLowerCase()
   === 'compatible'
     ? 'compatible'
     : 'managed'
 )
+const backendModels = resolveBackendModels()
 const sharedBackendAgent = String(
   process.env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
 ).trim()
@@ -101,8 +127,13 @@ export const config = {
   openCodeDirectory: resolveOpenCodeWorkspace(),
   openCodeModel: (
     process.env.OPENCODE_MODEL
-    || (backendMode === 'managed' ? 'alibaba-cn/qwen3.7-max' : '')
+    || (backendMode === 'managed' ? backendModels.openCode : '')
   ),
+  openClawModel: (
+    process.env.OPENCLAW_MODEL
+    || (backendMode === 'managed' ? backendModels.openClaw : '')
+  ),
+  backendModel: backendMode === 'managed' ? backendModels.common : '',
   openCodeCoordinatorAgent: (
     sharedBackendAgent
     || legacyBackendAgent(

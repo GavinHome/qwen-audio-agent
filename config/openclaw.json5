@@ -8,12 +8,12 @@
         api: "anthropic-messages",
         models: [
           {
-            id: "qwen3.7-max",
-            name: "Qwen3.7-Max",
+            id: "${QWEN_AUDIO_AGENT_OPENCLAW_MODEL_ID}",
+            name: "${QWEN_AUDIO_AGENT_OPENCLAW_MODEL_ID}",
             reasoning: false,
             input: ["text"],
-            contextWindow: 1000000,
-            maxTokens: 65536,
+            contextWindow: 128000,
+            maxTokens: 8192,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             compat: { thinkingFormat: "openai" },
           },
@@ -24,8 +24,8 @@
   agents: {
     defaults: {
       skipBootstrap: true,
-      model: { primary: "bailian/qwen3.7-max" },
-      models: { "bailian/qwen3.7-max": {} },
+      model: { primary: "${QWEN_AUDIO_AGENT_OPENCLAW_MODEL}" },
+      models: { "${QWEN_AUDIO_AGENT_OPENCLAW_MODEL}": {} },
     },
     list: [
       {

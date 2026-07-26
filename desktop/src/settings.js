@@ -4,6 +4,7 @@ const apiKey = document.querySelector('#api-key')
 const realtimeProvider = document.querySelector('#realtime-provider')
 const protocol = document.querySelector('#protocol')
 const backendUrl = document.querySelector('#backend-url')
+const backendModel = document.querySelector('#backend-model')
 const realtimeModel = document.querySelector('#realtime-model')
 const realtimeVoice = document.querySelector('#realtime-voice')
 const message = document.querySelector('#message')
@@ -48,6 +49,7 @@ function formSettings() {
     apiKey: apiKey.value,
     realtimeProvider: realtimeProvider.value,
     protocol: protocol.value,
+    backendModel: backendModel.value,
     realtimeModel: realtimeModel.value,
     realtimeVoice: realtimeVoice.value,
   }
@@ -59,6 +61,7 @@ function fingerprint(value) {
     apiKey: value.apiKey,
     realtimeProvider: value.realtimeProvider,
     protocol: value.protocol,
+    backendModel: value.backendModel,
     realtimeModel: value.realtimeModel,
     realtimeVoice: value.realtimeVoice,
     opencodeBaseUrl: value.opencodeBaseUrl,
@@ -113,6 +116,7 @@ function render() {
   realtimeProvider.value = settings.realtimeProvider
   protocol.value = settings.protocol
   backendUrl.value = selectedUrl()
+  backendModel.value = settings.backendModel
   realtimeModel.value = settings.realtimeModel
   realtimeVoice.value = settings.realtimeVoice
   renderRuntime()
@@ -140,6 +144,7 @@ for (const control of [
   gatewayUrl,
   apiKey,
   realtimeProvider,
+  backendModel,
   realtimeModel,
   realtimeVoice,
 ]) {

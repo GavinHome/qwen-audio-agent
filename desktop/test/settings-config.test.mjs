@@ -12,6 +12,7 @@ test('reads desktop settings with friendly defaults', () => {
   assert.equal(settings.realtimeProvider, 'dashscope')
   assert.equal(settings.protocol, 'opencode')
   assert.equal(settings.opencodeBaseUrl, 'http://127.0.0.1:4096')
+  assert.equal(settings.backendModel, 'qwen3.7-max')
   assert.equal(settings.realtimeModel, 'qwen-audio-3.0-realtime-plus')
 })
 
@@ -20,11 +21,13 @@ test('shows effective project or process settings when user config is empty', ()
     DASHSCOPE_API_KEY: 'effective-key',
     AGENT_PROTOCOL: 'openclaw',
     OPENCLAW_BASE_URL: 'http://127.0.0.1:19000',
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen-custom',
     QWEN_AUDIO_REALTIME_MODEL: 'effective-model',
   })
   assert.equal(settings.apiKey, 'effective-key')
   assert.equal(settings.protocol, 'openclaw')
   assert.equal(settings.openclawBaseUrl, 'http://127.0.0.1:19000')
+  assert.equal(settings.backendModel, 'qwen-custom')
   assert.equal(settings.realtimeModel, 'effective-model')
 })
 
@@ -38,6 +41,7 @@ test('updates known settings while preserving advanced configuration', () => {
       protocol: 'openclaw',
       opencodeBaseUrl: 'http://127.0.0.1:4096',
       openclawBaseUrl: 'http://127.0.0.1:18789',
+      backendModel: 'qwen3.7-plus',
       realtimeModel: 'qwen-audio-realtime-custom',
       realtimeVoice: 'longanqian',
     },
@@ -47,6 +51,7 @@ test('updates known settings while preserving advanced configuration', () => {
   assert.match(content, /AGENT_PROTOCOL=openclaw/)
   assert.match(content, /DASHSCOPE_API_KEY="key value"/)
   assert.match(content, /QWEN_AUDIO_REALTIME_PROVIDER=dashscope/)
+  assert.match(content, /QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-plus/)
   assert.match(content, /QWEN_AUDIO_REALTIME_MODEL=qwen-audio-realtime-custom/)
   assert.equal(parseSettings(content).protocol, 'openclaw')
   assert.equal(
@@ -62,6 +67,7 @@ test('rejects invalid realtime model names', () => {
     realtimeProvider: 'dashscope',
     opencodeBaseUrl: 'http://127.0.0.1:4096',
     openclawBaseUrl: 'http://127.0.0.1:18789',
+    backendModel: 'qwen3.7-max',
     realtimeModel: 'not a model',
     realtimeVoice: 'longanqian',
   }), /实时模型名称格式无效/)

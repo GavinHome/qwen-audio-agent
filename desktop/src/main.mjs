@@ -54,6 +54,7 @@ async function runtimeStatus(target = appOrigin) {
           protocol: health.backend.kind || health.backend.protocol || null,
           label: health.backend.label || null,
           baseUrl: health.backend.baseUrl || null,
+          model: health.backend.model || null,
           connected: health.backend.ok === true,
         }
       : null,
@@ -296,6 +297,7 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     'protocol',
     'opencodeBaseUrl',
     'openclawBaseUrl',
+    'backendModel',
     'realtimeModel',
     'realtimeVoice',
   ].some(key => previous[key] !== normalized[key])

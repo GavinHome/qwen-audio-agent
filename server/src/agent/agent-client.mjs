@@ -15,7 +15,9 @@ export class AgentClient {
     protocol = config.agentProtocol,
     mode = config.backendMode,
     baseUrl = config.openCodeBaseUrl,
-    model = config.openCodeModel,
+    model = protocol === 'openclaw'
+      ? config.openClawModel
+      : config.openCodeModel,
     timeoutMs = config.agentTimeoutMs,
     directory = config.openCodeDirectory,
     username = config.openCodeUsername,

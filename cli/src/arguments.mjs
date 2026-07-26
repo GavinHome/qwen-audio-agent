@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto'
 
 const COMMANDS = new Set(['gateway', 'tui', 'webui', 'status', 'config'])
+const GATEWAY_ACTIONS = new Set([
+  'run',
+  'install',
+  'start',
+  'stop',
+  'restart',
+  'status',
+  'uninstall',
+])
 const TUI_MODES = new Set(['minimal', 'full'])
 const BACKENDS = new Set(['opencode', 'openclaw'])
 const BACKEND_MODES = new Set(['managed', 'compatible'])
@@ -33,9 +42,18 @@ export function parseArguments(argv, env = process.env) {
   const first = args[0]
   const command = first && !first.startsWith('-') ? args.shift() : 'gateway'
   if (!COMMANDS.has(command)) throw new Error(`未知命令：${command}`)
+  const gatewayAction = command === 'gateway'
+    && args[0]
+    && !args[0].startsWith('-')
+    ? args.shift()
+    : command === 'status' ? 'status' : 'run'
+  if (command === 'gateway' && !GATEWAY_ACTIONS.has(gatewayAction)) {
+    throw new Error(`未知 Gateway 命令：${gatewayAction}`)
+  }
 
   const options = {
     command,
+    gatewayAction,
     mode: 'minimal',
     url: env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
     sessionId: env.QWEN_AUDIO_AGENT_SESSION_ID || createVoiceSessionId(),
@@ -49,6 +67,7 @@ export function parseArguments(argv, env = process.env) {
     backendUrl: '',
     openBrowser: true,
     takeover: false,
+    gatewayConfigurationSpecified: false,
   }
 
   for (let index = 0; index < args.length; index += 1) {
@@ -57,18 +76,23 @@ export function parseArguments(argv, env = process.env) {
       options.mode = nextValue(args, index++, '--mode')
     } else if (argument === '--url') {
       options.url = nextValue(args, index++, '--url')
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend') {
       options.backend = nextValue(args, index++, '--backend').toLowerCase()
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-mode') {
       options.backendMode = nextValue(
         args,
         index++,
         '--backend-mode',
       ).toLowerCase()
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-agent') {
       options.backendAgent = nextValue(args, index++, '--backend-agent').trim()
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-url') {
       options.backendUrl = nextValue(args, index++, '--backend-url')
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--session') {
       options.sessionId = nextValue(args, index++, '--session')
     } else if (argument === '--no-open') options.openBrowser = false
@@ -97,6 +121,15 @@ export function parseArguments(argv, env = process.env) {
   if (!['tui', 'webui'].includes(command) && options.takeover) {
     throw new Error('--takeover 只适用于 tui 或 webui')
   }
+  if (
+    command === 'gateway'
+    && !['run', 'status'].includes(options.gatewayAction)
+    && options.gatewayConfigurationSpecified
+  ) {
+    throw new Error(
+      'Gateway 后台服务从 config.env 读取配置；请先修改配置，再执行服务命令',
+    )
+  }
 
   options.url = cleanOrigin(options.url, ' Gateway URL')
   const configuredBackendUrl = options.backend === 'openclaw'
@@ -116,10 +149,16 @@ export function helpText() {
     'qwenaudio',
     '',
     '用法：',
-    '  qwenaudio [gateway] [选项]   启动 Gateway（默认）',
+    '  qwenaudio [gateway] [run] [选项]  前台运行 Gateway（默认）',
+    '  qwenaudio gateway install         安装并启动后台常驻服务',
+    '  qwenaudio gateway start           启动后台服务',
+    '  qwenaudio gateway status          查看 Gateway 状态',
+    '  qwenaudio gateway stop            停止后台服务',
+    '  qwenaudio gateway restart         重启后台服务',
+    '  qwenaudio gateway uninstall       移除后台常驻服务',
     '  qwenaudio tui [选项]         连接现有 Gateway 的终端界面',
     '  qwenaudio webui [选项]       打开现有 Gateway 的 WebUI',
-    '  qwenaudio status [选项]      查看 Gateway 状态',
+    '  qwenaudio status [选项]      gateway status 的兼容别名',
     '  qwenaudio config             显示用户配置文件位置',
     '',
     'Gateway 选项：',

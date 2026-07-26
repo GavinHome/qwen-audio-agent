@@ -9,6 +9,7 @@ runtime/
 *.log
 .DS_Store
 config/openclaw-workspace/
+config/openclaw.json5.last-good
 
 # Agent workspaces create user deliverables at runtime.
 config/opencode-workspace/*

@@ -30,6 +30,21 @@ function harness({ ownsProcesses = false } = {}) {
       inspectGateway: async () => ({
         backend: { kind: 'opencode', ok: true },
       }),
+      manageService: async action => {
+        calls.push(['service', action])
+        return {
+          installed: true,
+          running: action !== 'stop' && action !== 'uninstall',
+          logPath: '/home/user/.config/qwaudio/logs/gateway.log',
+        }
+      },
+      waitForService: async url => {
+        calls.push(['service.ready', url])
+        return { backend: { kind: 'opencode', ok: true } }
+      },
+      waitForServiceStop: async url => {
+        calls.push(['service.stopped', url])
+      },
       runMinimalTui: async options => {
         calls.push(['minimal', options])
         return 11
@@ -64,6 +79,68 @@ test('keeps an owned Gateway in the foreground', async () => {
   )
 })
 
+test('installs, stops and reports the background Gateway service', async () => {
+  const install = harness()
+  assert.equal(
+    await main(['gateway', 'install'], install.dependencies),
+    0,
+  )
+  assert.deepEqual(install.calls.map(call => call[0]), [
+    'service',
+    'service',
+    'service.ready',
+    'stdout',
+    'stdout',
+  ])
+
+  const stop = harness()
+  assert.equal(await main(['gateway', 'stop'], stop.dependencies), 0)
+  assert.deepEqual(stop.calls.map(call => call[0]), [
+    'service',
+    'service',
+    'service.stopped',
+    'stdout',
+    'stdout',
+  ])
+
+  const status = harness()
+  assert.equal(await main(['gateway', 'status'], status.dependencies), 0)
+  assert.deepEqual(status.calls.map(call => call[0]), [
+    'service',
+    'stdout',
+  ])
+})
+
+test('does not confuse a foreground Gateway with the background service', async () => {
+  const restart = harness()
+  restart.dependencies.manageService = async action => {
+    restart.calls.push(['service', action])
+    return { installed: true, running: false }
+  }
+  await assert.rejects(
+    main(['gateway', 'restart'], restart.dependencies),
+    /正在前台运行/,
+  )
+  assert.deepEqual(restart.calls.map(call => call[0]), ['service'])
+
+  const uninstall = harness()
+  uninstall.dependencies.manageService = async action => {
+    uninstall.calls.push(['service', action])
+    return {
+      installed: action !== 'uninstall',
+      running: false,
+    }
+  }
+  assert.equal(
+    await main(['gateway', 'uninstall'], uninstall.dependencies),
+    0,
+  )
+  assert.equal(
+    uninstall.calls.some(call => call[0] === 'service.stopped'),
+    false,
+  )
+})
+
 test('connects TUI and WebUI without starting services', async () => {
   const tui = harness()
   assert.equal(await main(['tui', '--mode', 'full'], tui.dependencies), 12)
@@ -87,7 +164,7 @@ test('requires a running Gateway for client commands', async () => {
 test('prints status and configuration without starting a service', async () => {
   const status = harness()
   assert.equal(await main(['status'], status.dependencies), 0)
-  assert.deepEqual(status.calls.map(call => call[0]), ['stdout'])
+  assert.deepEqual(status.calls.map(call => call[0]), ['service', 'stdout'])
 
   const config = harness()
   assert.equal(await main(['config'], config.dependencies), 0)

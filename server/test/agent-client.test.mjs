@@ -60,9 +60,11 @@ test('selects OpenClaw without changing the backend Agent session model', () => 
     protocol: 'openclaw',
     openClawBaseUrl: 'http://openclaw.test:18789',
     openClawCoordinatorAgent: 'qwen-audio-agent-backend',
+    model: 'bailian/qwen-custom',
   })
   assert.equal(client.protocol, 'openclaw')
   assert.equal(client.describe().sessionModel, 'one-persistent-backend-agent')
+  assert.equal(client.describe().model, 'bailian/qwen-custom')
 })
 
 test('reuses one backend Agent session and serializes all submitted work', async () => {

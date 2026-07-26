@@ -29,6 +29,20 @@ qwenaudio config
 DASHSCOPE_API_KEY=your-key
 ```
 
+增强模式默认使用 `qwen3.7-max` 作为后台模型。需要修改时只写一个公共配置：
+
+```dotenv
+QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max
+```
+
+OpenCode Adapter 会将其转换为 `alibaba-cn/qwen3.7-max`，OpenClaw Adapter 会
+转换为 `bailian/qwen3.7-max`。`OPENCODE_MODEL` 和 `OPENCLAW_MODEL` 仍可作为
+高级的后台原生模型标识覆盖公共配置。
+
+OpenClaw 的自定义 Provider 使用保守的通用容量声明，避免切换模型后向服务发送
+超出模型上限的请求。需要精确使用某个模型的完整容量时，可以通过
+`OPENCLAW_CONFIG_PATH` 提供后台原生配置。
+
 本地身份密钥由程序首次启动时自动生成，保存在同一配置目录的 `state.env`，
 文件权限为仅当前用户可读写。
 
@@ -99,11 +113,28 @@ qwenaudio tui --takeover
 同一用户只能运行一个 TUI。Gateway、桌面应用和 WebUI 可以同时驻留；桌面球会在
 TUI 接管语音期间显示占用状态。
 
-## 自动启动
+## Gateway 运行方式
 
 Gateway 默认使用增强模式并启动带专用后台 Agent 的服务。若目标端口已被其他
 进程占用，会选择空闲的本地端口，不会接管或关闭用户进程。兼容模式只连接现有
 服务，地址不可用时直接报错。
+
+`qwenaudio`、`qwenaudio gateway` 和 `qwenaudio gateway run` 都在前台运行。
+需要后台常驻时使用：
+
+```bash
+qwenaudio gateway install    # 安装并立即启动用户服务
+qwenaudio gateway status
+qwenaudio gateway restart
+qwenaudio gateway stop
+qwenaudio gateway start
+qwenaudio gateway uninstall
+```
+
+后台服务每次启动都会重新读取 `config.env`。修改配置后执行
+`qwenaudio gateway restart` 即可生效。服务日志位于
+`~/.config/qwaudio/logs/gateway.log`；Linux 也可以通过
+`journalctl --user -u qwen-audio-agent-gateway` 查看。
 
 TUI、WebUI 和桌面版只连接 Gateway，不直接连接、启动或停止 OpenCode /
 OpenClaw。桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时
@@ -160,12 +191,16 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | --- | --- |
 | `HOST` / `PORT` | `127.0.0.1` / `3101` |
 | `OPENCODE_WORKSPACE` | 安装目录的 `config/opencode-workspace` |
-| `OPENCODE_MODEL` | `alibaba-cn/qwen3.7-max` |
+| `QWEN_AUDIO_AGENT_BACKEND_MODEL` | `qwen3.7-max` |
+| `OPENCODE_MODEL` / `OPENCLAW_MODEL` | 由对应 Adapter 从公共模型推导 |
 | `QWEN_AUDIO_REALTIME_MODEL` | `qwen-audio-3.0-realtime-plus` |
 | `QWEN_AUDIO_REALTIME_PROVIDER` | `dashscope` |
 | `QWEN_AUDIO_REALTIME_VOICE` | `longanqian` |
 | `QWEN_AUDIO_AGENT_IDENTITY_MODE` | `personal` |
 | `AGENT_TIMEOUT_MS` | `300000` |
+
+macOS TUI 的 CoreAudio 辅助程序默认编译到
+`~/Library/Caches/qwaudio/tui/macos-voice-io`，无需额外配置。
 
 任务状态、通知重试、记忆容量与保留时间等运行参数同样使用内置默认值。只有明确
 进行容量规划或故障诊断时才建议覆盖。

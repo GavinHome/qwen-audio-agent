@@ -3,11 +3,17 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadRuntimeEnvironment } from '../../shared/runtime-environment.mjs'
 import { helpText, parseArguments } from './arguments.mjs'
-import { ensureRuntime, readGatewayHealth } from './runtime.mjs'
+import {
+  ensureRuntime,
+  readGatewayHealth,
+  waitForGateway,
+} from './runtime.mjs'
 import { launchWebUi } from './webui.mjs'
 import { acquireCliInstance } from './instance-lock.mjs'
+import { manageGatewayService } from './gateway-service.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const gatewayPath = resolve(root, 'server/src/index.mjs')
 
 function childExit(child) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -70,6 +76,19 @@ function gatewaySummary(health) {
   return `${label} ${state}`
 }
 
+async function waitForGatewayStop(url, {
+  inspectGateway = readGatewayHealth,
+  timeoutMs = 15_000,
+  intervalMs = 100,
+} = {}) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!await inspectGateway(url)) return
+    await new Promise(resolvePromise => setTimeout(resolvePromise, intervalMs))
+  }
+  throw new Error(`Gateway 停止超时：${url}`)
+}
+
 export async function main(argv, {
   env = process.env,
   stdout = process.stdout,
@@ -79,6 +98,9 @@ export async function main(argv, {
   runFullTui = runFull,
   prepareRuntime = options => ensureRuntime(options, { root, env }),
   inspectGateway = url => readGatewayHealth(url),
+  manageService = (action, options) => manageGatewayService(action, options),
+  waitForService = url => waitForGateway(url, { requireBackend: true }),
+  waitForServiceStop = url => waitForGatewayStop(url, { inspectGateway }),
   runWebUi = options => launchWebUi(options),
   acquireInstance = directory => acquireCliInstance(directory),
 } = {}) {
@@ -91,6 +113,70 @@ export async function main(argv, {
   if (options.command === 'config') {
     stdout.write(`${environment.configPath
       || resolve(environment.configDirectory, 'config.env')}\n`)
+    return 0
+  }
+
+  if (
+    (options.command === 'gateway' && options.gatewayAction !== 'run')
+    || options.command === 'status'
+  ) {
+    const serviceOptions = {
+      configDirectory: environment.configDirectory,
+      gatewayPath,
+      serviceMetadata: {
+        url: options.url,
+      },
+    }
+    if (options.gatewayAction === 'status') {
+      const service = await manageService('status', serviceOptions)
+      const serviceUrl = service.installedMetadata?.url || options.url
+      const health = await inspectGateway(serviceUrl)
+      stdout.write(
+        `Gateway 后台服务：${
+          service.running
+            ? '运行中'
+            : service.installed ? '已停止' : '未安装'
+        }\n`
+        + `连接状态：${health ? gatewaySummary(health) : '未连接'}\n`
+        + `地址：${serviceUrl}\n`,
+      )
+      return service.running && health ? 0 : 1
+    }
+
+    const current = await manageService('status', serviceOptions)
+    const currentUrl = current.installedMetadata?.url || options.url
+    const health = await inspectGateway(currentUrl)
+    if (
+      ['install', 'start', 'restart'].includes(options.gatewayAction)
+      && health
+      && !current.running
+    ) {
+      throw new Error(
+        'Gateway 正在前台运行；请先结束前台进程，再启动后台服务',
+      )
+    }
+    const service = await manageService(
+      options.gatewayAction,
+      serviceOptions,
+    )
+    const serviceUrl = service.installedMetadata?.url || currentUrl
+    if (['install', 'start', 'restart'].includes(options.gatewayAction)) {
+      const ready = await waitForService(serviceUrl)
+      stdout.write(
+        `Gateway 后台服务已${
+          options.gatewayAction === 'restart' ? '重启' : '启动'
+        }：${serviceUrl}\n`
+        + `${gatewaySummary(ready)}\n`,
+      )
+    } else {
+      if (health && current.running) await waitForServiceStop(currentUrl)
+      stdout.write(
+        options.gatewayAction === 'uninstall'
+          ? 'Gateway 后台服务已移除\n'
+          : 'Gateway 后台服务已停止\n',
+      )
+    }
+    if (service.logPath) stdout.write(`日志：${service.logPath}\n`)
     return 0
   }
 
@@ -122,13 +208,6 @@ export async function main(argv, {
     throw new Error(
       `Gateway 未运行：${options.url}。请先执行 qwenaudio gateway`,
     )
-  }
-  if (options.command === 'status') {
-    stdout.write(
-      `Gateway 已连接：${options.url}\n`
-      + `${gatewaySummary(health)}\n`,
-    )
-    return 0
   }
   if (options.command === 'webui') return runWebUi(options)
 
