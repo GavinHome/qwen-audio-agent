@@ -13,15 +13,7 @@ OpenCode，也支持 OpenClaw，并为更多后台 Agent 保留统一的接入�
 
 ## 对话继续，任务也在继续
 
-```text
-用户  ⇄  Realtime 语音前台
-                 │
-                 ├─ 自然聊天与即时回答
-                 │
-                 └─ 无缝交给后台 Agent
-                              │
-                              └─ 结果自然回到对话
-```
+![qwen-audio-agent 原理图](docs/architecture-overview.png)
 
 Realtime 前台负责倾听、理解和表达。能直接回答的问题立即回答；需要外部信息、
 工具或持续处理时，再把任务交给后台 Agent。
