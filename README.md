@@ -43,6 +43,7 @@ Realtime 前台负责倾听、理解和表达。能直接回答的问题立即�
 ## 安装
 
 需要 Node.js 22.22.2、24.15.0 或更高兼容版本、npm 10+ 和 DashScope API Key。
+仓库提供 `.nvmrc` 和 `.node-version`；使用 nvm 时可直接运行 `nvm use`。
 
 从 npm registry 安装已发布版本：
 
@@ -54,7 +55,7 @@ npm install -g qwen-audio-agent
 成品：
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/QwenLM/qwen-audio-agent.git
 cd qwen-audio-agent
 npm install
 npm run install:global
@@ -115,14 +116,20 @@ qwenaudio webui
 桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。先按上面的步骤启动
 Gateway，再从发布页下载 `.dmg`，打开后将 **Qwen Audio Agent** 拖入“应用程序”。
 
-从源码生成本机安装包：
+从源码生成仅供本机测试的未签名安装包：
 
 ```bash
-npm run desktop:build
+npm run desktop:build:local
 ```
 
 构建完成后，打开 `dist/desktop/` 中的 `.dmg`，将 **Qwen Audio Agent**
 拖入“应用程序”即可。本地开发可直接运行 `npm run desktop`。
+
+正式发布使用 `npm run desktop:build`。该命令要求 Apple Developer ID
+签名与公证凭据，开启 hardened runtime，并为麦克风和网络访问应用最小权限。
+签名使用 `CSC_LINK`/`CSC_KEY_PASSWORD`（或钥匙串中的 `CSC_NAME`）；公证使用
+`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，也可使用
+`APPLE_API_KEY`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`。
 
 ## 后台常驻
 
@@ -184,7 +191,16 @@ npm run dev       # Gateway 与 WebUI 热更新
 npm run desktop   # macOS 桌面悬浮球
 ```
 
-默认 Gateway 只监听本机地址。远程使用时应配置 HTTPS 和访问认证。
+默认 Gateway 只接受 `localhost`、`127.0.0.1` 和 `::1` 的 Host/Origin。
+远程使用时必须放在带访问认证的 HTTPS 反向代理之后，并通过
+`QWEN_AUDIO_AGENT_ALLOWED_ORIGINS` 明确信任代理公开地址。不要把 Gateway
+端口直接暴露到局域网或公网；详细配置见[配置说明](docs/configuration.md)。
+
+## 参与贡献与安全
+
+- 开发与提交说明：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 安全问题报告：[SECURITY.md](SECURITY.md)
+- 第三方组件声明：[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## 许可证
 

@@ -14,6 +14,7 @@ test('reads desktop settings with friendly defaults', () => {
   assert.equal(settings.opencodeBaseUrl, 'http://127.0.0.1:4096')
   assert.equal(settings.backendModel, 'qwen3.7-max')
   assert.equal(settings.realtimeModel, 'qwen-audio-3.0-realtime-plus')
+  assert.equal(settings.orbStyle, 'fluid')
 })
 
 test('shows effective project or process settings when user config is empty', () => {
@@ -23,12 +24,14 @@ test('shows effective project or process settings when user config is empty', ()
     OPENCLAW_BASE_URL: 'http://127.0.0.1:19000',
     QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen-custom',
     QWEN_AUDIO_REALTIME_MODEL: 'effective-model',
+    QWEN_AUDIO_ORB_STYLE: 'goo',
   })
   assert.equal(settings.apiKey, 'effective-key')
   assert.equal(settings.protocol, 'openclaw')
   assert.equal(settings.openclawBaseUrl, 'http://127.0.0.1:19000')
   assert.equal(settings.backendModel, 'qwen-custom')
   assert.equal(settings.realtimeModel, 'effective-model')
+  assert.equal(settings.orbStyle, 'goo')
 })
 
 test('updates known settings while preserving advanced configuration', () => {
@@ -44,6 +47,7 @@ test('updates known settings while preserving advanced configuration', () => {
       backendModel: 'qwen3.7-plus',
       realtimeModel: 'qwen-audio-realtime-custom',
       realtimeVoice: 'longanqian',
+      orbStyle: 'goo',
     },
   )
   assert.match(content, /CUSTOM_SETTING=keep/)
@@ -53,11 +57,13 @@ test('updates known settings while preserving advanced configuration', () => {
   assert.match(content, /QWEN_AUDIO_REALTIME_PROVIDER=dashscope/)
   assert.match(content, /QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-plus/)
   assert.match(content, /QWEN_AUDIO_REALTIME_MODEL=qwen-audio-realtime-custom/)
+  assert.match(content, /QWEN_AUDIO_ORB_STYLE=goo/)
   assert.equal(parseSettings(content).protocol, 'openclaw')
   assert.equal(
     parseSettings(content).realtimeModel,
     'qwen-audio-realtime-custom',
   )
+  assert.equal(parseSettings(content).orbStyle, 'goo')
 })
 
 test('rejects invalid realtime model names', () => {
@@ -70,5 +76,6 @@ test('rejects invalid realtime model names', () => {
     backendModel: 'qwen3.7-max',
     realtimeModel: 'not a model',
     realtimeVoice: 'longanqian',
+    orbStyle: 'fluid',
   }), /实时模型名称格式无效/)
 })

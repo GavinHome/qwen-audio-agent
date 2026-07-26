@@ -58,6 +58,7 @@ export function gatewayServiceDefinition({
   const logsDirectory = resolve(configDirectory, 'logs')
   const metadataPath = resolve(configDirectory, 'gateway-service.json')
   const command = [nodePath, gatewayPath]
+  const workingDirectory = dirname(gatewayPath)
   const environment = {
     QWAUDIO_CONFIG_DIR: configDirectory,
     PATH: pathEnvironment,
@@ -86,6 +87,8 @@ ${Object.entries(environment).map(([key, value]) => (
     `    <key>${xml(key)}</key>\n    <string>${xml(value)}</string>`
   )).join('\n')}
   </dict>
+  <key>WorkingDirectory</key>
+  <string>${xml(workingDirectory)}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -124,6 +127,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+WorkingDirectory=${systemd(workingDirectory)}
 ExecStart=${command.map(systemd).join(' ')}
 ${Object.entries(environment).map(([key, value]) => (
     `Environment=${systemd(`${key}=${value}`)}`

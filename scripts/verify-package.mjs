@@ -35,7 +35,12 @@ const required = [
   'config/openclaw.json5',
   'config/opencode/agents/qwen-audio-agent-backend.md',
   'config/opencode/plugin/qwen-audio-agent-sessions.js',
+  'CONTRIBUTING.md',
+  'NOTICE',
+  'SECURITY.md',
+  'THIRD_PARTY_NOTICES.md',
   'scripts/backend',
+  'scripts/check-desktop-release-env.mjs',
   'scripts/install-global.mjs',
   'server/src/index.mjs',
   'shared/runtime-environment.mjs',
@@ -50,6 +55,7 @@ const forbidden = [...files].filter(file => (
   file.includes('/__pycache__/')
   || file.endsWith('.pyc')
   || file.includes('/node_modules/')
+  || file.startsWith('desktop/src/')
 ))
 if (forbidden.length) {
   throw new Error(`npm 成品包含不应发布的文件：${forbidden.join(', ')}`)

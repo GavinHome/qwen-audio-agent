@@ -34,6 +34,11 @@ const desktopOrbMode = (
 const takeoverRequested = (
   new URLSearchParams(window.location.search).get('takeover') === '1'
 )
+const orbStyle = (
+  new URLSearchParams(window.location.search).get('orbStyle') === 'goo'
+    ? 'goo'
+    : 'fluid'
+)
 
 function getSessionId() {
   const requested = requestedSessionId(window.location.search)
@@ -69,7 +74,7 @@ function OrbControlIcon({ type, muted = false }) {
   if (type === 'settings') {
     return <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
-      <path d="M12 3.5v2m0 13v2M3.5 12h2m13 0h2M6 6l1.4 1.4m9.2 9.2L18 18M18 6l-1.4 1.4M7.4 16.6 6 18" />
+      <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2 2 0 0 1-2.83 2.83l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V21a2 2 0 0 1-4 0v-.06A1.8 1.8 0 0 0 8.8 19.3a1.8 1.8 0 0 0-1.98.36l-.04.04a2 2 0 0 1-2.83-2.83l.04-.04a1.8 1.8 0 0 0 .36-1.98A1.8 1.8 0 0 0 2.7 13.8H2.6a2 2 0 0 1 0-4h.06A1.8 1.8 0 0 0 4.3 8.72a1.8 1.8 0 0 0-.36-1.98l-.04-.04a2 2 0 0 1 2.83-2.83l.04.04a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 9.82 2.6V2.5a2 2 0 0 1 4 0v.06A1.8 1.8 0 0 0 14.9 4.2a1.8 1.8 0 0 0 1.98-.36l.04-.04a2 2 0 0 1 2.83 2.83l-.04.04a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.65 1.08h.1a2 2 0 0 1 0 4h-.06A1.8 1.8 0 0 0 19.4 15Z" />
     </svg>
   }
   return <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -554,9 +559,9 @@ export default function App() {
   }
 
   if (desktopOrbMode) {
-    return <main className="desktop-orb-shell">
+    return <main className="desktop-gallery-shell">
       <section
-        className="desktop-orb-stage"
+        className={`desktop-orb-stage${orbDragging ? ' dragging' : ''}`}
         aria-label={`qwen-audio · ${voice.visualError ? '连接异常' : labelFor(visualVoiceState)}`}
         title={
           voice.error
@@ -564,37 +569,22 @@ export default function App() {
             ? `${ownershipLabel}正在使用语音`
             : labelFor(visualVoiceState))
         }
+        onClick={handleOrbClick}
+        onPointerDown={beginOrbDrag}
+        onPointerMove={moveOrb}
+        onPointerUp={endOrbDrag}
+        onPointerCancel={endOrbDrag}
       >
-        <button
-          ref={voice.levelElementRef}
-          className={[
-            'orb',
-            'desktop-orb',
-            visualVoiceState,
-            voiceEnabled ? 'enabled' : 'input-muted',
-            waitingForVoice ? 'waiting' : '',
-            voice.visualError ? 'error' : '',
-            orbDragging ? 'dragging' : '',
-          ].filter(Boolean).join(' ')}
-          onClick={handleOrbClick}
-          onPointerDown={beginOrbDrag}
-          onPointerMove={moveOrb}
-          onPointerUp={endOrbDrag}
-          onPointerCancel={endOrbDrag}
-          aria-label={
-            voice.state === 'speaking'
-              ? '打断 qwen-audio'
-              : voiceEnabled
-                ? '麦克风静音'
-                : waitingForVoice ? '取消等待语音' : '开启麦克风'
-          }
+        <DesktopFluidOrb style={orbStyle} />
+        <nav
+          className="desktop-orb-controls"
+          aria-label="语音控制"
+          onPointerDown={event => event.stopPropagation()}
         >
-          <DesktopFluidOrb />
-        </button>
-        <nav className="desktop-orb-controls" aria-label="语音控制">
           <button
             className={!voiceEnabled ? 'active' : ''}
-            onClick={() => {
+            onClick={event => {
+              event.stopPropagation()
               if (voiceEnabled || waitingForVoice) {
                 disableVoice()
                 return
@@ -615,7 +605,10 @@ export default function App() {
             <OrbControlIcon type="microphone" muted={!voiceEnabled} />
           </button>
           <button
-            onClick={() => window.qwenAudioAgentDesktop?.openSettings()}
+            onClick={event => {
+              event.stopPropagation()
+              window.qwenAudioAgentDesktop?.openSettings()
+            }}
             aria-label="设置"
             title="设置"
           >
@@ -623,7 +616,10 @@ export default function App() {
           </button>
           <button
             className="danger"
-            onClick={() => window.qwenAudioAgentDesktop?.quit()}
+            onClick={event => {
+              event.stopPropagation()
+              window.qwenAudioAgentDesktop?.quit()
+            }}
             aria-label="退出"
             title="退出"
           >

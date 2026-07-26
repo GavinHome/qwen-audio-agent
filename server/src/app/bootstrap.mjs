@@ -13,6 +13,7 @@ import { enforceSameOrigin } from '../core/request-security.mjs'
 import { attachRealtimeGateway } from '../voice/realtime-gateway.mjs'
 import { describeActiveRealtime } from '../voice/realtime-provider.mjs'
 import { taskManager, taskStore } from '../task/task-manager.mjs'
+import { webDistributionPath } from '../core/install-paths.mjs'
 
 const identityManager = new IdentityManager({
   secret: config.authSecret,
@@ -173,7 +174,7 @@ app.get('/api/tasks/:id/events', (req, res) => {
   res.on('close', unsubscribe)
 })
 
-const webDist = resolve(process.cwd(), '../web/dist')
+const webDist = webDistributionPath()
 app.use(express.static(webDist))
 app.get('*', (req, res) => res.sendFile(resolve(webDist, 'index.html')))
 

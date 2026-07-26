@@ -102,7 +102,7 @@ test('OpenCode auto mode skips an incompatible installed version', {
     }), [
       'npx',
       '--yes',
-      'opencode-ai',
+      'opencode-ai@1.18.5',
       'serve',
       '--hostname',
       '127.0.0.1',
@@ -147,7 +147,7 @@ test('OpenClaw auto mode prefers the user-installed command', {
   }
 })
 
-test('package mode uses unversioned configurable npm package names', {
+test('package mode uses pinned, configurable npm package versions', {
   skip: process.platform === 'win32',
 }, () => {
   const openCode = fixture()
@@ -161,7 +161,7 @@ test('package mode uses unversioned configurable npm package names', {
     }), [
       'npx',
       '--yes',
-      'opencode-ai',
+      'opencode-ai@1.18.5',
       'serve',
       '--hostname',
       '127.0.0.1',
@@ -173,7 +173,7 @@ test('package mode uses unversioned configurable npm package names', {
     }, ['gateway', 'run']), [
       'npx',
       '--yes',
-      'openclaw',
+      'openclaw@2026.7.1-2',
       'gateway',
       'run',
     ])

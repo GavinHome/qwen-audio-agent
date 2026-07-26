@@ -1,11 +1,26 @@
-export default function DesktopFluidOrb() {
+export default function DesktopFluidOrb({ style = 'fluid' }) {
+  if (style === 'goo') {
+    return (
+      <div className="stage">
+        <div className="stage-scale goo-scale">
+          <div className="goo">
+            <div className="fill"></div>
+            <div className="shade"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <span className="desktop-fluid-orb" aria-hidden="true">
-      <span className="flow flow-violet" />
-      <span className="flow flow-blue" />
-      <span className="flow flow-cyan" />
-      <span className="flow flow-lilac" />
-      <span className="fluid-glass" />
-    </span>
+    <div className="stage">
+      <div className="stage-scale">
+        <div className="fluid">
+          <span className="blob b1"></span><span className="blob b2"></span>
+          <span className="blob b3"></span><span className="blob b4"></span>
+          <div className="glass"></div>
+        </div>
+      </div>
+    </div>
   )
 }

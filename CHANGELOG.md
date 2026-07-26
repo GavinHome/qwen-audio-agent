@@ -10,6 +10,15 @@
 - 修复播放回执缺失响应上下文时的 Gateway 崩溃;静默打断竞态中
   无害的 "no active response" 报错。
 - WebUI 资源与 API 改为相对路径,支持反向代理前缀部署。
+- 修复后台服务从非仓库目录启动时无法定位 WebUI 的问题，并固定 launchd/systemd
+  工作目录。
+- 收紧 Gateway Host/Origin 校验，阻止默认局域网暴露与 DNS rebinding；远程部署
+  改为显式可信 Origin 加带认证的 HTTPS 反向代理。
+- 远程图片、音频和视频改为用户确认后加载，避免 Agent 输出触发隐私泄露。
+- 固定 OpenCode/OpenClaw 兜底运行时版本，补齐公开 npm/GitHub 元数据、跨平台 CI、
+  安全政策、贡献说明和第三方组件声明。
+- macOS 正式构建启用 hardened runtime、Developer ID 签名与公证；保留独立的
+  本地未签名构建命令。
 
 ## 0.2.0
 
