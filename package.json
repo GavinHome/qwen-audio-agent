@@ -1,7 +1,7 @@
 {
   "name": "qwen-audio-agent",
   "version": "0.6.0",
-  "description": "A realtime voice frontend for OpenCode, OpenClaw, and Qoder.",
+  "description": "A realtime voice frontend for mainstream AI agents.",
   "author": "qwen-audio-agent contributors",
   "license": "Apache-2.0",
   "repository": {

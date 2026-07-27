@@ -7,8 +7,9 @@
 **自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
 
 qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续说话、
-随时打断，也可以直接用语音安排搜索、文件、代码和其他耗时工作。默认连接
-OpenCode，也支持 OpenClaw 和 Qoder，并为更多后台 Agent 保留统一的接入方式。
+随时打断，也可以直接用语音安排搜索、文件、代码和其他耗时工作。它通过统一的
+Adapter 架构连接不同 Agent；项目会持续接入主流 Agent，而不把产品绑定到某一个
+默认后台。
 
 它不替代后台 Agent，而是让已有的模型、工具、MCP、Skill、权限和项目上下文，
 自然进入实时语音对话。
@@ -36,13 +37,32 @@ Realtime 前台负责倾听、理解和表达。能直接回答的问题立即�
 图中的 OpenCode Adapter 是当前开发示例，不是架构限制。其他支持会话、事件、
 取消和权限交互的后台 Agent，也可以通过实现对应 Adapter 接入同一套三层架构。
 
+## Agent 支持
+
+qwen-audio-agent 的目标是为主流 Agent 提供统一的实时语音入口。不同 Agent 的
+原生会话、权限和进程模型并不相同，因此每个接入都由独立 Adapter 明确适配，而
+不是假设所有后台共享同一种接口。
+
+| Agent | 状态 | 当前接入能力 |
+| --- | --- | --- |
+| OpenCode | 已支持 | 托管或兼容模式、协调 Session、项目任务、事件、取消与权限 |
+| OpenClaw | 已支持 | 托管或兼容模式、固定协调 Agent、任务事件与权限转发 |
+| Qoder | 已支持 | 官方 SDK/CLI、原生 CLI Session 列表与续接、项目委派与权限 |
+| Codex | 开发中 | 独立功能分支，完成验证后合并 |
+| Hermes | 开发中 | 独立功能分支，完成验证后合并 |
+| 更多主流 Agent | 持续接入 | 复用统一 Adapter 契约逐步扩展 |
+
+“已支持”表示能力已经进入主分支；“开发中”表示仓库中已有独立功能分支，但尚不应
+视为发布版本能力。各 Agent 的原生能力不同，例如 Qoder Desktop Quest 暂时不能
+通过官方 SDK 续接，具体限制见下方配置说明。
+
 ## 核心体验
 
 - 像通话一样自由交流：全双工语音、自然打断、持续多轮对话
 - 对话与任务互不阻塞：前台持续回应，后台继续执行
 - 结果无缝回到上下文：可以追问、补充、修改和继续处理
 - 连接现有 Agent 能力：延续工具、项目、记忆与工作习惯
-- OpenCode 默认增强支持，并可切换 OpenClaw 或 Qoder
+- 一个语音入口连接多种主流 Agent，并持续扩展 Adapter 生态
 - WebUI、终端 TUI 和 macOS 桌面悬浮球
 - 本地用户档案和跨会话个人记忆
 
@@ -180,7 +200,13 @@ Agent 会被统一管理。
 
 ## 选择后台 Agent
 
-默认使用 OpenCode 增强模式，无需额外配置。切换到 OpenClaw：
+通过 `AGENT_PROTOCOL` 选择 Gateway 使用的后台 Agent。例如 OpenCode：
+
+```dotenv
+AGENT_PROTOCOL=opencode
+```
+
+OpenClaw：
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
