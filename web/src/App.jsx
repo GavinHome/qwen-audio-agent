@@ -27,6 +27,7 @@ import useRealtimeVoice, {
   shouldClaimReleasedVoice,
 } from './useRealtimeVoice.js'
 import { requestedSessionId } from './session.js'
+import { initialVoiceEnabled } from './voice-defaults.js'
 
 const desktopOrbMode = (
   new URLSearchParams(window.location.search).get('desktop') === 'orb'
@@ -100,7 +101,9 @@ function upsertTask(items, taskId, update, fallback) {
 
 export default function App() {
   const [sessionId, setSessionId] = useState(getSessionId)
-  const [voiceEnabled, setVoiceEnabled] = useState(false)
+  const [voiceEnabled, setVoiceEnabled] = useState(() => initialVoiceEnabled({
+    desktopOrbMode,
+  }))
   const [waitingForVoice, setWaitingForVoice] = useState(false)
   const [messages, setMessages] = useState([])
   const [activity, setActivity] = useState('正在检查后台 Agent')
