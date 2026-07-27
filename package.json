@@ -42,6 +42,7 @@
     "docs/desktop-fluid-orb-thinking.gif",
     "docs/desktop-goo-orb-thinking.gif",
     "docs/qwen-audio-agent-three-layer-architecture.png",
+    "docs/qwen-audio-agent-three-layer-architecture-en.png",
     "docs/configuration.md",
     "server/src/",
     "server/package.json",

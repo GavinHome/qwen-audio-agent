@@ -40,7 +40,7 @@ assistant.
 <details>
 <summary>View the detailed architecture</summary>
 
-![qwen-audio-agent integration reference architecture](docs/qwen-audio-agent-three-layer-architecture.png)
+![qwen-audio-agent integration reference architecture](docs/qwen-audio-agent-three-layer-architecture-en.png)
 
 </details>
 
