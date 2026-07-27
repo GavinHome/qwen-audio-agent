@@ -48,3 +48,29 @@ test('deduplicates the same message id and retains agent presentations', () => {
     '完成',
   )
 })
+
+test('recognizes equivalent assistant speech only within the same voice turn', () => {
+  const sync = new ConversationSync()
+  sync.record({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    id: 'acknowledgement',
+    role: 'assistant',
+    content: '正在修改贪吃蛇，让它更酷炫！',
+    source: 'realtime-direct',
+    turnId: 'turn-one',
+  })
+
+  assert.equal(sync.hasEquivalentAssistantSpeech({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    turnId: 'turn-one',
+    content: '正在修改贪吃蛇，让它更酷炫。',
+  }), true)
+  assert.equal(sync.hasEquivalentAssistantSpeech({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    turnId: 'turn-two',
+    content: '正在修改贪吃蛇，让它更酷炫。',
+  }), false)
+})

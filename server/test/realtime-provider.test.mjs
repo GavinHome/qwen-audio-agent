@@ -71,6 +71,27 @@ test('only reports a queued announcement as completed after response.done', asyn
   })
 })
 
+test('skips a queued response when its late deduplication guard rejects it', async () => {
+  const frontend = createQwenFrontend()
+  frontend.ready = true
+  const sent = []
+  frontend.send = event => sent.push(event)
+
+  const outcome = await frontend.speak(
+    '重复的启动说明',
+    'agent',
+    { turnId: 'voice-100-1', taskId: 'job-1' },
+    { shouldSpeak: () => false },
+  )
+
+  assert.deepEqual(outcome, {
+    skipped: true,
+    phase: 'deduplicated',
+  })
+  assert.equal(frontend.pendingResponses.length, 0)
+  assert.deepEqual(sent, [])
+})
+
 test('reports an unstarted response timeout as uncertain rather than successful', async () => {
   const frontend = createQwenFrontend({
     responseStartTimeoutMs: 2,
@@ -99,6 +120,18 @@ test('configures Qwen Audio Realtime with Smart Turn only', () => {
   assert.deepEqual(
     session.tools[0].function.parameters.required,
     ['objective'],
+  )
+  assert.deepEqual(
+    session.tools.find(tool => (
+      tool.function.name === 'respond_agent_permission'
+    )).function.parameters.required,
+    ['authorization_id', 'decision', 'evidence'],
+  )
+  assert.match(
+    session.tools.find(tool => (
+      tool.function.name === 'respond_agent_permission'
+    )).function.description,
+    /用户回答“可以”.*应调用 always/,
   )
 })
 
@@ -175,6 +208,9 @@ test('builds frontend identity, time, memory and reconnect context', () => {
   assert.match(prompt, /\[COMPLETE\]/)
   assert.doesNotMatch(prompt, /get_agent_tasks|reply_agent_permission/)
   assert.match(prompt, /respond_agent_permission/)
+  assert.match(prompt, /用户直接回答“可以”/)
+  assert.match(prompt, /不得再次要求用户复述“始终允许”/)
+  assert.match(prompt, /permission_decision_required/)
   assert.match(prompt, /cancel_agent_task/)
   const memory = REALTIME_PROVIDERS.qwen
     .buildSession({ configured: false })
@@ -307,6 +343,36 @@ test('can give the model contextual guidance after an accepted tool call', async
   assert.deepEqual(await outcome, {
     completed: true,
     responseId: 'response-followup',
+  })
+})
+
+test('can force one model response when Smart Turn stays silent', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  const sent = []
+  frontend.ready = true
+  frontend.send = payload => sent.push(payload)
+
+  const outcome = frontend.ensureResponse(
+    { turnId: 'permission-turn' },
+    { shouldCreate: () => true },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(sent, [{ type: 'response.create' }])
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-permission' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-permission', status: 'completed' },
+  })
+  assert.deepEqual(await outcome, {
+    completed: true,
+    responseId: 'response-permission',
   })
 })
 
@@ -475,4 +541,38 @@ test('associates an unscoped provider error with the sole active response', asyn
     status: undefined,
   })
   assert.equal(frontend.activeResponses.size, 0)
+})
+
+test('identifies a permission response rejected while the user is speaking', async () => {
+  const frontend = createQwenFrontend()
+  const sent = []
+  frontend.ready = true
+  frontend.send = event => sent.push(event)
+
+  const outcome = frontend.injectPermission({
+    id: 'auth-speaking',
+    summary: '运行游戏',
+  }, {
+    turnId: 'turn-permission',
+    taskId: 'work-permission',
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  frontend.handleLifecycle({
+    type: 'conversation.item.created',
+    item: { ...sent[0].item, status: 'completed' },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  const error = {
+    type: 'error',
+    error: { message: 'Cannot create response while user is speaking.' },
+  }
+  frontend.handleLifecycle(error)
+
+  assert.equal(error.__voiceOrigin, 'permission')
+  assert.deepEqual(error.__voiceContext, {
+    turnId: 'turn-permission',
+    taskId: 'work-permission',
+  })
+  assert.equal((await outcome).failed, true)
 })

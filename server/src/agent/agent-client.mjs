@@ -1,18 +1,11 @@
 import { config } from '../core/config.mjs'
 import { AgentError } from './backend-adapter.mjs'
-import { OpenClawAdapter } from './openclaw-adapter.mjs'
-import { OpenCodeAdapter } from './opencode-adapter.mjs'
-import { QoderAdapter } from './qoder-adapter.mjs'
+import { AcpBackendAdapter } from './acp-backend-adapter.mjs'
 
 export { AgentError }
 
-export function agentSessionKey(ownerId, role = 'backend') {
-  return `qwen-audio-agent:${encodeURIComponent(String(ownerId || 'personal'))}:${role}`
-}
-
 export class AgentClient {
   constructor({
-    fetchImpl = fetch,
     protocol = config.agentProtocol,
     mode = config.backendMode,
     permissionMode = config.backendPermissionMode,
@@ -22,29 +15,24 @@ export class AgentClient {
       : config.openCodeModel,
     timeoutMs = config.agentTimeoutMs,
     directory = config.openCodeDirectory,
-    username = config.openCodeUsername,
-    password = config.openCodePassword,
     coordinatorAgent = config.openCodeCoordinatorAgent,
     openClawBaseUrl = config.openClawBaseUrl,
     openClawToken = config.openClawToken,
+    openClawTokenFile = config.openClawTokenFile,
     openClawCoordinatorAgent = config.openClawCoordinatorAgent,
+    openClawDirectory = config.openClawDirectory,
     qoderModel = config.qoderModel,
     qoderDirectory = config.qoderDirectory,
     qoderConfigDirectory = config.qoderConfigDirectory,
     qoderCliPath = config.qoderCliPath,
-    qoderAuthMode = config.qoderAuthMode,
-    qoderTokenEnv = config.qoderTokenEnv,
-    qoderSdk,
-    WebSocketImpl,
+    sessionStatePath = config.backendSessionStatePath,
+    acpClient,
+    acpClientFactory,
+    sessionToolServer,
   } = {}) {
-    const Adapter = protocol === 'openclaw'
-      ? OpenClawAdapter
-      : protocol === 'qoder'
-        ? QoderAdapter
-        : OpenCodeAdapter
-    this.adapter = new Adapter({
-      ...(protocol === 'qoder' && qoderSdk ? { sdk: qoderSdk } : {}),
-      fetchImpl,
+    this.adapter = new AcpBackendAdapter({
+      protocol,
+      root: config.root,
       baseUrl: protocol === 'openclaw'
         ? openClawBaseUrl
         : protocol === 'qoder'
@@ -54,18 +42,22 @@ export class AgentClient {
       mode,
       permissionMode,
       timeoutMs,
-      directory: protocol === 'qoder' ? qoderDirectory : directory,
+      directory: protocol === 'qoder'
+        ? qoderDirectory
+        : protocol === 'openclaw'
+          ? openClawDirectory
+          : directory,
       configDirectory: qoderConfigDirectory,
       cliPath: qoderCliPath,
-      authMode: qoderAuthMode,
-      tokenEnv: qoderTokenEnv,
-      username,
-      password,
       coordinatorAgent: protocol === 'openclaw'
         ? openClawCoordinatorAgent
         : coordinatorAgent,
       token: openClawToken,
-      WebSocketImpl,
+      tokenFile: openClawTokenFile,
+      sessionStatePath,
+      ...(acpClient ? { client: acpClient } : {}),
+      ...(acpClientFactory ? { clientFactory: acpClientFactory } : {}),
+      ...(sessionToolServer ? { sessionToolServer } : {}),
     })
   }
 

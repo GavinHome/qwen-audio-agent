@@ -6,6 +6,7 @@ OPENCODE_PORT=${OPENCODE_PORT:-4096}
 OPENCODE_RUNTIME=${OPENCODE_RUNTIME:-auto}
 OPENCODE_PACKAGE=${OPENCODE_PACKAGE:-opencode-ai@1.18.5}
 OPENCODE_MIN_VERSION=${OPENCODE_MIN_VERSION:-1.18.0}
+OPENCODE_COMMAND=${OPENCODE_COMMAND:-serve}
 QWEN_AUDIO_AGENT_NODE=${QWEN_AUDIO_AGENT_NODE:-node}
 BACKEND_MODEL=${QWEN_AUDIO_AGENT_BACKEND_MODEL:-qwen3.7-max}
 
@@ -38,7 +39,10 @@ elif [ "${QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG:-false}" = "true" ]; the
 fi
 
 run_binary() {
-  exec "$OPENCODE_BIN" serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+  if [ "$OPENCODE_COMMAND" = "serve" ]; then
+    exec "$OPENCODE_BIN" serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+  fi
+  exec "$OPENCODE_BIN" "$OPENCODE_COMMAND" "$@"
 }
 
 source_bun() {
@@ -69,10 +73,14 @@ run_source() {
     exit 1
   fi
   cd "$SOURCE_DIR/packages/opencode"
-  exec "$BUN_COMMAND" run --conditions=browser ./src/index.ts serve \
-    --hostname 127.0.0.1 \
-    --port "$OPENCODE_PORT" \
-    "$@"
+  if [ "$OPENCODE_COMMAND" = "serve" ]; then
+    exec "$BUN_COMMAND" run --conditions=browser ./src/index.ts serve \
+      --hostname 127.0.0.1 \
+      --port "$OPENCODE_PORT" \
+      "$@"
+  fi
+  exec "$BUN_COMMAND" run --conditions=browser ./src/index.ts \
+    "$OPENCODE_COMMAND" "$@"
 }
 
 run_package() {
@@ -80,10 +88,13 @@ run_package() {
     echo "OpenCode package mode requires npx." >&2
     exit 1
   fi
-  exec npx --yes "$OPENCODE_PACKAGE" serve \
-    --hostname 127.0.0.1 \
-    --port "$OPENCODE_PORT" \
-    "$@"
+  if [ "$OPENCODE_COMMAND" = "serve" ]; then
+    exec npx --yes "$OPENCODE_PACKAGE" serve \
+      --hostname 127.0.0.1 \
+      --port "$OPENCODE_PORT" \
+      "$@"
+  fi
+  exec npx --yes "$OPENCODE_PACKAGE" "$OPENCODE_COMMAND" "$@"
 }
 
 installed_version() {
@@ -116,7 +127,10 @@ run_installed() {
     echo "Installed OpenCode $VERSION is older than the supported minimum $OPENCODE_MIN_VERSION." >&2
     exit 1
   fi
-  exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+  if [ "$OPENCODE_COMMAND" = "serve" ]; then
+    exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+  fi
+  exec opencode "$OPENCODE_COMMAND" "$@"
 }
 
 case "$OPENCODE_RUNTIME" in
@@ -154,7 +168,10 @@ fi
 if command -v opencode >/dev/null 2>&1; then
   VERSION=$(installed_version)
   if version_supported "$VERSION"; then
-    exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+    if [ "$OPENCODE_COMMAND" = "serve" ]; then
+      exec opencode serve --hostname 127.0.0.1 --port "$OPENCODE_PORT" "$@"
+    fi
+    exec opencode "$OPENCODE_COMMAND" "$@"
   fi
   echo "Skipping incompatible OpenCode $VERSION; using $OPENCODE_PACKAGE instead." >&2
 fi

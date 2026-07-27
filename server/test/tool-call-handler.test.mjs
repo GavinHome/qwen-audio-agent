@@ -38,6 +38,43 @@ function harness({
   return { outputs, manager, transcripts, handler }
 }
 
+async function permissionHarness({
+  answer,
+  authorizationId = 'auth-one',
+  respondPermission,
+}) {
+  const manager = new TaskManager()
+  let release
+  const task = manager.create({
+    objective: '执行等待授权的操作',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async (_objective, { onEvent }) => {
+      onEvent({
+        type: 'backend.permission.requested',
+        permission: {
+          id: authorizationId,
+          status: 'pending',
+          category: 'read',
+          summary: '查看项目目录',
+        },
+      })
+      return new Promise(resolve => { release = resolve })
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const kit = harness({ manager, respondPermission })
+  kit.transcripts.record('turn-one', answer)
+  return {
+    ...kit,
+    task,
+    finish: async () => {
+      release({ content: '完成' })
+      await manager.wait(task.id)
+    },
+  }
+}
+
 test('submits one nonblocking coordinator work item with organized intent', async () => {
   let received
   const kit = harness({
@@ -73,6 +110,24 @@ test('submits one nonblocking coordinator work item with organized intent', asyn
   assert.equal(received.conversationContext[0].content, '之前在改首页')
 })
 
+test('does not generate a second acknowledgement after speaking before delegation', async () => {
+  const kit = harness()
+  kit.transcripts.record('turn-one', '给项目添加特殊食物')
+  await kit.handler.handle({
+    call_id: 'call-spoken-before-tool',
+    name: 'spawn_thinking',
+    arguments: '{"objective":"给项目添加特殊食物"}',
+  }, {
+    turnId: 'turn-one',
+    turnGeneration: 1,
+    hasAudio: true,
+  })
+
+  assert.equal(kit.outputs[0][1].status, 'accepted')
+  assert.deepEqual(kit.outputs[0][3], { createResponse: false })
+  await kit.manager.wait(kit.outputs[0][1].work_id)
+})
+
 test('deduplicates repeated tool calls from one realtime turn', async () => {
   const kit = harness()
   kit.transcripts.record('turn-one', '执行一次')
@@ -105,6 +160,38 @@ test('rejects delegated work immediately when no backend Agent is connected', as
   assert.equal(kit.outputs[0][1].error_code, 'backend_unavailable')
   assert.equal(kit.outputs[0][1].retryable, true)
   assert.equal(kit.manager.list({ ownerId: 'owner' }).length, 0)
+})
+
+test('does not turn a permission answer into a new background task', async () => {
+  const kit = await permissionHarness({
+    answer: '可以',
+    respondPermission: async () => ({
+      id: 'auth-one',
+      workId: 'work-one',
+      status: 'approved',
+    }),
+  })
+
+  await kit.handler.handle({
+    call_id: 'wrongly-delegated-permission-answer',
+    name: 'spawn_thinking',
+    arguments: JSON.stringify({ objective: '可以' }),
+  }, { turnId: 'turn-one', turnGeneration: 1 })
+
+  const output = kit.outputs.at(-1)
+  assert.equal(output[1].error_code, 'permission_decision_required')
+  assert.equal(output[1].authorization_id, 'auth-one')
+  assert.match(
+    output[3].response.instructions,
+    /respond_agent_permission/,
+  )
+  assert.equal(
+    kit.manager.list({ ownerId: 'owner' }).filter(task => (
+      task.objective === '可以'
+    )).length,
+    0,
+  )
+  await kit.finish()
 })
 
 test('deduplicates the same turn after a realtime handler reconnect', async () => {
@@ -188,6 +275,12 @@ test('queries the latest work directly from the realtime task ledger', async () 
   assert.equal(kit.outputs.at(-1)[1].work_id, workId)
   assert.equal(kit.outputs.at(-1)[1].work_status, 'completed')
   assert.equal(kit.outputs.at(-1)[1].result, '完成')
+  assert.deepEqual(kit.outputs.at(-1)[2], {
+    turnId: 'turn-one',
+    taskId: workId,
+    consumesTaskNotification: true,
+  })
+  assert.deepEqual(kit.outputs.at(-1)[3], {})
 })
 
 test('queues a hidden high-priority coordinator query for delegated work', async () => {
@@ -255,46 +348,90 @@ test('queues a hidden high-priority coordinator query for delegated work', async
   await manager.wait(delegated.id)
 })
 
-test('relays only an explicit always or reject permission decision', async () => {
+test('relays a realtime semantic permission decision with verbatim evidence', async () => {
   const calls = []
-  const kit = harness({
+  const answer = '你按刚才说的处理就成'
+  const kit = await permissionHarness({
+    answer,
     respondPermission: async (id, decision, options) => {
       calls.push({ id, decision, options })
       return {
         id,
         workId: 'work-one',
-        status: decision === 'always' ? 'approved' : 'denied',
+        status: 'approved',
       }
     },
   })
-  kit.transcripts.record('turn-one', '始终允许')
   await kit.handler.handle({
-    call_id: 'permission-allow',
+    call_id: 'permission-semantic-allow',
     name: 'respond_agent_permission',
-    arguments: '{"authorization_id":"auth_one","decision":"always"}',
+    arguments: JSON.stringify({
+      authorization_id: 'auth-one',
+      decision: 'always',
+      evidence: answer,
+    }),
   })
-  assert.deepEqual(calls[0], {
-    id: 'auth_one',
+
+  assert.deepEqual(calls, [{
+    id: 'auth-one',
     decision: 'always',
     options: { ownerId: 'owner' },
-  })
+  }])
   assert.equal(kit.outputs.at(-1)[1].status, 'approved')
+  assert.deepEqual(kit.outputs.at(-1)[3], {
+    createResponse: false,
+  })
+  await kit.finish()
+})
 
-  const ambiguous = harness({
+test('rejects permission evidence that was not spoken in the current turn', async () => {
+  let called = false
+  const kit = await permissionHarness({
+    answer: '我还没想好',
     respondPermission: async () => {
-      throw new Error('must not run')
+      called = true
     },
   })
-  ambiguous.transcripts.record('turn-one', '你看着办吧')
-  await ambiguous.handler.handle({
-    call_id: 'permission-ambiguous',
+  await kit.handler.handle({
+    call_id: 'permission-forged-evidence',
     name: 'respond_agent_permission',
-    arguments: '{"authorization_id":"auth_two","decision":"always"}',
+    arguments: JSON.stringify({
+      authorization_id: 'auth-one',
+      decision: 'always',
+      evidence: '用户已经明确同意',
+    }),
   })
+
+  assert.equal(called, false)
   assert.equal(
-    ambiguous.outputs.at(-1)[1].error_code,
-    'explicit_permission_required',
+    kit.outputs.at(-1)[1].error_code,
+    'permission_evidence_mismatch',
   )
+  await kit.finish()
+})
+
+test('rejects a permission id that is not pending on the current task', async () => {
+  let called = false
+  const answer = '照你说的来'
+  const kit = await permissionHarness({
+    answer,
+    respondPermission: async () => {
+      called = true
+    },
+  })
+  await kit.handler.handle({
+    call_id: 'permission-wrong-id',
+    name: 'respond_agent_permission',
+    arguments: JSON.stringify({
+      authorization_id: 'auth-other',
+      decision: 'always',
+      evidence: answer,
+    }),
+  })
+
+  assert.equal(called, false)
+  assert.equal(kit.outputs.at(-1)[1].error_code, 'permission_not_pending')
+  await kit.finish()
 })
 
 test('uses one scoped memory tool for recall and remember', async () => {

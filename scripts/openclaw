@@ -31,18 +31,28 @@ export OPENCLAW_STATE_DIR=${OPENCLAW_STATE_DIR:-"$QWEN_AUDIO_AGENT_USER_DIR/back
 export QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE=${QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE:-"$QWEN_AUDIO_AGENT_USER_DIR/workspaces/openclaw"}
 mkdir -p "$OPENCLAW_STATE_DIR" "$QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE"
 if [ ! -f "$QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE/AGENTS.md" ]; then
-  cp "$QWEN_AUDIO_AGENT_ROOT/config/openclaw-workspace/AGENTS.md" "$QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE/AGENTS.md"
+  cp "$QWEN_AUDIO_AGENT_ROOT/config/openclaw/workspace/AGENTS.md" "$QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE/AGENTS.md"
 fi
 if [ -z "${OPENCLAW_CONFIG_PATH:-}" ]; then
   QWEN_AUDIO_AGENT_OPENCLAW_CONFIG_DIR="$QWEN_AUDIO_AGENT_USER_DIR/backends/openclaw"
   mkdir -p "$QWEN_AUDIO_AGENT_OPENCLAW_CONFIG_DIR"
-  cp "$QWEN_AUDIO_AGENT_ROOT/config/openclaw.json5" "$QWEN_AUDIO_AGENT_OPENCLAW_CONFIG_DIR/openclaw.json5"
+  cp "$QWEN_AUDIO_AGENT_ROOT/config/openclaw/openclaw.json5" "$QWEN_AUDIO_AGENT_OPENCLAW_CONFIG_DIR/openclaw.json5"
   export OPENCLAW_CONFIG_PATH="$QWEN_AUDIO_AGENT_OPENCLAW_CONFIG_DIR/openclaw.json5"
 fi
 
 export OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-${AGENT_API_KEY:-${QWEN_AUDIO_AGENT_AUTH_SECRET:-}}}
+OPENCLAW_GATEWAY_TOKEN_FILE=${OPENCLAW_GATEWAY_TOKEN_FILE:-"$OPENCLAW_STATE_DIR/gateway-token"}
+if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
+  OPENCLAW_GATEWAY_TOKEN_TMP="$OPENCLAW_GATEWAY_TOKEN_FILE.tmp.$$"
+  umask 077
+  printf '%s\n' "$OPENCLAW_GATEWAY_TOKEN" > "$OPENCLAW_GATEWAY_TOKEN_TMP"
+  chmod 600 "$OPENCLAW_GATEWAY_TOKEN_TMP"
+  mv -f "$OPENCLAW_GATEWAY_TOKEN_TMP" "$OPENCLAW_GATEWAY_TOKEN_FILE"
+fi
+export OPENCLAW_GATEWAY_TOKEN_FILE
 OPENCLAW_RUNTIME=${OPENCLAW_RUNTIME:-auto}
-OPENCLAW_PACKAGE=${OPENCLAW_PACKAGE:-openclaw@2026.7.1-2}
+OPENCLAW_PACKAGE=${OPENCLAW_PACKAGE:-openclaw@2026.6.33}
+OPENCLAW_BUNDLE_BIN=${OPENCLAW_BUNDLE_BIN-${HOME:+$HOME/.openclaw-bundle/wrapper/openclaw}}
 COMMON_BACKEND_MODEL=${QWEN_AUDIO_AGENT_BACKEND_MODEL:-qwen3.7-max}
 
 if [ -n "${OPENCLAW_MODEL:-}" ]; then
@@ -72,6 +82,25 @@ run_installed() {
   exec openclaw "$@"
 }
 
+run_bundle() {
+  exec "$OPENCLAW_BUNDLE_BIN" "$@"
+}
+
+bundle_available() {
+  [ -n "$OPENCLAW_BUNDLE_BIN" ] && [ -x "$OPENCLAW_BUNDLE_BIN" ]
+}
+
+installed_matches_package() {
+  OPENCLAW_EXPECTED_VERSION=${OPENCLAW_PACKAGE##*@}
+  OPENCLAW_INSTALLED_VERSION=$(
+    openclaw --version 2>/dev/null || true
+  )
+  case "$OPENCLAW_INSTALLED_VERSION" in
+    *"$OPENCLAW_EXPECTED_VERSION"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_source() {
   SOURCE_DIR=${OPENCLAW_SOURCE_DIR:-}
   if [ -z "$SOURCE_DIR" ]; then
@@ -95,7 +124,17 @@ run_package() {
     echo "OpenClaw package mode requires npx." >&2
     exit 1
   fi
-  exec npx --yes "$OPENCLAW_PACKAGE" "$@"
+  OPENCLAW_PACKAGE_BIN=$(
+    npx --yes --package "$OPENCLAW_PACKAGE" -- which openclaw
+  )
+  if [ -z "$OPENCLAW_PACKAGE_BIN" ] || [ ! -x "$OPENCLAW_PACKAGE_BIN" ]; then
+    echo "Unable to resolve OpenClaw package binary: $OPENCLAW_PACKAGE" >&2
+    exit 1
+  fi
+  # npx normally remains as a parent process for the complete OpenClaw
+  # lifetime. Resolve the pinned package once, then exec its binary directly
+  # to avoid retaining an extra Node/npm process for both Gateway and ACP.
+  exec "$OPENCLAW_PACKAGE_BIN" "$@"
 }
 
 case "$OPENCLAW_RUNTIME" in
@@ -112,6 +151,13 @@ case "$OPENCLAW_RUNTIME" in
       exit 1
     fi
     run_installed "$@"
+    ;;
+  bundle)
+    if ! bundle_available; then
+      echo "OPENCLAW_RUNTIME=bundle requires the enterprise OpenClaw bundle or OPENCLAW_BUNDLE_BIN." >&2
+      exit 1
+    fi
+    run_bundle "$@"
     ;;
   source)
     run_source "$@"
@@ -134,7 +180,14 @@ if [ -n "${OPENCLAW_SOURCE_DIR:-}" ]; then
   run_source "$@"
 fi
 
-if command -v openclaw >/dev/null 2>&1; then
+# OpenClaw Enterprise installs its policy-enforcing wrapper outside the normal
+# npm PATH. Prefer that explicit installation over unrelated global packages
+# and over downloading the public package at runtime.
+if bundle_available; then
+  run_bundle "$@"
+fi
+
+if command -v openclaw >/dev/null 2>&1 && installed_matches_package; then
   run_installed "$@"
 fi
 

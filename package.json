@@ -30,12 +30,11 @@
     "cli/src/",
     "cli/package.json",
     "config/frontend-agent/",
-    "config/openclaw.json5",
-    "config/openclaw-workspace/AGENTS.md",
+    "config/openclaw/openclaw.json5",
+    "config/openclaw/workspace/AGENTS.md",
     "config/opencode/agents/",
-    "config/opencode/plugin/",
-    "config/opencode-workspace/AGENTS.md",
-    "config/qoder-workspace/AGENTS.md",
+    "config/opencode/workspace/AGENTS.md",
+    "config/qoder/workspace/AGENTS.md",
     "docs/architecture.md",
     "docs/architecture-overview.png",
     "docs/architecture-overview-en.png",
@@ -103,8 +102,8 @@
     "release:check": "./scripts/release-check"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.18.5",
-    "@qoder-ai/qoder-agent-sdk": "^1.0.15",
+    "@agentclientprotocol/sdk": "1.3.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "express": "^4.22.2",
     "ws": "^8.21.1",
     "zod": "^4.4.3"
@@ -114,6 +113,7 @@
     "electron-builder": "26.15.7"
   },
   "overrides": {
+    "@hono/node-server": "2.0.12",
     "@electron/asar": "4.2.1",
     "@electron/universal": "3.0.6"
   }

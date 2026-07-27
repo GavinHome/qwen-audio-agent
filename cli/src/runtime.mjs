@@ -75,7 +75,11 @@ export function assertGatewayCompatibility(health, backend) {
   const actualBaseUrl = health?.backend?.baseUrl
   const actualMode = health?.backend?.mode
   const actualPermissionMode = health?.backend?.permissionMode || 'native'
-  if (!actualProtocol || (backend.protocol !== 'qoder' && !actualBaseUrl)) {
+  if (
+    !actualProtocol
+    || !['opencode', 'openclaw', 'qoder'].includes(actualProtocol)
+    || (actualProtocol !== 'qoder' && !actualBaseUrl)
+  ) {
     throw new Error('现有 Gateway 未报告完整的后台 Agent 配置，无法安全复用')
   }
   if (
@@ -112,16 +116,21 @@ export async function waitForGateway(baseUrl, {
   intervalMs = 200,
 } = {}) {
   const deadline = Date.now() + timeoutMs
+  let lastHealth = null
   while (Date.now() < deadline) {
     const health = await readGatewayHealth(baseUrl, fetchImpl)
+    if (health) lastHealth = health
     if (health && (!requireBackend || health.backend?.ok === true)) {
       return health
     }
     await new Promise(resolve => setTimeout(resolve, intervalMs))
   }
+  const backendError = String(lastHealth?.backend?.error || '').trim()
   throw new Error(
     requireBackend
-      ? `后台 Agent 启动超时：${baseUrl}`
+      ? `后台 Agent 启动超时：${baseUrl}${
+        backendError ? `（${backendError.slice(0, 1000)}）` : ''
+      }`
       : `Gateway 启动超时：${baseUrl}`,
   )
 }

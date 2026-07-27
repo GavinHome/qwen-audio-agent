@@ -6,6 +6,7 @@ import {
   ensureRuntime,
   ManagedRuntime,
   resolveBackend,
+  waitForGateway,
 } from '../src/runtime.mjs'
 
 function childProcess() {
@@ -102,6 +103,23 @@ test('starts only the Gateway and waits for its managed backend', async () => {
   assert.equal(runtime.ownsProcesses, true)
 })
 
+test('reports the last backend error when startup times out', async () => {
+  await assert.rejects(
+    waitForGateway('http://127.0.0.1:3101', {
+      fetchImpl: async () => ({
+        json: async () => health({
+          ok: false,
+          error: 'OpenClaw ACP connection closed',
+        }),
+      }),
+      requireBackend: true,
+      timeoutMs: 5,
+      intervalMs: 1,
+    }),
+    /OpenClaw ACP connection closed/,
+  )
+})
+
 test('never starts a backend beside an existing Gateway', async () => {
   await assert.rejects(
     ensureRuntime(options, {
@@ -171,6 +189,26 @@ test('requires complete identity before reusing a Gateway', () => {
       baseUrl: 'http://127.0.0.1:4096',
     }),
     /未报告完整/,
+  )
+})
+
+test('reports a Qoder versus OpenCode mismatch instead of incomplete identity', () => {
+  assert.throws(
+    () => assertGatewayCompatibility({
+      backend: {
+        ok: true,
+        kind: 'qoder',
+        mode: 'managed',
+        permissionMode: 'native',
+        baseUrl: null,
+      },
+    }, {
+      protocol: 'opencode',
+      mode: 'managed',
+      permissionMode: 'native',
+      baseUrl: 'http://127.0.0.1:4096',
+    }),
+    /使用 qoder.*与当前配置 opencode.*不一致/,
   )
 })
 

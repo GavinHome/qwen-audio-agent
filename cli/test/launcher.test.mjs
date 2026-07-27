@@ -75,6 +75,91 @@ test('keeps an owned Gateway in the foreground', async () => {
   )
 })
 
+test('stops an owned Gateway when its terminal closes', async () => {
+  const target = harness({ ownsProcesses: true })
+  let finishWait
+  target.dependencies.prepareRuntime = async options => {
+    target.calls.push(['runtime', options])
+    return {
+      ownsProcesses: true,
+      close: signal => target.calls.push(['runtime.close', signal]),
+      wait: () => new Promise(resolve => {
+        finishWait = resolve
+      }),
+    }
+  }
+
+  const running = main(['gateway'], target.dependencies)
+  await new Promise(resolve => setImmediate(resolve))
+  target.dependencies.signalSource.emit('SIGHUP')
+  assert.deepEqual(
+    target.calls.filter(call => call[0] === 'runtime.close').at(-1),
+    ['runtime.close', 'SIGTERM'],
+  )
+  finishWait(0)
+  assert.equal(await running, 0)
+})
+
+test('remembers terminal closure while an owned Gateway is starting', async () => {
+  const target = harness({ ownsProcesses: true })
+  let finishStart
+  let finishWait
+  const runtime = {
+    ownsProcesses: true,
+    close: signal => target.calls.push(['runtime.close', signal]),
+    wait: () => new Promise(resolve => {
+      finishWait = resolve
+    }),
+  }
+  target.dependencies.prepareRuntime = options => {
+    target.calls.push(['runtime', options])
+    return new Promise(resolve => {
+      finishStart = () => resolve(runtime)
+    })
+  }
+
+  const running = main(['gateway'], target.dependencies)
+  await new Promise(resolve => setImmediate(resolve))
+  target.dependencies.signalSource.emit('SIGHUP')
+  finishStart()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(
+    target.calls.filter(call => call[0] === 'runtime.close').at(-1),
+    ['runtime.close', 'SIGTERM'],
+  )
+  finishWait(0)
+  assert.equal(await running, 0)
+  assert.equal(
+    target.calls.some(call => call[0] === 'stdout'),
+    false,
+  )
+})
+
+test('stops an owned Gateway if its launcher exits unexpectedly', async () => {
+  const target = harness({ ownsProcesses: true })
+  let finishWait
+  target.dependencies.prepareRuntime = async options => {
+    target.calls.push(['runtime', options])
+    return {
+      ownsProcesses: true,
+      close: signal => target.calls.push(['runtime.close', signal]),
+      wait: () => new Promise(resolve => {
+        finishWait = resolve
+      }),
+    }
+  }
+
+  const running = main(['gateway'], target.dependencies)
+  await new Promise(resolve => setImmediate(resolve))
+  target.dependencies.signalSource.emit('exit')
+  assert.deepEqual(
+    target.calls.filter(call => call[0] === 'runtime.close').at(-1),
+    ['runtime.close', 'SIGTERM'],
+  )
+  finishWait(0)
+  assert.equal(await running, 0)
+})
+
 test('installs, stops and reports the background Gateway service', async () => {
   const install = harness()
   assert.equal(

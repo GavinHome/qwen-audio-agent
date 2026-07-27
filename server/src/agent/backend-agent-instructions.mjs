@@ -6,13 +6,3 @@ export const BACKEND_AGENT_INSTRUCTIONS = [
   'Follow the response contract inside that envelope exactly.',
   'Do not expose backend routing, protocol fields, Agent IDs, or Session IDs.',
 ].join('\n')
-
-export function compatibleBackendMessage(message) {
-  return [
-    '<qwen_audio_agent_backend_instructions>',
-    BACKEND_AGENT_INSTRUCTIONS,
-    '</qwen_audio_agent_backend_instructions>',
-    '',
-    String(message || ''),
-  ].join('\n')
-}

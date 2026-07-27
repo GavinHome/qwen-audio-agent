@@ -72,13 +72,13 @@ tasks.json            # 后台任务、结果和待播报通知的恢复状态
 
 ## 选择后台
 
-OpenCode 是默认后台，默认地址为 `http://127.0.0.1:4096`：
+OpenCode 是默认后台。Gateway 通过 `opencode acp` 与它交互；managed 模式还会
+管理用于打开原生 Session 界面的本地服务，用户不需要另行启动：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
 QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
-OPENCODE_BASE_URL=http://127.0.0.1:4096
 ```
 
 OpenClaw 默认地址为 `http://127.0.0.1:18789`：
@@ -89,7 +89,7 @@ OPENCLAW_BASE_URL=http://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=
 ```
 
-Qoder 使用官方 Agent SDK 和本机 `qodercli`，没有 HTTP 后台地址：
+Qoder 使用本机 `qodercli --acp`，没有 HTTP 后台地址：
 
 ```dotenv
 AGENT_PROTOCOL=qoder
@@ -98,28 +98,20 @@ QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 QODER_MODEL=auto
 ```
 
-Qoder Adapter 为每个用户维护一个固定的原生协调 Session，并向它提供列出、新建、
-继续、查询和取消项目 Session 的工具。继续已有项目时，Adapter 使用目标
-Session 的原始 `session_id` 和工作目录执行 `resume`，所以新交互会追加到 Qoder
-CLI Session 历史，而不是复制到 qwen-audio-agent 自己的数据库。这里的 Session
-范围是官方 SDK 能够通过 `listSessions` 发现的 CLI Session；Qoder Desktop Quest
-使用不同的记录格式，目前不能通过 SDK 列出、发送或续接。
+统一 ACP Adapter 为每个用户维护一个固定的原生协调 Session，并通过 ACP 的
+Session list/resume/new 能力和动态 MCP 工具提供列出、新建、继续、查询和取消
+项目 Session 的能力。继续已有项目时使用目标 Session 的原始 `session_id` 和
+工作目录执行 `session/resume`，交互会追加到原生 CLI Session 历史。
 
-默认认证方式是复用 `qodercli` 登录。高级配置：
+认证复用 `qodercli` 当前登录状态或它支持的环境变量。高级配置：
 
 ```dotenv
 QODER_MODEL=auto
 QODERCLI_PATH=
 QODER_CONFIG_DIR=
-QODER_AUTH_MODE=cli
-
-# 使用个人访问令牌时：
-# QODER_AUTH_MODE=token
-# QODER_TOKEN_ENV=QODER_PERSONAL_ACCESS_TOKEN
-# QODER_PERSONAL_ACCESS_TOKEN=
 ```
 
-Qoder SDK 自己管理按需启动的 CLI 子进程，因此当前只支持 `managed`，不能使用
+Gateway 管理 Qoder ACP 子进程，因此当前只支持 `managed`，不能使用
 `compatible`，也不接受 `--backend-url`。
 
 ## 后台权限模式
@@ -129,8 +121,8 @@ Qoder SDK 自己管理按需启动的 CLI 子进程，因此当前只支持 `man
 - `native`（默认）：权限由后台 Agent 自己判断和询问，Gateway 只负责原样转发。
 - `full`：启动时明确授予最高权限，后台可直接执行命令、读写文件，不再逐次确认。
 
-`full` 当前仅支持 `managed` 模式的 OpenCode 和 Qoder。Qoder 会使用 SDK 的
-`bypassPermissions`；OpenCode 会在受管进程的内联配置中为协调 Agent 和任务
+`full` 当前仅支持 `managed` 模式的 OpenCode 和 Qoder。Qoder CLI 会使用
+`--dangerously-skip-permissions`；OpenCode 会在受管进程的内联配置中为协调 Agent 和任务
 Agent 设置 `permission: "allow"`。`compatible` 模式连接的是外部进程，Gateway
 不会越权修改它。
 
@@ -139,9 +131,9 @@ OpenClaw 的执行授权同时受 exec approvals、elevated 和执行 host 等�
 需要按 OpenClaw 自身方式单独配置。最高权限会放大误操作风险，只应在可信项目和
 可信提示词环境中启用。
 
-连接用户现有的 Server 时使用兼容模式。qwen-audio-agent 不会修改或重启该
-Server，而会选择已有的默认 Agent，并逐轮注入后台协议。此模式适用于 OpenCode
-和 OpenClaw：
+连接用户现有的 OpenClaw Gateway 时使用兼容模式。qwen-audio-agent 不会修改或
+重启该 Gateway，而是通过 `openclaw acp` 桥接。OpenCode 的 ACP 进程直接复用
+OpenCode 原生配置和 Session 存储；兼容模式中的现有服务只用于原生界面：
 
 ```dotenv
 QWEN_AUDIO_AGENT_BACKEND_MODE=compatible
@@ -188,9 +180,11 @@ QWEN_AUDIO_AGENT_ALLOWED_ORIGINS=https://voice.example.com
 
 ## Gateway 运行方式
 
-Gateway 默认使用增强模式并启动带专用后台 Agent 的服务。若目标端口已被其他
-进程占用，会选择空闲的本地端口，不会接管或关闭用户进程。兼容模式只连接现有
-服务，地址不可用时直接报错。
+Gateway 默认使用增强模式并启动带专用后台 Agent 的运行环境。若目标端口已被其他
+进程占用，会选择空闲的本地端口，不会接管或关闭用户进程。兼容模式不管理后台
+HTTP 服务：OpenClaw 会连接现有 Gateway；OpenCode 仍在本机启动 ACP 进程并复用
+原生配置与 Session 存储，配置的现有服务只用于打开原生界面。OpenClaw Gateway
+地址不可用时会直接报错；OpenCode 原生界面不可用不影响 ACP 任务执行。
 
 `qwenaudio`、`qwenaudio gateway` 和 `qwenaudio gateway run` 都在前台运行。
 需要后台常驻时使用：
@@ -235,18 +229,18 @@ OPENCLAW_RUNTIME=auto
 
 ```dotenv
 OPENCODE_PACKAGE=opencode-ai@1.18.5
-OPENCLAW_PACKAGE=openclaw@2026.7.1-2
+OPENCLAW_PACKAGE=openclaw@2026.6.33
 ```
 
-增强 OpenCode 插件当前要求 OpenCode `1.18.0` 或更高版本。`auto` 模式发现更旧的
+OpenCode ACP 接入当前要求 OpenCode `1.18.0` 或更高版本。`auto` 模式发现更旧的
 安装版本时会保留它、不升级它，并改用 npm 包启动独立兼容版本。显式设置
 `OPENCODE_RUNTIME=installed` 时不会回退，而会给出清晰的版本错误。最低版本可由
 `OPENCODE_MIN_VERSION` 覆盖，用于验证其他兼容版本。
 
 qwen-audio-agent 启动的 OpenCode 默认继承用户原有的全局配置（通常是
 `~/.config/opencode/opencode.json`），因此已经安装的 MCP、Skill、权限、模型和
-插件可以继续使用；qwen-audio-agent 自己的后台 Agent 和 Session 插件以附加
-配置形式加载。
+插件可以继续使用；qwen-audio-agent 的协调 Agent 配置以附加形式加载，第三层
+Session 工具则由 Gateway 通过 ACP 动态提供。
 
 如果用户配置或第三方插件与 qwen-audio-agent 冲突，可以临时启用隔离模式排查：
 

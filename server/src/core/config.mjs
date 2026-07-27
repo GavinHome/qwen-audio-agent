@@ -33,6 +33,15 @@ export function resolveQoderWorkspace(
     : resolve(configDirectory, 'workspaces/qoder')
 }
 
+export function resolveOpenClawWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE
+    ? resolve(root, env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/openclaw')
+}
+
 const DEFAULT_BACKEND_MODEL = 'qwen3.7-max'
 
 function backendModelName(value) {
@@ -132,6 +141,11 @@ export const config = {
     || process.env.QWEN_AUDIO_AGENT_AUTH_SECRET
     || ''
   ),
+  openClawTokenFile: (
+    process.env.OPENCLAW_GATEWAY_TOKEN_FILE
+    || resolve(runtimeEnvironment.openClawStateDirectory, 'gateway-token')
+  ),
+  openClawDirectory: resolveOpenClawWorkspace(),
   openClawCoordinatorAgent: (
     sharedBackendAgent
     || legacyBackendAgent(
@@ -144,8 +158,6 @@ export const config = {
     process.env.OPENCODE_BASE_URL
     || 'http://127.0.0.1:4096'
   ).replace(/\/+$/, ''),
-  openCodeUsername: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
-  openCodePassword: process.env.OPENCODE_SERVER_PASSWORD || '',
   openCodeDirectory: resolveOpenCodeWorkspace(),
   qoderDirectory: resolveQoderWorkspace(),
   qoderConfigDirectory: process.env.QODER_CONFIG_DIR
@@ -153,14 +165,6 @@ export const config = {
     : '',
   qoderCliPath: String(
     process.env.QODERCLI_PATH || process.env.QODER_CLI_PATH || '',
-  ).trim(),
-  qoderAuthMode: (
-    String(process.env.QODER_AUTH_MODE || 'cli').toLowerCase() === 'token'
-      ? 'token'
-      : 'cli'
-  ),
-  qoderTokenEnv: String(
-    process.env.QODER_TOKEN_ENV || 'QODER_PERSONAL_ACCESS_TOKEN',
   ).trim(),
   qoderModel: String(process.env.QODER_MODEL || 'auto').trim() || 'auto',
   openCodeModel: (
@@ -226,6 +230,9 @@ export const config = {
   taskStatePath: process.env.QWEN_AUDIO_AGENT_TASK_STATE_PATH
     ? resolve(root, process.env.QWEN_AUDIO_AGENT_TASK_STATE_PATH)
     : runtimeEnvironment.taskStatePath,
+  backendSessionStatePath: process.env.QWEN_AUDIO_AGENT_BACKEND_SESSION_STATE_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_BACKEND_SESSION_STATE_PATH)
+    : resolve(runtimeEnvironment.configDirectory, 'state/acp-sessions.json'),
   taskTerminalTtlMs: numberSetting(
     process.env.QWEN_AUDIO_AGENT_TASK_TERMINAL_TTL_MS,
     86_400_000,
