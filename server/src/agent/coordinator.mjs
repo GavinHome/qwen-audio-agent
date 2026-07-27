@@ -271,6 +271,32 @@ export class Coordinator {
       },
     }
   }
+
+  cancelDelegatedWork(workId, options = {}) {
+    if (!this.client.cancelDelegatedWork) {
+      return Promise.reject(new Error('Coordinator backend cannot cancel delegated work'))
+    }
+    return this.client.cancelDelegatedWork(workId, options)
+  }
+
+  async queryDelegatedWork(workId, question, options = {}) {
+    if (!this.client.queryDelegatedWork) {
+      throw new Error('Coordinator backend cannot query delegated work')
+    }
+    const result = await this.client.queryDelegatedWork(
+      workId,
+      question,
+      options,
+    )
+    const decision = parseCoordinatorDecision(result.content, workId)
+    return {
+      content: decision.presentation.speech,
+      metadata: {
+        ...(result.metadata || {}),
+        decision,
+      },
+    }
+  }
 }
 
 export const coordinator = new Coordinator()

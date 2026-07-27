@@ -9,6 +9,7 @@ import {
 export const SPAWN_THINKING_TOOL_NAME = 'spawn_thinking'
 export const DELEGATE_TOOL_NAME = SPAWN_THINKING_TOOL_NAME
 export const CANCEL_AGENT_TASK_TOOL_NAME = 'cancel_agent_task'
+export const GET_AGENT_TASK_STATUS_TOOL_NAME = 'get_agent_task_status'
 export const GET_CURRENT_TIME_TOOL_NAME = 'get_current_time'
 export const USER_MEMORY_TOOL_NAME = 'user_memory'
 export const RESPOND_AGENT_PERMISSION_TOOL_NAME = 'respond_agent_permission'
@@ -17,7 +18,7 @@ const delegateTool = {
   type: 'function',
   function: {
     name: DELEGATE_TOOL_NAME,
-    description: '把明确的执行或调查要求交给后台 Agent。需要当前信息、搜索、检查、工具、文件、屏幕、应用、代码、创作、已有工作状态或持续执行时调用；缺少不可推断的核心目标时先问一个必要问题。可以按需先说一句具体行动预告，不要使用“好的、收到”等通用承接语。返回 accepted 只表示已受理；结合本轮已有发言判断是否还需回应，不重复确认或声称完成。',
+    description: '把明确的新执行或调查要求交给后台 Agent。需要当前信息、搜索、检查、工具、文件、屏幕、应用、代码、创作，或要求继续、修改已有工作时调用；询问此前工作的状态、进度、阶段产物或已经发现了什么统一改用 get_agent_task_status。缺少不可推断的核心目标时先问一个必要问题。可以按需先说一句具体行动预告，不要使用“好的、收到”等通用承接语。返回 accepted 只表示已受理；结合本轮已有发言判断是否还需回应，不重复确认或声称完成。',
     parameters: {
       type: 'object',
       properties: {
@@ -43,6 +44,28 @@ const cancelAgentTaskTool = {
         work_id: {
           type: 'string',
           description: '要取消的 work_id。仅在运行上下文已明确给出时填写；不得猜造。省略则取消当前语音会话最近提交且仍活跃的工作。',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
+const getAgentTaskStatusTool = {
+  type: 'function',
+  function: {
+    name: GET_AGENT_TASK_STATUS_TOOL_NAME,
+    description: '查询此前交给后台工作的状态、进度或阶段性结果。用户询问“刚才那个怎么样了、还在做吗、做到哪一步、已经发现了什么、是否完成”时统一调用，不要自行判断普通任务或第三层任务，也不要改用 spawn_thinking。系统会直接回答普通任务，并自动查询第三层任务。能够从运行上下文确定 work_id 时传入；省略时查询当前语音会话最近的工作。',
+    parameters: {
+      type: 'object',
+      properties: {
+        work_id: {
+          type: 'string',
+          description: '要查询的 work_id。仅在运行上下文已明确给出时填写，不得猜造；省略则查询当前语音会话最近的工作。',
+        },
+        question: {
+          type: 'string',
+          description: '用户本轮对任务状态、进度或阶段结果的原始问题。尽量忠实保留，不要自行改写成另一项任务；省略时系统会使用本轮语音转写。',
         },
       },
       additionalProperties: false,
@@ -133,6 +156,7 @@ const respondAgentPermissionTool = {
 const TOOLS = [
   delegateTool,
   cancelAgentTaskTool,
+  getAgentTaskStatusTool,
   getCurrentTimeTool,
   userMemoryTool,
   respondAgentPermissionTool,

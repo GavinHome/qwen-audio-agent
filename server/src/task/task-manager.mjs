@@ -3,7 +3,14 @@ import { config } from '../core/config.mjs'
 import { TaskScheduler } from './task-scheduler.mjs'
 import { TaskStore } from './task-store.mjs'
 
-const ACTIVE = new Set(['queued', 'running', 'delegated'])
+const ACTIVE = new Set([
+  'queued',
+  'running',
+  'delegated',
+  'finalizing',
+  'cancelling',
+])
+const CANCELLABLE = new Set(['queued', 'running', 'delegated', 'finalizing'])
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 
 function publicTask(task) {
@@ -13,6 +20,8 @@ function publicTask(task) {
     workId: task.id,
     workState: ACTIVE.has(task.status) ? 'active' : task.status,
     status: task.status,
+    kind: task.kind || 'work',
+    parentWorkId: task.parentWorkId || null,
     objective: task.objective,
     ownerId: task.ownerId,
     sessionId: task.sessionId,
@@ -150,7 +159,11 @@ export class TaskManager {
     submissionKey,
     laneKey,
     laneLimit = 1,
+    kind = 'work',
+    parentWorkId = null,
+    priority = 0,
     runner,
+    canceler,
   }) {
     const normalizedOwnerId = String(ownerId || '')
     const normalizedSubmissionKey = String(submissionKey || '').trim()
@@ -164,6 +177,9 @@ export class TaskManager {
     const task = {
       id: `work_${randomUUID()}`,
       status: 'queued',
+      kind: String(kind || 'work'),
+      parentWorkId: parentWorkId ? String(parentWorkId) : null,
+      priority: Number.isFinite(Number(priority)) ? Number(priority) : 0,
       objective: String(objective || '').trim(),
       ownerId: normalizedOwnerId,
       sessionId: String(sessionId || 'main'),
@@ -180,11 +196,15 @@ export class TaskManager {
       resultMetadata: null,
       activity: [],
       delegation: null,
+      cancellation: null,
       authorization: null,
       notificationStatus: 'none',
       notificationClaimantId: null,
       notificationClaimedAt: null,
       runner: runner || this.runner,
+      canceler: typeof canceler === 'function' ? canceler : null,
+      cancelPromise: null,
+      terminalHandled: false,
       abortController: null,
       schedulerHeld: false,
     }
@@ -198,8 +218,14 @@ export class TaskManager {
   }
 
   drain() {
-    for (const task of this.tasks.values()) {
-      if (task.status !== 'queued' || !this.scheduler.canStart(task)) continue
+    const queued = [...this.tasks.values()]
+      .filter(task => task.status === 'queued')
+      .sort((left, right) => (
+        Number(right.priority || 0) - Number(left.priority || 0)
+        || left.createdAt - right.createdAt
+      ))
+    for (const task of queued) {
+      if (!this.scheduler.canStart(task)) continue
       this.start(task)
     }
   }
@@ -230,6 +256,7 @@ export class TaskManager {
         this.emit('task.permission.resolved', task)
         return
       }
+      if (['cancelling', 'cancelled'].includes(task.status)) return
       if (event?.type === 'backend.delegated' && event.delegation) {
         task.status = 'delegated'
         task.delegation = { ...event.delegation }
@@ -245,8 +272,9 @@ export class TaskManager {
         event?.type === 'backend.delegation.completed'
         && event.delegation
       ) {
+        task.status = 'finalizing'
         task.delegation = { ...event.delegation, status: 'completed' }
-        this.emit('task.progress', task)
+        this.emit('task.finalizing', task)
         return
       }
       if (event?.type !== 'backend.activity' || !event.activity) return
@@ -270,21 +298,29 @@ export class TaskManager {
         })
       })
       .then(outcome => {
-        if (task.status === 'cancelled') return
+        if (
+          task.terminalHandled
+          || ['cancelling', 'cancelled'].includes(task.status)
+        ) return
         task.status = 'completed'
         task.result = String(outcome?.content ?? outcome ?? '').trim()
         task.resultMetadata = outcome?.metadata || null
       })
       .catch(error => {
-        if (task.status === 'cancelled') return
+        if (
+          task.terminalHandled
+          || ['cancelling', 'cancelled'].includes(task.status)
+        ) return
         task.status = 'failed'
         task.error = error?.message || String(error)
       })
       .finally(() => {
+        if (task.terminalHandled) return
         clearInterval(task.progressTimer)
         task.progressTimer = null
         task.abortController = null
         task.authorization = null
+        if (task.status === 'cancelling') return
         if (task.status === 'cancelled') {
           if (task.schedulerHeld) {
             this.scheduler.release(task)
@@ -298,6 +334,7 @@ export class TaskManager {
           ? task.completedAt - task.startedAt
           : 0
         task.notificationStatus = 'pending'
+        task.terminalHandled = true
         if (task.schedulerHeld) {
           this.scheduler.release(task)
           task.schedulerHeld = false
@@ -313,16 +350,72 @@ export class TaskManager {
       })
   }
 
-  cancel(id, { ownerId } = {}) {
+  async cancel(id, { ownerId } = {}) {
     const task = this.tasks.get(String(id))
     if (
       !task
       || (ownerId !== undefined && task.ownerId !== String(ownerId))
-      || !ACTIVE.has(task.status)
+      || (!CANCELLABLE.has(task.status) && task.status !== 'cancelling')
     ) {
       return null
     }
-    const wasRunning = task.status === 'running' || task.status === 'delegated'
+    if (task.cancelPromise) return task.cancelPromise
+    const previousStatus = task.status
+    if (previousStatus === 'queued') {
+      return this.finishCancellation(task)
+    }
+    task.status = 'cancelling'
+    task.authorization = null
+    this.emit('task.cancelling', task)
+    task.cancelPromise = Promise.resolve()
+      .then(async () => {
+        if (task.canceler) {
+          const cancellation = await task.canceler({
+            task: publicTask(task),
+            previousStatus,
+            abort: reason => task.abortController?.abort(
+              reason || new Error('用户已取消这项工作'),
+            ),
+          })
+          if (cancellation && typeof cancellation === 'object') {
+            task.cancellation = { ...cancellation }
+          }
+        } else {
+          task.abortController?.abort(new Error('用户已取消这项工作'))
+        }
+        return this.finishCancellation(task)
+      })
+      .catch(error => {
+        task.abortController?.abort(
+          error instanceof Error ? error : new Error(String(error)),
+        )
+        clearInterval(task.progressTimer)
+        task.progressTimer = null
+        task.abortController = null
+        task.authorization = null
+        task.status = 'failed'
+        task.error = `取消失败：${error?.message || String(error)}`
+        task.completedAt = Date.now()
+        task.elapsedMs = task.startedAt
+          ? task.completedAt - task.startedAt
+          : 0
+        task.notificationStatus = 'pending'
+        task.terminalHandled = true
+        if (task.schedulerHeld) {
+          this.scheduler.release(task)
+          task.schedulerHeld = false
+        }
+        this.emit('task.failed', task)
+        this.emit('task.notification.pending', task)
+        task.resolve?.(publicTask(task))
+        this.prune()
+        this.drain()
+        return publicTask(task)
+      })
+    return task.cancelPromise
+  }
+
+  finishCancellation(task) {
     task.status = 'cancelled'
     task.authorization = null
     task.completedAt = Date.now()
@@ -331,15 +424,18 @@ export class TaskManager {
       : 0
     task.error = null
     task.notificationStatus = 'none'
+    task.terminalHandled = true
     clearInterval(task.progressTimer)
     task.progressTimer = null
+    task.abortController = null
+    if (task.schedulerHeld) {
+      this.scheduler.release(task)
+      task.schedulerHeld = false
+    }
     this.emit('task.cancelled', task)
     task.resolve?.(publicTask(task))
-    if (wasRunning) {
-      task.abortController?.abort(new Error('用户已取消这项工作'))
-    } else {
-      this.drain()
-    }
+    this.prune()
+    this.drain()
     return publicTask(task)
   }
 
@@ -351,13 +447,19 @@ export class TaskManager {
     return publicTask(task)
   }
 
-  list({ ownerId, sessionId, active = false } = {}) {
+  list({
+    ownerId,
+    sessionId,
+    active = false,
+    includeControl = false,
+  } = {}) {
     this.prune()
     return [...this.tasks.values()]
       .filter(task => (
         (ownerId === undefined || task.ownerId === String(ownerId))
         && (sessionId === undefined || task.sessionId === String(sessionId))
         && (!active || ACTIVE.has(task.status))
+        && (includeControl || task.kind !== 'control')
       ))
       .sort((left, right) => right.createdAt - left.createdAt)
       .map(publicTask)

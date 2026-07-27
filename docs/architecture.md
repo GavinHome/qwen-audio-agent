@@ -49,11 +49,12 @@ item is sent into the Backend Agent Session at a time.
 
 ## 3. Realtime boundary
 
-Realtime has exactly five tools:
+Realtime has exactly six tools:
 
 ```text
 spawn_thinking
 cancel_agent_task
+get_agent_task_status
 get_current_time
 user_memory
 respond_agent_permission
@@ -69,11 +70,20 @@ respond_agent_permission
 Only the marked managed section of `USER.md` is editable. User-maintained profile
 text outside that section is returned as read-only data and cannot be replaced.
 
+`get_agent_task_status` is the single Realtime entry point for lifecycle,
+progress, and interim-result questions. The Gateway answers non-delegated Work
+directly. For `delegated` Work it creates a hidden, high-priority control query
+that uses the coordinator to call `session_status`. The query waits behind an
+already-running coordinator turn but ahead of ordinary queued Work, and its
+result is delivered through the normal asynchronous announcement path. It is
+not exposed as a user Work item and cannot become the implicit target of a
+later status or cancellation request.
+
 It does not have tools for:
 
 - selecting, creating, continuing, or cancelling backend Sessions;
 - choosing synchronous, asynchronous, foreground, or background execution;
-- querying qwen-audio-agent Work or selecting backend execution strategy;
+- selecting backend execution strategy;
 - selecting tools, Agents, or subagents.
 
 `respond_agent_permission` is the only exception to the rule that Realtime does
@@ -118,8 +128,10 @@ A qwen-audio-agent Work record is a delivery receipt, not a mirror of the backen
 internal task graph.
 
 ```text
-queued → running → completed
-   ↘ cancelled    ↘ failed
+queued → running ─────────────────────────→ completed
+   │        └→ delegated → finalizing ────────┘
+   └────────────→ cancelling → cancelled
+                            ↘ failed
 ```
 
 Public fields are limited to the user request, timestamps, final result/error,
@@ -131,7 +143,7 @@ The UI presents both `queued` and `running` as the same “processing” state.
 Queue position is an internal scheduling detail and does not change the user's
 duplex conversation.
 
-Queued and running Work cannot be safely resumed after a Gateway restart, so
+Active Work cannot be safely resumed after a Gateway restart, so
 they become failed with an explicit restart reason. Completed results and
 notification delivery state are persisted.
 
@@ -212,6 +224,17 @@ The normal backend request timeout applies separately to the initial
 coordinator turn and the final presentation turn. It does not apply while the
 adapter is waiting for the delegated Session. During that interval, only an
 explicit Work cancellation or backend shutdown cancels the target Session.
+
+Cancellation is confirmed rather than optimistic. `queued` Work is cancelled
+locally. `running` or `finalizing` Work aborts its active backend request. For
+`delegated` Work, an idle coordinator is first asked to call
+`session_cancel`; if the coordinator Session is occupied, the OpenCode adapter
+directly aborts the exact correlated target Session. The Work remains
+`cancelling` until one of those paths confirms the stop, then becomes
+`cancelled`. A failed stop becomes `failed` with the cancellation error.
+After a direct adapter abort, the Gateway records a cancellation fact and
+injects it once into the next safe coordinator turn. This reconciles the
+coordinator's history without delaying cancellation or repeating the stop.
 
 The delegated `presentation` is authored by the backend Agent with normal
 reasoning and is spoken immediately as a start confirmation. It may explain

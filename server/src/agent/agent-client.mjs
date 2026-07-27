@@ -79,6 +79,24 @@ export class AgentClient {
     return this.adapter.respondPermission(id, decision, options)
   }
 
+  cancelDelegatedWork(workId, options = {}) {
+    if (!this.adapter.cancelDelegatedWork) {
+      throw new AgentError('当前后台 Agent 不支持取消第三层 Session', {
+        protocol: this.protocol,
+      })
+    }
+    return this.adapter.cancelDelegatedWork(workId, options)
+  }
+
+  queryDelegatedWork(workId, question, options = {}) {
+    if (!this.adapter.queryDelegatedWork) {
+      throw new AgentError('当前后台 Agent 不支持查询第三层 Session', {
+        protocol: this.protocol,
+      })
+    }
+    return this.adapter.queryDelegatedWork(workId, question, options)
+  }
+
   uiUrl(options = {}) {
     return this.adapter.uiUrl?.(options.ownerId)
       || Promise.resolve(this.adapter.describe().baseUrl)

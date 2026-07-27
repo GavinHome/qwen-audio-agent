@@ -17,6 +17,8 @@ const DELEGATION_TOOLS = new Set([
 ])
 const MAX_DELEGATION_RESULT_CHARS = 12_000
 const DELEGATION_TURN_GRACE_MS = 30_000
+const DELEGATION_CANCEL_TIMEOUT_MS = 10_000
+const DELEGATION_QUERY_TIMEOUT_MS = 30_000
 
 function agentSessionKey(ownerId, role) {
   return `qwen-audio-agent:${encodeURIComponent(String(ownerId || 'personal'))}:${role}`
@@ -43,6 +45,18 @@ function responseFailure(payload) {
   const error = payload?.info?.error
   if (!error) return null
   return error.data?.message || error.message || error.name || 'OpenCode 执行失败'
+}
+
+function interruptible(promise, signal) {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(signal.reason)
+    signal.addEventListener('abort', aborted, { once: true })
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', aborted)
+    })
+  })
 }
 
 function latestAssistantResult(messages = [], startedAt = 0) {
@@ -234,6 +248,8 @@ export class OpenCodeAdapter extends BackendAdapter {
     this.sessionQueues = new Map()
     this.activeRuns = new Map()
     this.delegatedRuns = new Map()
+    this.delegatedWorkRuns = new Map()
+    this.pendingCoordinatorEvents = new Map()
     this.pendingPermissions = new Map()
     this.permissionByRequest = new Map()
     this.permissionRoutingPromises = new Map()
@@ -613,6 +629,21 @@ export class OpenCodeAdapter extends BackendAdapter {
     return current
   }
 
+  trySerialize(sessionId, operation) {
+    if (
+      this.sessionQueues.has(sessionId)
+      || this.activeRuns.has(sessionId)
+    ) return null
+    const current = Promise.resolve().then(operation)
+    this.sessionQueues.set(sessionId, current)
+    current.finally(() => {
+      if (this.sessionQueues.get(sessionId) === current) {
+        this.sessionQueues.delete(sessionId)
+      }
+    }).catch(() => {})
+    return current
+  }
+
   async delegationStatus(delegation) {
     const query = new URLSearchParams()
     if (delegation.directory) query.set('directory', delegation.directory)
@@ -689,7 +720,12 @@ export class OpenCodeAdapter extends BackendAdapter {
 
   settleDelegation(run) {
     const delegation = run.delegation
-    if (!delegation || delegation.settling || delegation.settled) return
+    if (
+      !delegation
+      || delegation.cancelling
+      || delegation.settling
+      || delegation.settled
+    ) return
     delegation.settling = true
     this.delegationStatus(delegation)
       .then(status => (
@@ -698,6 +734,10 @@ export class OpenCodeAdapter extends BackendAdapter {
           : this.readDelegationResult(delegation)
       ))
       .then(result => {
+        if (delegation.cancelling || delegation.settled) {
+          delegation.settling = false
+          return
+        }
         if (result?.stillBusy) {
           delegation.settling = false
           if (delegation.idleObserved) {
@@ -741,6 +781,10 @@ export class OpenCodeAdapter extends BackendAdapter {
         delegation.resolve(result)
       })
       .catch(error => {
+        if (delegation.cancelling || delegation.settled) {
+          delegation.settling = false
+          return
+        }
         delegation.settled = true
         delegation.reject(error)
       })
@@ -764,9 +808,13 @@ export class OpenCodeAdapter extends BackendAdapter {
       reject,
       settling: false,
       settled: false,
+      cancelling: false,
       turnTimer: null,
     }
     this.delegatedRuns.set(details.id, run)
+    if (run.coordinationRunId) {
+      this.delegatedWorkRuns.set(run.coordinationRunId, run)
+    }
     run.delegation.turnTimer = setTimeout(
       abortCoordinator,
       DELEGATION_TURN_GRACE_MS,
@@ -791,6 +839,7 @@ export class OpenCodeAdapter extends BackendAdapter {
     if (
       event?.type === 'session.idle'
       && event.sessionId === run.delegation?.sessionId
+      && !run.delegation.cancelling
     ) {
       run.delegation.idleObserved = true
       this.settleDelegation(run)
@@ -817,6 +866,285 @@ export class OpenCodeAdapter extends BackendAdapter {
     ].join('\n')
   }
 
+  delegationCancelPrompt(delegation, coordinationRunId) {
+    return [
+      '<qwen_audio_agent_cancel_delegation>',
+      JSON.stringify({
+        work_id: coordinationRunId || '',
+        delegation_id: delegation.id,
+        target_session_id: delegation.sessionId,
+        directory: delegation.directory,
+      }),
+      '</qwen_audio_agent_cancel_delegation>',
+      '用户明确要求取消这项第三层任务。',
+      '请立即调用 qwen_audio_agent_session_cancel，session_id 和 directory 必须使用上面的准确值。',
+      '工具返回后用一句简短的话确认；不要执行其他工具，不要继续原任务。',
+    ].join('\n')
+  }
+
+  delegationQueryPrompt(delegation, coordinationRunId, question) {
+    return [
+      '<qwen_audio_agent_query_delegation>',
+      JSON.stringify({
+        work_id: coordinationRunId || '',
+        delegation_id: delegation.id,
+        target_session_id: delegation.sessionId,
+        directory: delegation.directory,
+        question: boundedText(question, 1200),
+      }),
+      '</qwen_audio_agent_query_delegation>',
+      '这是用户对既有第三层任务的状态、进度或阶段性结果查询，不是新的执行任务。',
+      '请调用 qwen_audio_agent_session_status，session_id 和 directory 必须使用上面的准确值。',
+      '根据用户问题和工具返回自然回答；不要取消、修改或重新执行目标任务，也不要调用其他项目工具。',
+      '如果 session_status 失败，只能如实说明暂时无法取得状态，禁止从协调会话记忆猜测。',
+      '输出且只输出：',
+      `{"work_id":"${coordinationRunId || ''}","state":"completed","mode":"respond","presentation":{"speech":"适合语音表达的查询结果","inline":null}}`,
+    ].join('\n')
+  }
+
+  queueCoordinatorEvent(sessionId, event) {
+    if (!sessionId) return
+    const pending = this.pendingCoordinatorEvents.get(sessionId) || []
+    pending.push({
+      id: `coordinator_event_${randomUUID()}`,
+      ...event,
+    })
+    this.pendingCoordinatorEvents.set(sessionId, pending.slice(-20))
+  }
+
+  messageWithCoordinatorEvents(sessionId, message) {
+    const events = this.pendingCoordinatorEvents.get(sessionId) || []
+    if (!events.length) return { message, eventIds: [] }
+    return {
+      message: [
+        '<qwen_audio_agent_work_events>',
+        JSON.stringify(events.map(({ id, ...event }) => event)),
+        '</qwen_audio_agent_work_events>',
+        '以上是 Gateway 已经确认发生的工作状态事件，只用于修正你的后续判断，不是新的用户请求。',
+        '不要为这些事件调用工具，不要重复取消，不要主动向用户播报；只需在处理下面当前请求时视为已知事实。',
+        '',
+        message,
+      ].join('\n'),
+      eventIds: events.map(event => event.id),
+    }
+  }
+
+  acknowledgeCoordinatorEvents(sessionId, eventIds) {
+    if (!eventIds?.length) return
+    const acknowledged = new Set(eventIds)
+    const remaining = (this.pendingCoordinatorEvents.get(sessionId) || [])
+      .filter(event => !acknowledged.has(event.id))
+    if (remaining.length) this.pendingCoordinatorEvents.set(sessionId, remaining)
+    else this.pendingCoordinatorEvents.delete(sessionId)
+  }
+
+  async abortDelegatedSession(delegation) {
+    const query = delegation.directory
+      ? `?directory=${encodeURIComponent(delegation.directory)}`
+      : ''
+    await this.request(
+      `/session/${encodeURIComponent(delegation.sessionId)}/abort${query}`,
+      {
+        headers: this.headers(),
+        timeoutMs: 5000,
+      },
+    )
+  }
+
+  async cancelDelegatedWork(workId, { ownerId } = {}) {
+    const run = this.delegatedWorkRuns.get(String(workId || ''))
+    if (
+      !run
+      || !run.delegation
+      || run.delegation.settled
+      || (
+        ownerId !== undefined
+        && run.ownerId !== String(ownerId)
+      )
+    ) {
+      throw new AgentError('这项工作当前没有可取消的第三层 Session', {
+        status: 404,
+        protocol: this.protocol,
+      })
+    }
+    const delegation = run.delegation
+    if (delegation.cancelPromise) return delegation.cancelPromise
+    delegation.cancelling = true
+    delegation.cancelPromise = (async () => {
+      let route = 'adapter'
+      let coordinatorError = null
+      const coordinated = this.trySerialize(run.backendSessionId, async () => {
+        try {
+          const control = this.messageWithCoordinatorEvents(
+            run.backendSessionId,
+            this.delegationCancelPrompt(
+              delegation,
+              run.coordinationRunId,
+            ),
+          )
+          const response = await this.request(
+            `/session/${encodeURIComponent(run.backendSessionId)}/message`,
+            {
+              headers: this.headers(),
+              timeoutMs: DELEGATION_CANCEL_TIMEOUT_MS,
+              body: {
+                messageID: messageId(),
+                agent: run.backendAgent,
+                ...(modelRef(this.model)
+                  ? { model: modelRef(this.model) }
+                  : {}),
+                parts: [{
+                  type: 'text',
+                  text: control.message,
+                }],
+              },
+            },
+          )
+          const payload = await response.json()
+          const failure = responseFailure(payload)
+          if (failure) throw new Error(failure)
+          if (await this.delegationStatus(delegation) === 'busy') {
+            throw new Error('协调 Agent 未能及时停止目标 Session')
+          }
+          this.acknowledgeCoordinatorEvents(
+            run.backendSessionId,
+            control.eventIds,
+          )
+          route = 'coordinator'
+        } catch (error) {
+          coordinatorError = error
+        }
+      })
+      if (coordinated) await coordinated
+      if (route !== 'coordinator') {
+        await this.abortDelegatedSession(delegation)
+        this.queueCoordinatorEvent(run.backendSessionId, {
+          type: 'delegation.cancelled',
+          work_id: run.coordinationRunId || '',
+          delegation_id: delegation.id,
+          target_session_id: delegation.sessionId,
+          reason: 'user_cancelled',
+          route: 'adapter',
+          cancelled_at: new Date().toISOString(),
+        })
+      }
+      delegation.settled = true
+      delegation.reject(new Error('用户已取消这项第三层任务'))
+      return {
+        status: 'cancelled',
+        workId: run.coordinationRunId,
+        delegationId: delegation.id,
+        sessionId: delegation.sessionId,
+        route,
+        coordinatorError: coordinatorError?.message || null,
+      }
+    })().catch(error => {
+      delegation.cancelling = false
+      delegation.cancelPromise = null
+      throw error
+    })
+    return delegation.cancelPromise
+  }
+
+  async queryDelegatedWork(workId, question, { ownerId, signal } = {}) {
+    const id = String(workId || '')
+    const run = this.delegatedWorkRuns.get(id)
+    if (
+      !run
+      || !run.delegation
+      || run.delegation.settled
+      || run.delegation.cancelling
+      || (
+        ownerId !== undefined
+        && run.ownerId !== String(ownerId)
+      )
+    ) {
+      throw new AgentError('这项工作当前没有可查询的第三层 Session', {
+        status: 404,
+        protocol: this.protocol,
+      })
+    }
+    const queued = this.serialize(run.backendSessionId, async () => {
+      if (signal?.aborted) throw signal.reason
+      const current = this.delegatedWorkRuns.get(id)
+      if (
+        current !== run
+        || run.delegation.settled
+        || run.delegation.cancelling
+      ) {
+        throw new AgentError('查询开始前第三层任务已经结束', {
+          status: 409,
+          protocol: this.protocol,
+        })
+      }
+      const control = this.messageWithCoordinatorEvents(
+        run.backendSessionId,
+        this.delegationQueryPrompt(
+          run.delegation,
+          run.coordinationRunId,
+          question,
+        ),
+      )
+      const response = await this.request(
+        `/session/${encodeURIComponent(run.backendSessionId)}/message`,
+        {
+          headers: this.headers(),
+          signal,
+          timeoutMs: DELEGATION_QUERY_TIMEOUT_MS,
+          body: {
+            messageID: messageId(),
+            agent: run.backendAgent,
+            ...(modelRef(this.model)
+              ? { model: modelRef(this.model) }
+              : {}),
+            parts: [{ type: 'text', text: control.message }],
+          },
+        },
+      )
+      const payload = await response.json()
+      const failure = responseFailure(payload)
+      if (failure) {
+        throw new AgentError(`OpenCode 查询第三层任务失败：${failure}`, {
+          body: JSON.stringify(payload),
+          protocol: this.protocol,
+        })
+      }
+      const content = responseText(payload)
+      if (!content) {
+        throw new AgentError('OpenCode 返回了空的第三层任务查询结果', {
+          body: JSON.stringify(payload),
+          protocol: this.protocol,
+        })
+      }
+      this.acknowledgeCoordinatorEvents(
+        run.backendSessionId,
+        control.eventIds,
+      )
+      return {
+        content,
+        raw: payload,
+        protocol: this.protocol,
+        metadata: {
+          backendRef: {
+            provider: this.protocol,
+            role: 'backend',
+            sessionId: run.backendSessionId,
+            directory: this.directory,
+            messageId: payload?.info?.id || null,
+          },
+          delegation: {
+            id: run.delegation.id,
+            sessionId: run.delegation.sessionId,
+            title: run.delegation.title,
+            directory: run.delegation.directory,
+          },
+        },
+      }
+    })
+    queued.catch(() => {})
+    return interruptible(queued, signal)
+  }
+
   async executeCoordinatorRun(message, {
     session,
     backendAgent,
@@ -832,6 +1160,7 @@ export class OpenCodeAdapter extends BackendAdapter {
       coordinationRunId: coordinationRunId || null,
       onEvent,
       backendSessionId: session.id,
+      backendAgent,
       delegation: null,
       releaseCoordinator: null,
     }
@@ -1060,6 +1389,12 @@ export class OpenCodeAdapter extends BackendAdapter {
       ) {
         this.delegatedRuns.delete(run.delegation.id)
       }
+      if (
+        run.coordinationRunId
+        && this.delegatedWorkRuns.get(run.coordinationRunId) === run
+      ) {
+        this.delegatedWorkRuns.delete(run.coordinationRunId)
+      }
       for (const record of this.pendingPermissions.values()) {
         if (
           record.onEvent === onEvent
@@ -1094,8 +1429,14 @@ export class OpenCodeAdapter extends BackendAdapter {
       releaseCoordinator = resolve
     })
     let lifecycle
+    let coordinatorEventIds = []
     const initial = await this.serialize(session.id, async () => {
-      lifecycle = this.executeCoordinatorRun(message, {
+      const coordinatedMessage = this.messageWithCoordinatorEvents(
+        session.id,
+        message,
+      )
+      coordinatorEventIds = coordinatedMessage.eventIds
+      lifecycle = this.executeCoordinatorRun(coordinatedMessage.message, {
         session,
         backendAgent,
         ownerId,
@@ -1113,6 +1454,9 @@ export class OpenCodeAdapter extends BackendAdapter {
         released.then(() => ({ completed: false })),
       ])
     })
+    if (!initial.error) {
+      this.acknowledgeCoordinatorEvents(session.id, coordinatorEventIds)
+    }
     if (initial.completed) {
       if (initial.error) throw initial.error
       return initial.value

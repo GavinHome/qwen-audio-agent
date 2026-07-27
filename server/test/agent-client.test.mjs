@@ -459,6 +459,246 @@ test('keeps voice work delegated until the matching OpenCode session is idle', a
   )))
 })
 
+test('asks an idle coordinator to cancel delegated work', async () => {
+  const calls = []
+  let targetBusy = true
+  const adapter = new OpenCodeAdapter({
+    fetchImpl: async (url, options = {}) => {
+      const path = new URL(url).pathname
+      if (path === '/session/ses-backend/message') {
+        const body = JSON.parse(options.body)
+        calls.push(body.parts[0].text)
+        targetBusy = false
+        return Response.json({
+          info: { id: 'cancel-confirmation' },
+          parts: [{ type: 'text', text: '已取消。' }],
+        })
+      }
+      if (path === '/session/status') {
+        return Response.json(targetBusy
+          ? { 'ses-target': { type: 'busy' } }
+          : {})
+      }
+      throw new Error(`unexpected request: ${url}`)
+    },
+    baseUrl: 'http://opencode.test',
+    directory: '/workspace',
+    coordinatorAgent: 'qwen-audio-agent-backend',
+    timeoutMs: 1000,
+  })
+  const rejected = new Promise((resolve, reject) => {
+    const delegation = {
+      id: 'run-one',
+      sessionId: 'ses-target',
+      directory: '/project',
+      settled: false,
+      reject,
+    }
+    adapter.delegatedWorkRuns.set('work-one', {
+      ownerId: 'owner-one',
+      coordinationRunId: 'work-one',
+      backendSessionId: 'ses-backend',
+      backendAgent: 'qwen-audio-agent-backend',
+      delegation,
+    })
+  }).catch(error => error)
+
+  const result = await adapter.cancelDelegatedWork('work-one', {
+    ownerId: 'owner-one',
+  })
+
+  assert.equal(result.route, 'coordinator')
+  assert.match(calls[0], /qwen_audio_agent_session_cancel/)
+  assert.match(calls[0], /ses-target/)
+  assert.match((await rejected).message, /用户已取消/)
+})
+
+test('aborts delegated work directly when the coordinator is occupied', async () => {
+  let directAborts = 0
+  const adapter = new OpenCodeAdapter({
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname
+      if (path === '/session/ses-target/abort') {
+        directAborts += 1
+        return Response.json(true)
+      }
+      throw new Error(`unexpected request: ${url}`)
+    },
+    baseUrl: 'http://opencode.test',
+    directory: '/workspace',
+    coordinatorAgent: 'qwen-audio-agent-backend',
+    timeoutMs: 1000,
+  })
+  adapter.sessionQueues.set('ses-backend', new Promise(() => {}))
+  const rejected = new Promise((resolve, reject) => {
+    const delegation = {
+      id: 'run-one',
+      sessionId: 'ses-target',
+      directory: '/project',
+      settled: false,
+      reject,
+    }
+    adapter.delegatedWorkRuns.set('work-one', {
+      ownerId: 'owner-one',
+      coordinationRunId: 'work-one',
+      backendSessionId: 'ses-backend',
+      backendAgent: 'qwen-audio-agent-backend',
+      delegation,
+    })
+  }).catch(error => error)
+
+  const result = await adapter.cancelDelegatedWork('work-one', {
+    ownerId: 'owner-one',
+  })
+
+  assert.equal(result.route, 'adapter')
+  assert.equal(directAborts, 1)
+  assert.match((await rejected).message, /用户已取消/)
+})
+
+test('queues delegated status queries on the coordinator with exact target context', async () => {
+  const prompts = []
+  const adapter = new OpenCodeAdapter({
+    fetchImpl: async (url, options = {}) => {
+      const path = new URL(url).pathname
+      if (path === '/session/ses-backend/message') {
+        const body = JSON.parse(options.body)
+        prompts.push(body.parts[0].text)
+        return Response.json({
+          info: { id: 'query-response' },
+          parts: [{
+            type: 'text',
+            text: JSON.stringify({
+              work_id: 'work-one',
+              state: 'completed',
+              mode: 'respond',
+              presentation: {
+                speech: '目前仍在检查模型目录。',
+                inline: null,
+              },
+            }),
+          }],
+        })
+      }
+      throw new Error(`unexpected request: ${url}`)
+    },
+    baseUrl: 'http://opencode.test',
+    directory: '/workspace',
+    coordinatorAgent: 'qwen-audio-agent-backend',
+    timeoutMs: 1000,
+  })
+  let releaseCoordinator
+  adapter.sessionQueues.set('ses-backend', new Promise(resolve => {
+    releaseCoordinator = resolve
+  }))
+  adapter.delegatedWorkRuns.set('work-one', {
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-one',
+    backendSessionId: 'ses-backend',
+    backendAgent: 'qwen-audio-agent-backend',
+    delegation: {
+      id: 'run-one',
+      sessionId: 'ses-target',
+      title: 'Megatron-LM',
+      directory: '/project',
+      settled: false,
+      cancelling: false,
+    },
+  })
+
+  const pending = adapter.queryDelegatedWork(
+    'work-one',
+    '已经查到了哪些模型？',
+    { ownerId: 'owner-one' },
+  )
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prompts.length, 0)
+  releaseCoordinator()
+  const result = await pending
+
+  assert.match(result.content, /目前仍在检查模型目录/)
+  assert.match(prompts[0], /qwen_audio_agent_session_status/)
+  assert.match(prompts[0], /ses-target/)
+  assert.match(prompts[0], /\/project/)
+  assert.match(prompts[0], /已经查到了哪些模型/)
+})
+
+test('reconciles one direct delegated cancellation on the next coordinator turn', async () => {
+  const prompts = []
+  const adapter = new OpenCodeAdapter({
+    fetchImpl: async (url, options = {}) => {
+      const path = new URL(url).pathname
+      if (path === '/session/ses-target/abort') return Response.json(true)
+      if (path === '/agent') {
+        return Response.json([{
+          name: 'qwen-audio-agent-backend',
+          mode: 'primary',
+        }])
+      }
+      if (path === '/session' && options.method === 'GET') {
+        return Response.json([{
+          id: 'ses-backend',
+          metadata: {
+            qwen_audio_agent_backend_key:
+              'qwen-audio-agent:owner-one:backend',
+            qwen_audio_agent_role: 'backend',
+          },
+        }])
+      }
+      if (path === '/session/ses-backend/message') {
+        const body = JSON.parse(options.body)
+        prompts.push(body.parts[0].text)
+        return Response.json({
+          info: { id: `response-${prompts.length}` },
+          parts: [{ type: 'text', text: '已处理下一项任务。' }],
+        })
+      }
+      throw new Error(`unexpected request: ${url}`)
+    },
+    baseUrl: 'http://opencode.test',
+    directory: '/workspace',
+    coordinatorAgent: 'qwen-audio-agent-backend',
+    timeoutMs: 1000,
+  })
+  adapter.sessionQueues.set('ses-backend', new Promise(() => {}))
+  const rejected = new Promise((resolve, reject) => {
+    adapter.delegatedWorkRuns.set('work-one', {
+      ownerId: 'owner-one',
+      coordinationRunId: 'work-one',
+      backendSessionId: 'ses-backend',
+      backendAgent: 'qwen-audio-agent-backend',
+      delegation: {
+        id: 'run-one',
+        sessionId: 'ses-target',
+        directory: '/project',
+        settled: false,
+        reject,
+      },
+    })
+  }).catch(error => error)
+
+  const cancellation = await adapter.cancelDelegatedWork('work-one', {
+    ownerId: 'owner-one',
+  })
+  assert.equal(cancellation.route, 'adapter')
+  assert.match((await rejected).message, /用户已取消/)
+  adapter.sessionQueues.delete('ses-backend')
+
+  await adapter.runCoordinator('处理下一项任务', {
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-two',
+  })
+  await adapter.runCoordinator('再处理一项任务', {
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-three',
+  })
+
+  assert.match(prompts[0], /qwen_audio_agent_work_events/)
+  assert.match(prompts[0], /delegation\.cancelled/)
+  assert.match(prompts[0], /work-one/)
+  assert.doesNotMatch(prompts[1], /qwen_audio_agent_work_events/)
+})
+
 test('compatible OpenCode selects the existing default Agent and injects system instructions', async () => {
   let sent
   const fetchImpl = async (url, options = {}) => {

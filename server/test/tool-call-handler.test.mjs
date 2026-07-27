@@ -167,6 +167,94 @@ test('cancels the most recently submitted active work', async () => {
   release?.()
 })
 
+test('queries the latest work directly from the realtime task ledger', async () => {
+  const kit = harness()
+  kit.transcripts.record('turn-one', '执行一次')
+  await kit.handler.handle({
+    call_id: 'call-submit',
+    name: 'spawn_thinking',
+    arguments: '{"objective":"执行一次"}',
+  })
+  const workId = kit.outputs.at(-1)[1].work_id
+  await kit.manager.wait(workId)
+
+  await kit.handler.handle({
+    call_id: 'call-status',
+    name: 'get_agent_task_status',
+    arguments: '{}',
+  })
+
+  assert.equal(kit.outputs.at(-1)[1].status, 'ok')
+  assert.equal(kit.outputs.at(-1)[1].work_id, workId)
+  assert.equal(kit.outputs.at(-1)[1].work_status, 'completed')
+  assert.equal(kit.outputs.at(-1)[1].result, '完成')
+})
+
+test('queues a hidden high-priority coordinator query for delegated work', async () => {
+  const manager = new TaskManager()
+  let releaseDelegation
+  const delegated = manager.create({
+    objective: '继续 Megatron-LM 项目',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async (_objective, { onEvent, signal }) => {
+      onEvent({
+        type: 'backend.delegated',
+        delegation: {
+          id: 'delegation-one',
+          sessionId: 'session-target',
+          title: 'Megatron-LM',
+          directory: '/project',
+        },
+      })
+      return new Promise((resolve, reject) => {
+        releaseDelegation = resolve
+        signal.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        })
+      })
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.get(delegated.id).status, 'delegated')
+
+  let queried
+  const kit = harness({
+    manager,
+    coordinator: {
+      queryDelegatedWork: async (workId, question, options) => {
+        queried = { workId, question, ownerId: options.ownerId }
+        return { content: '正在检查模型目录。', metadata: {} }
+      },
+    },
+  })
+  kit.transcripts.record('turn-one', 'Megatron 那个已经查到了什么？')
+  await kit.handler.handle({
+    call_id: 'call-delegated-status',
+    name: 'get_agent_task_status',
+    arguments: JSON.stringify({ work_id: delegated.id }),
+  })
+
+  const output = kit.outputs.at(-1)[1]
+  assert.equal(output.status, 'querying')
+  assert.equal(output.work_id, delegated.id)
+  assert.ok(output.query_work_id)
+  const visible = manager.list({ ownerId: 'owner' })
+  assert.equal(visible.some(task => task.id === output.query_work_id), false)
+  const queryTask = await manager.wait(output.query_work_id)
+  assert.equal(queryTask.status, 'completed')
+  assert.equal(queryTask.result, '正在检查模型目录。')
+  assert.deepEqual(queried, {
+    workId: delegated.id,
+    question: 'Megatron 那个已经查到了什么？',
+    ownerId: 'owner',
+  })
+
+  releaseDelegation({ content: '最终完成' })
+  await manager.wait(delegated.id)
+})
+
 test('relays only an explicit always or reject permission decision', async () => {
   const calls = []
   const kit = harness({

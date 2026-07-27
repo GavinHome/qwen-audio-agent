@@ -888,6 +888,12 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     if (event.type === 'task.delegated') {
       print(`${style('[项目执行中]', 'yellow')} ${requestLabel(event.task)}`)
     }
+    if (event.type === 'task.finalizing') {
+      print(`${style('[正在整理结果]', 'yellow')} ${requestLabel(event.task)}`)
+    }
+    if (event.type === 'task.cancelling') {
+      print(`${style('[正在取消]', 'yellow')} ${requestLabel(event.task)}`)
+    }
     if (event.type === 'task.permission.requested') {
       print(`${style('[需要确认]', 'yellow')} ${
         event.task.authorization?.summary || '后台正在请求执行权限'

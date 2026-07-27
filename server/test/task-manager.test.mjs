@@ -45,6 +45,63 @@ test('serializes work in the same coordinator lane while accepting immediately',
   assert.deepEqual(order, ['A:start', 'A:end', 'B:start'])
 })
 
+test('runs a hidden control query before queued ordinary work', async () => {
+  const manager = new TaskManager()
+  const order = []
+  let releaseFirst
+  const first = manager.create({
+    objective: '正在执行的普通任务',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      order.push('first')
+      await new Promise(resolve => { releaseFirst = resolve })
+      return { content: 'first done' }
+    },
+  })
+  const ordinary = manager.create({
+    objective: '排队的普通任务',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      order.push('ordinary')
+      return { content: 'ordinary done' }
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const query = manager.create({
+    kind: 'control',
+    parentWorkId: 'delegated-work',
+    priority: 100,
+    objective: '高优先级状态查询',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      order.push('query')
+      return { content: 'query done' }
+    },
+  })
+
+  assert.equal(manager.list({ ownerId: 'owner' }).some(task => (
+    task.id === query.id
+  )), false)
+  assert.equal(manager.list({
+    ownerId: 'owner',
+    includeControl: true,
+  }).some(task => task.id === query.id), true)
+
+  releaseFirst()
+  await Promise.all([
+    manager.wait(first.id),
+    manager.wait(query.id),
+    manager.wait(ordinary.id),
+  ])
+  assert.deepEqual(order, ['first', 'query', 'ordinary'])
+})
+
 test('publishes a bounded pending permission on the active work', async () => {
   const manager = new TaskManager()
   let release
@@ -162,7 +219,10 @@ test('cancels queued work without starting it', async () => {
   })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(manager.get(second.id).status, 'queued')
-  assert.equal(manager.cancel(second.id, { ownerId: 'owner' }).status, 'cancelled')
+  assert.equal(
+    (await manager.cancel(second.id, { ownerId: 'owner' })).status,
+    'cancelled',
+  )
   releaseFirst({ content: 'A done' })
   await manager.wait(first.id)
   await new Promise(resolve => setImmediate(resolve))
@@ -174,11 +234,16 @@ test('aborts running work and only then releases its coordinator lane', async ()
   const manager = new TaskManager()
   let aborted = false
   let secondStarted = false
+  let confirmCancellation
   const first = manager.create({
     objective: 'A',
     ownerId: 'owner',
     sessionId: 'voice',
     laneKey: 'coordinator:owner',
+    canceler: async ({ abort }) => {
+      abort()
+      await new Promise(resolve => { confirmCancellation = resolve })
+    },
     runner: async (_objective, { signal }) => new Promise((resolve, reject) => {
       signal.addEventListener('abort', () => {
         aborted = true
@@ -197,10 +262,14 @@ test('aborts running work and only then releases its coordinator lane', async ()
     },
   })
   await new Promise(resolve => setImmediate(resolve))
-  manager.cancel(first.id, { ownerId: 'owner' })
-  assert.equal(manager.get(first.id).status, 'cancelled')
+  const cancellation = manager.cancel(first.id, { ownerId: 'owner' })
+  assert.equal(manager.get(first.id).status, 'cancelling')
+  await new Promise(resolve => setImmediate(resolve))
   assert.equal(aborted, true)
   assert.equal(secondStarted, false)
+  confirmCancellation()
+  await cancellation
+  assert.equal(manager.get(first.id).status, 'cancelled')
   await manager.wait(second.id)
   assert.equal(secondStarted, true)
 })

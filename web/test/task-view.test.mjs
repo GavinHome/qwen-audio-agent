@@ -20,6 +20,16 @@ test('presents every active coordinator request as one frontend processing phase
   assert.equal(taskLabel({ phase: 'queued' }), '正在处理')
   assert.equal(taskLabel({ phase: 'running' }), '正在处理')
   assert.equal(taskLabel({ phase: 'delegated' }), '项目正在执行')
+  assert.equal(taskLabel({ phase: 'finalizing' }), '正在整理结果')
+  assert.equal(taskLabel({ phase: 'cancelling' }), '正在取消')
+  assert.equal(phaseForTask({
+    status: 'finalizing',
+    workState: 'active',
+  }), 'finalizing')
+  assert.equal(phaseForTask({
+    status: 'cancelling',
+    workState: 'active',
+  }), 'cancelling')
   assert.equal(phaseForTask({
     status: 'delegated',
     workState: 'active',

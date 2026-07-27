@@ -9,6 +9,7 @@ import {
 const FRONTEND_TOOL_NAMES = [
   'spawn_thinking',
   'cancel_agent_task',
+  'get_agent_task_status',
   'get_current_time',
   'user_memory',
   'respond_agent_permission',
@@ -195,7 +196,8 @@ test('builds frontend identity, time, memory and reconnect context', () => {
     .buildSession({ configured: false })
     .tools.find(tool => tool.function.name === 'spawn_thinking')
   assert.match(delegate.function.description, /屏幕/)
-  assert.match(delegate.function.description, /已有工作状态/)
+  assert.match(delegate.function.description, /阶段产物/)
+  assert.match(delegate.function.description, /get_agent_task_status/)
   assert.match(delegate.function.description, /不要使用“好的、收到”/)
   assert.match(delegate.function.description, /结合本轮已有发言判断/)
   assert.match(delegate.function.description, /先问一个必要问题/)
@@ -211,7 +213,8 @@ test('builds frontend identity, time, memory and reconnect context', () => {
     delegate.function.parameters.properties.objective.description,
     /后台 Agent 会同时收到近期对话/,
   )
-  assert.match(prompt, /查询、继续或修改已有工作/)
+  assert.match(prompt, /继续或修改已有工作/)
+  assert.match(prompt, /get_agent_task_status/)
   assert.match(prompt, /不要因为推测自己缺少某种能力而拒绝/)
 })
 

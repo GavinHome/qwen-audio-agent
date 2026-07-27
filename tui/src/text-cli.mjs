@@ -55,7 +55,7 @@ export function taskLine(task) {
 export function selectCancellableTask(tasks, requestedId) {
   if (requestedId) return tasks.find(task => task.id === requestedId) || null
   return tasks.find(task => (
-    ['queued', 'running', 'delegated'].includes(task.status)
+    ['queued', 'running', 'delegated', 'finalizing'].includes(task.status)
   )) || null
 }
 

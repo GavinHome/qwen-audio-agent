@@ -140,12 +140,12 @@ app.get('/api/tasks/:id', (req, res) => {
   res.json(task)
 })
 
-app.delete('/api/tasks/:id', (req, res) => {
+app.delete('/api/tasks/:id', async (req, res) => {
   const existing = taskManager.get(req.params.id, {
     ownerId: req.identity.ownerId,
   })
   if (!existing) return res.status(404).json({ error: 'task not found' })
-  const task = taskManager.cancel(req.params.id, {
+  const task = await taskManager.cancel(req.params.id, {
     ownerId: req.identity.ownerId,
   })
   if (!task) {

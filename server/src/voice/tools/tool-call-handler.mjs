@@ -1,6 +1,7 @@
 import {
   CANCEL_AGENT_TASK_TOOL_NAME,
   DELEGATE_TOOL_NAME,
+  GET_AGENT_TASK_STATUS_TOOL_NAME,
   GET_CURRENT_TIME_TOOL_NAME,
   USER_MEMORY_TOOL_NAME,
   RESPOND_AGENT_PERMISSION_TOOL_NAME,
@@ -112,6 +113,21 @@ export class ToolCallHandler {
         signal,
         onEvent,
       }),
+      canceler: async ({ previousStatus, abort }) => {
+        if (previousStatus === 'delegated') {
+          const result = await this.coordinator.cancelDelegatedWork(
+            workId,
+            { ownerId: this.ownerId },
+          )
+          abort()
+          return result
+        }
+        abort()
+        return {
+          route: 'adapter',
+          layer: previousStatus === 'finalizing' ? 'finalizing' : 'coordinator',
+        }
+      },
     })
     workId = task.id
     this.turnTasks.set(turnId, task.id)
@@ -161,6 +177,10 @@ export class ToolCallHandler {
     }
     if (toolName === CANCEL_AGENT_TASK_TOOL_NAME) {
       await this.cancelAgentTask(callId, turnId, args)
+      return
+    }
+    if (toolName === GET_AGENT_TASK_STATUS_TOOL_NAME) {
+      await this.getAgentTaskStatus(callId, turnId, args)
       return
     }
     if (toolName === RESPOND_AGENT_PERMISSION_TOOL_NAME) {
@@ -381,7 +401,18 @@ export class ToolCallHandler {
       }, turnId)
       return
     }
-    const task = this.taskManager.cancel(targetId, {
+    const relatedQueries = this.taskManager.list({
+      ownerId: this.ownerId,
+      active: true,
+      includeControl: true,
+    }).filter(task => (
+      task.kind === 'control'
+      && task.parentWorkId === targetId
+    ))
+    await Promise.all(relatedQueries.map(task => (
+      this.taskManager.cancel(task.id, { ownerId: this.ownerId })
+    )))
+    const task = await this.taskManager.cancel(targetId, {
       ownerId: this.ownerId,
     })
     if (!task) {
@@ -392,10 +423,141 @@ export class ToolCallHandler {
       }, turnId)
       return
     }
-    await this.sendOutput(callId, {
-      status: 'cancelled',
+    await this.sendOutput(callId, task.status === 'cancelled' ? {
+      status: task.status,
       work_id: task.id,
       message: '已取消这项工作。',
+    } : failure(
+      'work_cancellation_failed',
+      task.error || '没有成功取消这项工作。',
+    ), turnId, task.id)
+  }
+
+  async getAgentTaskStatus(callId, turnId, args) {
+    const requestedId = String(args.work_id || '').trim()
+    const task = requestedId
+      ? this.taskManager.get(requestedId, { ownerId: this.ownerId })
+      : this.taskManager.list({
+          ownerId: this.ownerId,
+          sessionId: this.sessionId,
+        })[0]
+    if (!task) {
+      await this.sendOutput(callId, {
+        status: 'not_found',
+        message: '当前语音会话中还没有可查询的后台工作。',
+      }, turnId)
+      return
+    }
+    if (task.status === 'delegated') {
+      const existing = this.taskManager.list({
+        ownerId: this.ownerId,
+        sessionId: this.sessionId,
+        active: true,
+        includeControl: true,
+      }).find(item => (
+        item.kind === 'control'
+        && item.parentWorkId === task.id
+      ))
+      if (existing) {
+        await this.sendOutput(callId, {
+          status: 'querying',
+          work_id: task.id,
+          query_work_id: existing.id,
+          message: '这个项目的状态和进度已经在查询中。',
+        }, turnId, task.id)
+        return
+      }
+      const transcript = String(
+        args.question || await this.transcripts.transcript(turnId) || '',
+      ).trim()
+      const query = this.taskManager.create({
+        kind: 'control',
+        parentWorkId: task.id,
+        priority: 100,
+        objective: `查询“${task.objective.slice(0, 200)}”的状态：${
+          transcript || '查询当前状态和进度'
+        }`,
+        ownerId: this.ownerId,
+        sessionId: this.sessionId,
+        turnId,
+        laneKey: `coordinator:${this.ownerId}`,
+        laneLimit: 1,
+        runner: async (_ignored, { signal }) => {
+          try {
+            return await this.coordinator.queryDelegatedWork(
+              task.id,
+              transcript || '用户想了解这个第三层任务当前的状态和进度。',
+              {
+                ownerId: this.ownerId,
+                signal,
+              },
+            )
+          } catch (error) {
+            const latest = this.taskManager.get(task.id, {
+              ownerId: this.ownerId,
+            })
+            if (latest && latest.status !== 'delegated') {
+              const messages = {
+                completed: '这项工作已经完成，最终结果正在或已经交付。',
+                finalizing: '项目执行已经完成，系统正在整理最终结果。',
+                cancelled: '这项工作已经取消。',
+                failed: `这项工作已经失败：${latest.error || '没有更多错误信息。'}`,
+              }
+              return {
+                content: messages[latest.status]
+                  || `这项工作当前状态是 ${latest.status}。`,
+                metadata: {
+                  parentWorkId: task.id,
+                  resolvedFromLedger: true,
+                },
+              }
+            }
+            throw error
+          }
+        },
+        canceler: async ({ abort }) => {
+          abort()
+          return {
+            route: 'gateway',
+            layer: 'delegated_status_query',
+          }
+        },
+      })
+      await this.sendOutput(callId, {
+        status: 'querying',
+        work_id: task.id,
+        query_work_id: query.id,
+        message: '正在查询这个项目的状态和进度，结果出来后会自动告诉你。',
+      }, turnId, task.id)
+      return
+    }
+    const lastActivity = task.activity.at(-1)
+    await this.sendOutput(callId, {
+      status: 'ok',
+      work_id: task.id,
+      work_status: task.status,
+      objective: task.objective.slice(0, 300),
+      elapsed_ms: task.elapsedMs,
+      delegation: task.delegation
+        ? {
+            status: task.delegation.status,
+            title: task.delegation.title,
+          }
+        : null,
+      authorization_pending: task.authorization?.status === 'pending',
+      last_activity: lastActivity
+        ? {
+            category: lastActivity.category || lastActivity.kind,
+            status: lastActivity.status,
+            detail: String(lastActivity.detail || '').slice(0, 160),
+          }
+        : null,
+      result: task.status === 'completed'
+        ? String(task.result || '').slice(0, 500)
+        : null,
+      error: ['failed', 'cancelled'].includes(task.status)
+        ? task.error
+        : null,
     }, turnId, task.id)
   }
 

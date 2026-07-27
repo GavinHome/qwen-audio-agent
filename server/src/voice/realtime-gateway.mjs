@@ -513,6 +513,7 @@ export function attachRealtimeGateway(server, {
         return
       }
       if (task.sessionId !== sessionId) return
+      if (task.kind === 'control') return
       send(ws, { type: event.type, task })
       if (event.type === 'task.permission.requested') {
         refreshActiveTaskContext()
@@ -566,6 +567,8 @@ export function attachRealtimeGateway(server, {
       if ([
         'task.running',
         'task.delegated',
+        'task.finalizing',
+        'task.cancelling',
         'task.progress',
         'task.completed',
         'task.failed',

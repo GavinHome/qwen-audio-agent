@@ -96,7 +96,13 @@ function recentSection(messages = []) {
 
 function activeRunSection(tasks = []) {
   const active = tasks
-    .filter(task => ['queued', 'running', 'delegated'].includes(task?.status))
+    .filter(task => [
+      'queued',
+      'running',
+      'delegated',
+      'finalizing',
+      'cancelling',
+    ].includes(task?.status))
     .slice(0, MAX_ACTIVE_TASKS)
   if (!active.length) return []
   return [

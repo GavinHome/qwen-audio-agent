@@ -232,7 +232,14 @@ export default function App() {
     if (event.type === 'gateway.disconnected') {
       setActivity('qwen-audio-agent Gateway 已断开，正在重连')
       setAgentTasks(items => items.map(task => (
-        ['queued', 'running', 'delegated', 'responding'].includes(task.phase)
+        [
+          'queued',
+          'running',
+          'delegated',
+          'finalizing',
+          'cancelling',
+          'responding',
+        ].includes(task.phase)
           ? { ...task, phase: 'disconnected' }
           : task
       )))
@@ -399,6 +406,23 @@ export default function App() {
       const task = event.task
       if (!task.turnId || task.turnId === currentTurnId.current) {
         setActivity('项目正在执行')
+      }
+      setAgentTasks(items => upsertTask(
+        items,
+        task.id,
+        current => taskView(task, current),
+        taskView(task),
+      ))
+    }
+    if (
+      event.type === 'task.finalizing'
+      || event.type === 'task.cancelling'
+    ) {
+      const task = event.task
+      if (!task.turnId || task.turnId === currentTurnId.current) {
+        setActivity(event.type === 'task.finalizing'
+          ? '正在整理项目结果'
+          : '正在取消')
       }
       setAgentTasks(items => upsertTask(
         items,

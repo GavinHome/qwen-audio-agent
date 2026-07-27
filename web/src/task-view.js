@@ -8,6 +8,8 @@ export function phaseForTask(task) {
   if (task.status === 'cancelled') return 'cancelled'
   if (task.status === 'queued') return 'queued'
   if (task.status === 'delegated') return 'delegated'
+  if (task.status === 'finalizing') return 'finalizing'
+  if (task.status === 'cancelling') return 'cancelling'
   if (task.workState === 'active') return 'running'
   return 'running'
 }
@@ -23,6 +25,8 @@ export function taskLabel(task) {
   if (task.phase === 'disconnected') return '连接已中断'
   if (task.phase === 'queued') return '正在处理'
   if (task.phase === 'delegated') return '项目正在执行'
+  if (task.phase === 'finalizing') return '正在整理结果'
+  if (task.phase === 'cancelling') return '正在取消'
   if (task.phase === 'completed') return '处理完成'
   if (task.phase === 'responding') return '正在回复'
   return '正在处理'
@@ -51,6 +55,8 @@ export function taskDetail(task) {
       ? `正在继续处理：${task.delegation.title}`
       : '正在等待项目任务完成'
   }
+  if (task.phase === 'finalizing') return '项目结果已返回，协调 Agent 正在整理'
+  if (task.phase === 'cancelling') return '正在等待后台确认停止'
   if (task.phase === 'responding') return '结果已经返回，正在准备语音回复'
   if (task.phase === 'completed') return task.result || '结果已经发送'
   if (task.phase === 'disconnected') return '正在等待与后台重新连接'
