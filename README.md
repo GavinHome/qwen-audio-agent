@@ -97,6 +97,11 @@ qwenaudio
 qwenaudio tui
 ```
 
+minimal TUI 在 macOS 使用 CoreAudio 回声消除全双工；Linux 和 Windows 保持
+同一个 minimal 界面并使用 `sounddevice`/PortAudio 半双工。半双工模式会在回复
+播放期间暂停麦克风，播放结束后自动恢复，也可以按 `x` 手动打断。非 macOS
+首次使用前请安装 `sounddevice`（并确保系统已安装 PortAudio）。
+
 或者打开 WebUI：
 
 ```bash

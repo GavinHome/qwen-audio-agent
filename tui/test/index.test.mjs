@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  audioModeForPlatform,
   completeTranscript,
   createTerminalTranscriptRenderer,
   createTranscriptDisplay,
@@ -40,12 +41,18 @@ test('builds the realtime websocket URL', () => {
   )
 })
 
-test('keeps the terminal frontend voice-only', () => {
-  const help = helpText()
-  assert.match(help, /请直接说话/)
-  assert.match(help, /macOS CoreAudio 全双工回声消除/)
-  assert.doesNotMatch(help, /输入文字|text\.message/)
-  assert.doesNotMatch(help, /SoX|半双工/)
+test('uses full duplex on macOS and half duplex elsewhere', () => {
+  const mac = audioModeForPlatform('darwin')
+  const linux = audioModeForPlatform('linux')
+  const windows = audioModeForPlatform('win32')
+
+  assert.equal(mac.fullDuplex, true)
+  assert.equal(linux.fullDuplex, false)
+  assert.equal(windows.fullDuplex, false)
+  assert.match(helpText(mac), /macOS CoreAudio 全双工回声消除/)
+  assert.match(helpText(linux), /回复播放完毕后可继续说话/)
+  assert.match(helpText(linux), /按 x 可手动打断/)
+  assert.doesNotMatch(helpText(linux), /输入文字|text\.message/)
 })
 
 test('prints a late final ASR before the assistant response for that turn', () => {

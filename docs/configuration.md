@@ -224,6 +224,9 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 
 macOS TUI 的 CoreAudio 辅助程序默认编译到
 `~/Library/Caches/qwaudio/tui/macos-voice-io`，无需额外配置。
+Linux 和 Windows 的 minimal TUI 通过随包提供的 Python 音频桥接使用
+`sounddevice`/PortAudio 半双工；播放回复时麦克风会暂停，播放结束或手动打断后
+恢复。
 
 任务状态、通知重试、记忆容量与保留时间等运行参数同样使用内置默认值。只有明确
 进行容量规划或故障诊断时才建议覆盖。

@@ -2,6 +2,7 @@ import { emitKeypressEvents } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import WebSocket from 'ws'
 import { startMacVoiceIO } from './macos-voice-io.mjs'
+import { startPortAudioVoiceIO } from './portaudio-voice-io.mjs'
 
 const OUTPUT_SAMPLE_RATE = 24000
 const ANSI = {
@@ -53,10 +54,28 @@ function cookieFrom(response) {
   return raw.split(';', 1)[0]
 }
 
-export function helpText() {
+export function audioModeForPlatform(platform = process.platform) {
+  if (platform === 'darwin') {
+    return {
+      fullDuplex: true,
+      label: 'CoreAudio Voice Processing（全双工 AEC）',
+      shortLabel: 'CoreAudio AEC',
+    }
+  }
+  return {
+    fullDuplex: false,
+    label: 'PortAudio（半双工）',
+    shortLabel: 'PortAudio 半双工',
+  }
+}
+
+export function helpText(mode = audioModeForPlatform()) {
   return [
-    '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除。',
+    mode.fullDuplex
+      ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除。'
+      : '语音模式：回复播放完毕后可继续说话；按 x 可手动打断播放。',
     '按键：',
+    ...(!mode.fullDuplex ? ['  x  打断当前回复并恢复麦克风'] : []),
     '  m  静音 / 恢复麦克风',
     '  h  显示帮助',
     '  q  退出',
@@ -324,6 +343,7 @@ function createPlayback({
   onStarted,
   onEnded,
   onCancelled,
+  onIdle,
 }) {
   let cursorMs = 0
   const startTimers = new Map()
@@ -354,7 +374,7 @@ function createPlayback({
       const buffer = Buffer.from(base64, 'base64')
       if (!buffer.length) return
       if (!audioSink.write(buffer, rate)) {
-        onError?.('CoreAudio 未接受播放数据')
+        onError?.('音频设备未接受播放数据')
         if (responseId) onCancelled?.(responseId)
         return
       }
@@ -382,6 +402,14 @@ function createPlayback({
         responseEndMs.delete(responseId)
         startedResponses.delete(responseId)
         onEnded?.(responseId)
+        if (
+          startTimers.size === 0
+          && endTimers.size === 0
+          && startedResponses.size === 0
+          && responseEndMs.size === 0
+        ) {
+          onIdle?.()
+        }
       }
       const delay = Math.max(0, (responseEndMs.get(responseId) || Date.now()) - Date.now())
       const timer = setTimeout(finish, delay)
@@ -448,27 +476,36 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     }
   }
 
-  if (process.platform !== 'darwin') {
-    throw new Error('当前 TUI 仅支持 macOS CoreAudio Voice Processing')
-  }
+  const audioMode = audioModeForPlatform()
+  const startVoiceIO = audioMode.fullDuplex
+    ? startMacVoiceIO
+    : startPortAudioVoiceIO
 
   let bridgeExited = false
-  const audioBridge = await startMacVoiceIO({
+  const audioBridge = await startVoiceIO({
     captureSampleRate: inputSampleRate,
     onAudio: sendMicrophoneAudio,
-    onError: message => print(`${style('[CoreAudio]', 'red')} ${message}`),
+    onError: message => print(`${style('[音频]', 'red')} ${message}`),
     onExit: ({ code, signal }) => {
       bridgeExited = true
       if (!closed) {
         print(style(
-          `[CoreAudio Voice Processing 已停止：${code ?? signal ?? 'unknown'}]`,
+          `[音频设备已停止：${code ?? signal ?? 'unknown'}]`,
           'red',
         ))
         close()
       }
     },
   })
-  audioBridge.setCaptureEnabled(false)
+  let captureEnabled = null
+  const setCaptureEnabled = enabled => {
+    const next = Boolean(enabled)
+    if (captureEnabled === next) return false
+    captureEnabled = next
+    audioBridge.setCaptureEnabled(next)
+    return true
+  }
+  setCaptureEnabled(false)
 
   const playback = createPlayback({
     audioSink: audioBridge,
@@ -492,6 +529,9 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         }))
       }
     },
+    onIdle: () => {
+      if (!audioMode.fullDuplex) startMicrophone()
+    },
   })
 
   const startMicrophone = () => {
@@ -503,14 +543,15 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       || bridgeExited
       || socket?.readyState !== WebSocket.OPEN
     ) return
-    audioBridge.setCaptureEnabled(true)
-    print(`[麦克风已开启 · ${inputSampleRate} Hz · CoreAudio AEC]`)
+    if (setCaptureEnabled(true)) {
+      print(`[麦克风已开启 · ${inputSampleRate} Hz · ${audioMode.shortLabel}]`)
+    }
   }
 
   const setMuted = value => {
     muted = value
     if (muted) {
-      audioBridge.setCaptureEnabled(false)
+      setCaptureEnabled(false)
       playback.clear()
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'mute' }))
@@ -552,7 +593,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       const nextRate = Number(event.inputSampleRate) || inputSampleRate
       if (nextRate !== inputSampleRate) {
         print(`${style('[音频配置错误]', 'red')} Gateway 要求 ${nextRate} Hz，`
-          + `但 CoreAudio 已按 ${inputSampleRate} Hz 启动`)
+          + `但音频设备已按 ${inputSampleRate} Hz 启动`)
         close()
         return
       }
@@ -566,7 +607,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         startMicrophone()
       } else if (event.state === 'busy') {
         ownsVoice = false
-        audioBridge.setCaptureEnabled(false)
+        setCaptureEnabled(false)
         playback.clear()
         const holder = frontendLabel(event.holder)
         if (!everOwnedVoice) {
@@ -584,7 +625,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     if (event.type === 'voice.deactivated') {
       ownsVoice = false
       muted = true
-      audioBridge.setCaptureEnabled(false)
+      setCaptureEnabled(false)
       playback.clear()
       transcriptRenderer.cancel()
       print(style('[语音已切换到另一窗口]', 'yellow'))
@@ -592,8 +633,10 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     if (event.type === 'playback.clear') {
       playback.clear(event.reason || '')
       transcriptRenderer.cancel()
+      if (!audioMode.fullDuplex) startMicrophone()
     }
     if (event.type === 'audio.delta') {
+      if (!audioMode.fullDuplex) setCaptureEnabled(false)
       playback.write(
         event.audio,
         Number(event.sampleRate) || OUTPUT_SAMPLE_RATE,
@@ -646,8 +689,8 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         print(
           `${style('qwen-audio-agent Voice TUI', 'bold')} · ${health.realtimeLabel} → ${health.backend.label}\n`
           + `会话：${options.sessionId}\n`
-          + '音频：CoreAudio Voice Processing（全双工 AEC）\n'
-          + `${helpText()}\n`,
+          + `音频：${audioMode.label}\n`
+          + `${helpText(audioMode)}\n`,
         )
       }
     })
@@ -658,7 +701,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     nextSocket.on('close', () => {
       if (socket !== nextSocket) return
       socket = null
-      audioBridge.setCaptureEnabled(false)
+      setCaptureEnabled(false)
       playback.clear()
       if (closed) {
         print('qwen-audio-agent 连接已关闭。')
@@ -685,8 +728,16 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         close()
       } else if (value === 'm') {
         setMuted(!muted)
+      } else if (value === 'x' && !audioMode.fullDuplex) {
+        playback.clear('user_interruption')
+        transcriptRenderer.cancel()
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'interrupt' }))
+        }
+        startMicrophone()
+        print(style('[已手动打断，麦克风已恢复]', 'yellow'))
       } else if (value === 'h') {
-        print(helpText())
+        print(helpText(audioMode))
       }
     } catch (error) {
       print(`[错误] ${error.message}`)
