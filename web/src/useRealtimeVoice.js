@@ -32,6 +32,10 @@ export function shouldClaimReleasedVoice(event, waitingForVoice) {
   )
 }
 
+export function shouldAdvertiseVoice(enabled, inputReady) {
+  return enabled === true && inputReady === true
+}
+
 export default function useRealtimeVoice({
   sessionId,
   enabled,
@@ -40,6 +44,7 @@ export default function useRealtimeVoice({
   clientLabel = 'WebUI',
   takeover = false,
   onEvent,
+  onInputError,
 }) {
   const [state, setState] = useState('idle')
   const [inputActive, setInputActive] = useState(false)
@@ -50,6 +55,7 @@ export default function useRealtimeVoice({
     holder: null,
   })
   const eventRef = useRef(onEvent)
+  const inputErrorRef = useRef(onInputError)
   const socketRef = useRef(null)
   const audioRef = useRef(null)
   const levelElementRef = useRef(null)
@@ -57,6 +63,7 @@ export default function useRealtimeVoice({
   const clientInstanceId = useRef(crypto.randomUUID())
   const inputSampleRate = useRef(DEFAULT_INPUT_RATE)
   const enabledRef = useRef(enabled)
+  const inputReadyRef = useRef(false)
   const outputMutedRef = useRef(outputMuted)
   const mutedPlaybackResponses = useRef(new Set())
   const playbackRef = useRef({
@@ -69,6 +76,7 @@ export default function useRealtimeVoice({
     endedResponses: new Set(),
   })
   eventRef.current = onEvent
+  inputErrorRef.current = onInputError
   enabledRef.current = enabled
   outputMutedRef.current = outputMuted
 
@@ -248,7 +256,10 @@ export default function useRealtimeVoice({
           type: 'connect',
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           locale: navigator.language,
-          voiceEnabled: enabledRef.current,
+          voiceEnabled: shouldAdvertiseVoice(
+            enabledRef.current,
+            inputReadyRef.current,
+          ),
           clientType,
           clientLabel,
           clientInstanceId: clientInstanceId.current,
@@ -344,6 +355,7 @@ export default function useRealtimeVoice({
 
   useEffect(() => {
     if (!enabled) {
+      inputReadyRef.current = false
       sendSocketEvent({ type: 'mute' })
       setAudioLevel(0)
       setInputActive(false)
@@ -358,18 +370,38 @@ export default function useRealtimeVoice({
     let animation
     let visualInputActive = false
     let lastVoiceAt = 0
+    inputReadyRef.current = false
+    const failInput = reason => {
+      const message = reason?.message || String(reason || '无法打开麦克风')
+      inputReadyRef.current = false
+      sendSocketEvent({ type: 'mute' })
+      setAudioLevel(0)
+      setInputActive(false)
+      media?.getTracks().forEach(track => track.stop())
+      processor?.disconnect()
+      source?.disconnect()
+      analyser?.disconnect()
+      setError(message)
+      setVisualError(true)
+      inputErrorRef.current?.(message)
+    }
     const startAudio = async () => {
       try {
-        activateAudio()
+        if (!activateAudio()) {
+          failInput('当前浏览器不支持实时语音播放')
+          return
+        }
         const context = audioRef.current
-        if (!context) return
+        if (!context) {
+          failInput('无法初始化实时语音播放')
+          return
+        }
         if (context.state === 'suspended') await context.resume()
         media = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         })
         if (disposed) return media.getTracks().forEach(track => track.stop())
         setVisualError(false)
-        sendSocketEvent({ type: 'unmute', takeover })
         source = context.createMediaStreamSource(media)
         analyser = context.createAnalyser()
         analyser.fftSize = 512
@@ -387,6 +419,8 @@ export default function useRealtimeVoice({
         }
         source.connect(processor)
         processor.connect(context.destination)
+        inputReadyRef.current = true
+        sendSocketEvent({ type: 'unmute', takeover })
         const samples = new Float32Array(analyser.fftSize)
         const tick = () => {
           analyser.getFloatTimeDomainData(samples)
@@ -408,14 +442,14 @@ export default function useRealtimeVoice({
         }
         tick()
       } catch (reason) {
-        setError(reason.message || '无法打开麦克风')
-        setVisualError(true)
+        if (!disposed) failInput(reason)
       }
     }
     startAudio()
 
     return () => {
       disposed = true
+      inputReadyRef.current = false
       cancelAnimationFrame(animation)
       setInputActive(false)
       media?.getTracks().forEach(track => track.stop())

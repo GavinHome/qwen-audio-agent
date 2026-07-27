@@ -477,6 +477,11 @@ export default function App() {
     clientLabel: desktopOrbMode ? '桌面端' : 'WebUI',
     takeover: takeoverRequested,
     onEvent: onRealtimeEvent,
+    onInputError: message => {
+      setVoiceEnabled(false)
+      setWaitingForVoice(false)
+      setActivity(message)
+    },
   })
   const visualVoiceState = voice.ownership.state === 'busy'
     ? 'occupied'

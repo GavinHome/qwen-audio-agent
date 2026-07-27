@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   acceptsVoiceState,
+  shouldAdvertiseVoice,
   shouldClaimReleasedVoice,
   visualVoiceState,
 } from '../src/useRealtimeVoice.js'
@@ -28,6 +29,12 @@ test('claims voice when another frontend releases a user-requested handoff', () 
     type: 'voice.ownership',
     state: 'available',
   }, false), false)
+})
+
+test('advertises voice only after microphone input is ready', () => {
+  assert.equal(shouldAdvertiseVoice(true, false), false)
+  assert.equal(shouldAdvertiseVoice(false, true), false)
+  assert.equal(shouldAdvertiseVoice(true, true), true)
 })
 
 test('shows agent and announcement playback even when it belongs to an older turn', () => {
