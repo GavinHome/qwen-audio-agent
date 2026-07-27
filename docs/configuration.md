@@ -220,6 +220,7 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | `QWEN_AUDIO_REALTIME_PROVIDER` | `dashscope` |
 | `QWEN_AUDIO_REALTIME_VOICE` | `longanqian` |
 | `QWEN_AUDIO_AGENT_IDENTITY_MODE` | `personal` |
+| `QWEN_AUDIO_AGENT_TUI_AUDIO_MODE` | `half` |
 | `AGENT_TIMEOUT_MS` | `300000` |
 
 macOS TUI 的 CoreAudio 辅助程序默认编译到
@@ -228,6 +229,11 @@ macOS TUI 的 CoreAudio 辅助程序默认编译到
 Linux 和 Windows 的 minimal TUI 通过随包提供的 Python 音频桥接使用
 `sounddevice`/PortAudio 半双工；播放回复时麦克风会暂停，只支持通过 `x` 键
 手动打断，播放结束或手动打断后恢复。
+
+Linux 和 Windows 可通过 `qwenaudio tui --audio-mode full` 或设置
+`QWEN_AUDIO_AGENT_TUI_AUDIO_MODE=full` 明确开启 PortAudio 全双工。此模式没有
+回声消除，只支持直接说话打断；推荐佩戴耳机，避免扬声器回声触发误识别或误打断。
+macOS 始终使用 CoreAudio AEC 全双工，不受该选项影响。
 
 任务状态、通知重试、记忆容量与保留时间等运行参数同样使用内置默认值。只有明确
 进行容量规划或故障诊断时才建议覆盖。

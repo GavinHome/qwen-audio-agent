@@ -12,6 +12,7 @@ const GATEWAY_ACTIONS = new Set([
 ])
 const BACKENDS = new Set(['opencode', 'openclaw'])
 const BACKEND_MODES = new Set(['managed', 'compatible'])
+const TUI_AUDIO_MODES = new Set(['half', 'full'])
 
 export function createVoiceSessionId() {
   return `voice-${randomUUID().replaceAll('-', '')}`
@@ -55,6 +56,9 @@ export function parseArguments(argv, env = process.env) {
     gatewayAction,
     url: env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
     sessionId: env.QWEN_AUDIO_AGENT_SESSION_ID || createVoiceSessionId(),
+    audioMode: String(
+      env.QWEN_AUDIO_AGENT_TUI_AUDIO_MODE || 'half',
+    ).toLowerCase(),
     backend: String(env.AGENT_PROTOCOL || 'opencode').toLowerCase(),
     backendMode: String(
       env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
@@ -67,6 +71,7 @@ export function parseArguments(argv, env = process.env) {
     takeover: false,
     gatewayConfigurationSpecified: false,
   }
+  let audioModeSpecified = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -91,6 +96,9 @@ export function parseArguments(argv, env = process.env) {
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--session') {
       options.sessionId = nextValue(args, index++, '--session')
+    } else if (argument === '--audio-mode') {
+      options.audioMode = nextValue(args, index++, '--audio-mode').toLowerCase()
+      audioModeSpecified = true
     } else if (argument === '--no-open') options.openBrowser = false
     else if (argument === '--takeover') options.takeover = true
     else if (argument === '--help' || argument === '-h') options.help = true
@@ -110,6 +118,14 @@ export function parseArguments(argv, env = process.env) {
   }
   if (!['tui', 'webui'].includes(command) && options.takeover) {
     throw new Error('--takeover 只适用于 tui 或 webui')
+  }
+  if (command !== 'tui' && audioModeSpecified) {
+    throw new Error('--audio-mode 只适用于 tui')
+  }
+  if (command === 'tui' && !TUI_AUDIO_MODES.has(options.audioMode)) {
+    throw new Error(
+      `不支持的音频模式：${options.audioMode}（可选 half、full）`,
+    )
   }
   if (
     command === 'gateway'
@@ -160,12 +176,13 @@ export function helpText() {
     '',
     '界面选项：',
     '  --session ID           复用指定语音会话',
+    '  --audio-mode MODE      Linux / Windows 使用 half（默认）或 full',
     '  --takeover             接管当前语音控制权',
     '  --no-open              WebUI 只打印地址，不打开浏览器',
     '  -h, --help             显示帮助',
     '',
     'TUI 按键：',
-    '  x                      手动打断当前回复（仅 Linux / Windows）',
+    '  x                      半双工模式下手动打断当前回复',
     '  m                      静音 / 恢复麦克风',
     '  h                      在 TUI 内显示帮助',
     '  q                      退出 TUI',

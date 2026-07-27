@@ -3,7 +3,8 @@
 ## 0.5.0
 
 - 终端客户端收敛到 minimal TUI：macOS 使用 CoreAudio 回声消除全双工并仅支持
-  语音打断，Linux 和 Windows 使用 PortAudio 半双工并仅支持按键手动打断。
+  语音打断；Linux 和 Windows 默认使用 PortAudio 半双工和按键手动打断，也可
+  明确开启推荐搭配耳机使用的无 AEC 全双工与语音打断。
 - 暂时隐藏仍在开发中的全屏 TUI 和纯文字 CLI，不纳入 npm 发布包。
 - Gateway 新增 `text.message` 文字通道,与语音共用会话与任务体系;
   文字触发采用静音提交序列适配 Qwen Realtime。

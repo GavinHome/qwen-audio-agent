@@ -5,6 +5,7 @@ import { startMacVoiceIO } from './macos-voice-io.mjs'
 import { startPortAudioVoiceIO } from './portaudio-voice-io.mjs'
 
 const OUTPUT_SAMPLE_RATE = 24000
+const AUDIO_MODES = new Set(['half', 'full'])
 const ANSI = {
   bold: '\u001b[1m',
   cyan: '\u001b[36m',
@@ -20,10 +21,19 @@ function style(text, color) {
   return `${ANSI[color]}${text}${ANSI.reset}`
 }
 
-export function parseArguments(argv) {
+function normalizeAudioMode(value) {
+  const mode = String(value || 'half').toLowerCase()
+  if (!AUDIO_MODES.has(mode)) {
+    throw new Error(`不支持的音频模式：${value}（可选 half、full）`)
+  }
+  return mode
+}
+
+export function parseArguments(argv, env = process.env) {
   const options = {
-    url: process.env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
-    sessionId: process.env.QWEN_AUDIO_AGENT_SESSION_ID || 'tui-main',
+    url: env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
+    sessionId: env.QWEN_AUDIO_AGENT_SESSION_ID || 'tui-main',
+    audioMode: env.QWEN_AUDIO_AGENT_TUI_AUDIO_MODE || 'half',
     takeover: false,
   }
   for (let index = 0; index < argv.length; index += 1) {
@@ -34,9 +44,12 @@ export function parseArguments(argv) {
       options.help = true
     } else if (argv[index] === '--takeover') {
       options.takeover = true
+    } else if (argv[index] === '--audio-mode' && argv[index + 1]) {
+      options.audioMode = argv[++index]
     }
   }
   options.url = options.url.replace(/\/+$/, '')
+  options.audioMode = normalizeAudioMode(options.audioMode)
   return options
 }
 
@@ -92,9 +105,13 @@ export async function readTuiHealth(baseUrl, {
   }
 }
 
-export function audioModeForPlatform(platform = process.platform) {
+export function audioModeForPlatform(
+  platform = process.platform,
+  requestedMode = 'half',
+) {
   if (platform === 'darwin') {
     return {
+      audioBackend: 'coreaudio',
       captureDuringPlayback: true,
       fullDuplex: true,
       manualInterrupt: false,
@@ -102,7 +119,18 @@ export function audioModeForPlatform(platform = process.platform) {
       shortLabel: 'CoreAudio AEC',
     }
   }
+  if (normalizeAudioMode(requestedMode) === 'full') {
+    return {
+      audioBackend: 'portaudio',
+      captureDuringPlayback: true,
+      fullDuplex: true,
+      manualInterrupt: false,
+      label: 'PortAudio（全双工，无 AEC，建议使用耳机）',
+      shortLabel: 'PortAudio 全双工',
+    }
+  }
   return {
+    audioBackend: 'portaudio',
     captureDuringPlayback: false,
     fullDuplex: false,
     manualInterrupt: true,
@@ -112,10 +140,13 @@ export function audioModeForPlatform(platform = process.platform) {
 }
 
 export function helpText(mode = audioModeForPlatform()) {
+  const description = mode.audioBackend === 'coreaudio'
+    ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除，可用语音打断回复。'
+    : mode.fullDuplex
+      ? '语音模式：PortAudio 全双工不提供回声消除，请使用耳机；可直接说话打断回复。'
+      : '语音模式：回复播放完毕后可继续说话；按 x 可手动打断播放。'
   return [
-    mode.fullDuplex
-      ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除，可用语音打断回复。'
-      : '语音模式：回复播放完毕后可继续说话；按 x 可手动打断播放。',
+    description,
     '按键：',
     ...(mode.manualInterrupt ? ['  x  手动打断当前回复'] : []),
     '  m  静音 / 恢复麦克风',
@@ -507,7 +538,8 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   if (options.help) {
     process.stdout.write(
       'qwen-audio-agent Voice TUI\n\n'
-      + '用法：qwenaudio tui [--url URL] [--session ID] [--takeover]\n\n'
+      + '用法：qwenaudio tui [--url URL] [--session ID] '
+      + '[--audio-mode half|full] [--takeover]\n\n'
       + `${helpText()}\n`,
     )
     return
@@ -586,8 +618,8 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     }
   }
 
-  const audioMode = audioModeForPlatform()
-  const startVoiceIO = audioMode.fullDuplex
+  const audioMode = audioModeForPlatform(process.platform, options.audioMode)
+  const startVoiceIO = audioMode.audioBackend === 'coreaudio'
     ? startMacVoiceIO
     : startPortAudioVoiceIO
 

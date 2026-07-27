@@ -139,11 +139,15 @@ test('does not confuse a foreground Gateway with the background service', async 
 
 test('connects TUI and WebUI without starting services', async () => {
   const tui = harness()
-  assert.equal(await main(['tui'], tui.dependencies), 11)
+  assert.equal(
+    await main(['tui', '--audio-mode', 'full'], tui.dependencies),
+    11,
+  )
   assert.deepEqual(tui.calls.map(call => call[0]), [
     'minimal',
     'instance.release',
   ])
+  assert.equal(tui.calls[0][1].audioMode, 'full')
 
   const web = harness()
   assert.equal(await main(['webui'], web.dependencies), 13)

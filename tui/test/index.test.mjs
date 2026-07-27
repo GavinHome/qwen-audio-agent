@@ -26,17 +26,30 @@ test('keeps a streamed tail when a final transcript is unexpectedly shorter', ()
   )
 })
 
-test('parses a custom gateway and session', () => {
+test('parses a custom gateway, session and audio mode', () => {
   const options = parseArguments([
     '--url',
     'https://voice.example.com/',
     '--session',
     'terminal-one',
+    '--audio-mode',
+    'full',
     '--takeover',
-  ])
+  ], {})
   assert.equal(options.url, 'https://voice.example.com')
   assert.equal(options.sessionId, 'terminal-one')
+  assert.equal(options.audioMode, 'full')
   assert.equal(options.takeover, true)
+  assert.equal(
+    parseArguments([], {
+      QWEN_AUDIO_AGENT_TUI_AUDIO_MODE: 'FULL',
+    }).audioMode,
+    'full',
+  )
+  assert.throws(
+    () => parseArguments(['--audio-mode', 'invalid'], {}),
+    /不支持的音频模式/,
+  )
 })
 
 test('builds the realtime websocket URL', () => {
@@ -98,11 +111,14 @@ test('bounds and validates the Gateway health check', async () => {
   )
 })
 
-test('uses full duplex on macOS and half duplex elsewhere', () => {
-  const mac = audioModeForPlatform('darwin')
+test('uses macOS AEC and selectable PortAudio duplex modes elsewhere', () => {
+  const mac = audioModeForPlatform('darwin', 'half')
   const linux = audioModeForPlatform('linux')
   const windows = audioModeForPlatform('win32')
+  const linuxFull = audioModeForPlatform('linux', 'full')
+  const windowsFull = audioModeForPlatform('win32', 'full')
 
+  assert.equal(mac.audioBackend, 'coreaudio')
   assert.equal(mac.fullDuplex, true)
   assert.equal(mac.captureDuringPlayback, true)
   assert.equal(mac.manualInterrupt, false)
@@ -112,6 +128,15 @@ test('uses full duplex on macOS and half duplex elsewhere', () => {
   assert.equal(windows.fullDuplex, false)
   assert.equal(windows.captureDuringPlayback, false)
   assert.equal(windows.manualInterrupt, true)
+  for (const mode of [linuxFull, windowsFull]) {
+    assert.equal(mode.audioBackend, 'portaudio')
+    assert.equal(mode.fullDuplex, true)
+    assert.equal(mode.captureDuringPlayback, true)
+    assert.equal(mode.manualInterrupt, false)
+    assert.match(mode.label, /无 AEC/)
+    assert.match(helpText(mode), /请使用耳机/)
+    assert.doesNotMatch(helpText(mode), /x  手动打断当前回复/)
+  }
   assert.match(helpText(mac), /macOS CoreAudio 全双工回声消除/)
   assert.match(helpText(mac), /语音打断回复/)
   assert.doesNotMatch(helpText(mac), /x  手动打断当前回复/)

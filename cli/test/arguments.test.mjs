@@ -17,10 +17,18 @@ test('parses independent TUI and WebUI client commands', () => {
     'tui',
     '--url', 'https://voice.example.com/path',
     '--session', 'project-one',
+    '--audio-mode', 'full',
   ], {})
   assert.equal(tui.command, 'tui')
   assert.equal(tui.url, 'https://voice.example.com')
   assert.equal(tui.sessionId, 'project-one')
+  assert.equal(tui.audioMode, 'full')
+  assert.equal(
+    parseArguments(['tui'], {
+      QWEN_AUDIO_AGENT_TUI_AUDIO_MODE: 'FULL',
+    }).audioMode,
+    'full',
+  )
 
   const web = parseArguments(['webui', '--no-open', '--takeover'], {})
   assert.equal(web.command, 'webui')
@@ -64,8 +72,12 @@ test('parses foreground and service Gateway commands', () => {
 
 test('rejects client-only flags on unrelated commands', () => {
   assert.throws(
-    () => parseArguments(['tui', '--mode', 'full'], {}),
-    /未知参数：--mode/,
+    () => parseArguments(['tui', '--audio-mode', 'invalid'], {}),
+    /不支持的音频模式/,
+  )
+  assert.throws(
+    () => parseArguments(['webui', '--audio-mode', 'full'], {}),
+    /只适用于 tui/,
   )
   assert.throws(
     () => parseArguments(['tui', '--no-open'], {}),
@@ -92,6 +104,7 @@ test('documents the service and client commands', () => {
   assert.match(text, /qwenaudio status/)
   assert.match(text, /qwenaudio config/)
   assert.match(text, /managed/)
-  assert.match(text, /x\s+手动打断当前回复（仅 Linux \/ Windows）/)
-  assert.doesNotMatch(text, /--mode|full/)
+  assert.match(text, /--audio-mode MODE/)
+  assert.match(text, /x\s+半双工模式下手动打断当前回复/)
+  assert.doesNotMatch(text, /--mode/)
 })
