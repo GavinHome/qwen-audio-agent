@@ -6,65 +6,47 @@
 
 **自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
 
-qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续说话、
-随时打断，也可以直接用语音安排搜索、文件、代码和其他耗时工作。它通过统一的
-Adapter 架构连接不同 Agent；项目会持续接入主流 Agent，而不把产品绑定到某一个
-默认后台。
+qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续交流、
+随时打断，也可以直接用语音安排搜索、文件和代码等耗时任务。后台工作不会占住
+对话，完成后会自然回到当前语境并播报结果。
 
-它不替代后台 Agent，而是让已有的模型、工具、MCP、Skill、权限和项目上下文，
-自然进入实时语音对话。
+## 核心特色
+
+- 连接你喜欢的各种 Agent：一个语音入口连接不同 Agent，并持续扩展支持范围
+- 全双工实时语音、自然打断和持续多轮对话
+- 对话与后台任务并行，可随时查询进度或取消任务
+- 任务结果自动回到当前上下文，支持继续追问和修改
+- 连接后台 Agent 已有的模型、工具、MCP、Skill、权限与项目
+- 支持 WebUI、终端 TUI 和 macOS 桌面悬浮球
+- 支持本地用户档案与跨会话个人记忆
 
 ## 对话继续，任务也在继续
 
 ![qwen-audio-agent 原理图](docs/architecture-overview.png)
 
-Realtime 前台负责倾听、理解和表达。能直接回答的问题立即回答；需要外部信息、
-工具或持续处理时，再把任务交给后台 Agent。
+能直接回答的问题会立即回答；需要工具或持续处理时，任务会交给后台 Agent。
+整个过程中，用户面对的始终是同一个助理。
 
-后台执行不会阻塞语音对话。你可以继续提出新要求、询问进度、修改方向或取消任务。
-完成结果会在合适的时机回到当前上下文，由 Realtime 自然承接和播报。整个过程中，
-用户面对的始终是同一个助理。
-
-### 详细架构
+<details>
+<summary>查看详细架构</summary>
 
 ![qwen-audio-agent 接入参考架构](docs/qwen-audio-agent-three-layer-architecture.png)
 
-第一层 Realtime Agent 保持全双工语音交互；第二层 Gateway 管理任务生命周期，
-并通过 Backend Agent Adapter 连接后台协调 Agent；需要新建独立任务或继续已有
-项目时，协调 Agent 可以按需委派给第三层独立 Session。第三层完成后，事件与结果
-经 Adapter 和协调层回到前台，由 Realtime Agent 结合当前对话自然播报。
-
-图中的 OpenCode Adapter 是当前开发示例，不是架构限制。其他支持会话、事件、
-取消和权限交互的后台 Agent，也可以通过实现对应 Adapter 接入同一套三层架构。
+</details>
 
 ## Agent 支持
 
-qwen-audio-agent 的目标是为主流 Agent 提供统一的实时语音入口。不同 Agent 的
-原生会话、权限和进程模型并不相同，因此每个接入都由独立 Adapter 明确适配，而
-不是假设所有后台共享同一种接口。
+| 后台 Agent | 状态 | 主要能力 | 推荐指数 |
+| --- | --- | --- | --- |
+| OpenCode CLI | 已支持 | 工具与代码任务、项目 Session、进度查询与取消 | ★★★★★ |
+| OpenClaw | 已支持 | Agent、工具、任务执行与权限控制 | ★★★★☆ |
+| Qoder CLI | 已支持 | 原生 CLI Session、新建或继续项目、任务委派与取消 | ★★★★★ |
+| Codex | 开发中 | 代码任务、工具调用与项目协作 | ★★★★☆ |
+| Hermes | 开发中 | 工具调用、任务执行与项目协作 | ★★★★☆ |
 
-| Agent | 状态 | 当前接入能力 |
-| --- | --- | --- |
-| OpenCode | 已支持 | 托管或兼容模式、协调 Session、项目任务、事件、取消与权限 |
-| OpenClaw | 已支持 | 托管或兼容模式、固定协调 Agent、任务事件与权限转发 |
-| Qoder | 已支持 | 官方 SDK/CLI、原生 CLI Session 列表与续接、项目委派与权限 |
-| Codex | 开发中 | 独立功能分支，完成验证后合并 |
-| Hermes | 开发中 | 独立功能分支，完成验证后合并 |
-| 更多主流 Agent | 持续接入 | 复用统一 Adapter 契约逐步扩展 |
-
-“已支持”表示能力已经进入主分支；“开发中”表示仓库中已有独立功能分支，但尚不应
-视为发布版本能力。各 Agent 的原生能力不同，例如 Qoder Desktop Quest 暂时不能
-通过官方 SDK 续接，具体限制见下方配置说明。
-
-## 核心体验
-
-- 像通话一样自由交流：全双工语音、自然打断、持续多轮对话
-- 对话与任务互不阻塞：前台持续回应，后台继续执行
-- 结果无缝回到上下文：可以追问、补充、修改和继续处理
-- 连接现有 Agent 能力：延续工具、项目、记忆与工作习惯
-- 一个语音入口连接多种主流 Agent，并持续扩展 Adapter 生态
-- WebUI、终端 TUI 和 macOS 桌面悬浮球
-- 本地用户档案和跨会话个人记忆
+“开发中”表示已有独立功能分支，但尚未合并到发布版本。推荐指数按协调工具支持
+划分：实现协调工具为五星，尚未实现为四星；它不代表当前可用状态。详细配置和
+能力边界见[配置说明](docs/configuration.md)。
 
 ## 安装
 
@@ -77,8 +59,7 @@ qwen-audio-agent 的目标是为主流 Agent 提供统一的实时语音入口�
 npm install -g qwen-audio-agent
 ```
 
-尚未发布到当前 registry，或希望直接使用仓库版本时，从源码构建同一种 npm
-成品：
+从源码安装：
 
 ```bash
 git clone https://github.com/QwenAudio/qwen-audio-agent.git
@@ -87,95 +68,73 @@ npm install
 npm run install:global
 ```
 
-`install:global` 会构建 WebUI、生成临时 tarball，再将 tarball 安装为独立的
-全局成品；不会把 `qwenaudio` 软链接到源码目录。
-
-升级 registry 版本：
+升级到最新发布版本：
 
 ```bash
 npm install -g qwen-audio-agent@latest
 ```
 
-升级源码版本：
-
-```bash
-git pull
-npm install
-npm run install:global
-```
-
 ## 快速开始
 
-创建用户配置：
+1. 创建配置：
 
 ```bash
 qwenaudio config
 ```
 
-打开命令显示的 `config.env`，填写：
+2. 打开命令显示的 `config.env`，填写 DashScope API Key：
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
 ```
 
-启动 Gateway：
+3. 启动服务：
 
 ```bash
 qwenaudio
 ```
 
-`qwenaudio`、`qwenaudio gateway` 和 `qwenaudio gateway run` 都会在前台运行。
-另开一个终端启动语音界面：
+4. 另开一个终端，选择语音界面：
 
 ```bash
-qwenaudio tui
+qwenaudio tui     # 终端界面
+qwenaudio webui   # 浏览器界面
 ```
 
-minimal TUI 在 macOS 使用 CoreAudio 回声消除全双工，回复播报期间继续收音，
-只支持直接说话打断。Linux 和 Windows 保持同一个
-minimal 界面并使用 `sounddevice`/PortAudio 半双工：回复播报期间暂停麦克风，
-只支持按 `x` 手动打断，播放结束后自动恢复收音。非 macOS 首次使用前请安装
-`sounddevice`（并确保系统已安装 PortAudio）。
+### TUI 使用注意
 
-Linux 和 Windows 也可以明确开启不带回声消除的全双工模式，此时支持直接说话
-打断，不支持 `x` 手动打断。请佩戴耳机，避免扬声器声音造成误识别或误打断：
+| 平台 | 默认模式 | 打断方式 |
+| --- | --- | --- |
+| macOS | 带回声消除的全双工 | 直接说话 |
+| Linux / Windows | 半双工 | 播报时按 `x` |
+
+Linux 和 Windows 首次使用前需安装 `sounddevice` 和系统 PortAudio。也可以开启
+无回声消除的全双工模式；此时请佩戴耳机，避免扬声器声音造成误识别：
 
 ```bash
 qwenaudio tui --audio-mode full
 ```
 
-或者打开 WebUI：
-
-```bash
-qwenaudio webui
-```
-
 ## macOS 桌面版
 
-桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。桌面 UI 已包含在 `.app`
-中，重新构建即可更新外观；Gateway 只提供 API、实时语音和后台 Agent 能力。
-桌面设置只管理 Gateway 连接地址和本机界面外观；Realtime 凭据、模型、音色以及
-后台 Agent 类型、模型和权限必须在 Gateway 启动配置或 CLI 参数中指定。设置页会
-只读显示当前 Gateway 实际使用的 Realtime 和后台 Agent。
-悬浮球启动后默认开启收音；只有麦克风准备成功后才会接入语音，权限被拒绝或初始化
-失败时会自动保持关闭。
-先按上面的步骤启动 Gateway，再从发布页下载 `.dmg`，打开后将
-**Qwen Audio Agent** 拖入“应用程序”。
+桌面版提供常驻桌面的语音悬浮球。使用前请先启动 Gateway；首次运行需要授予
+麦克风权限。设置页可以切换 Gateway 地址和悬浮球外观，并显示当前使用的模型与
+后台 Agent。
 
-从源码生成仅供本机测试的未签名安装包：
+桌面版支持流光声波球和液态渐变球两种外观。下面分别展示它们在思考 / 呼吸状态
+下的原始动态效果：
+
+| 流光声波球 | 液态渐变球 |
+| --- | --- |
+| ![流光声波球思考动画](docs/desktop-fluid-orb-thinking.gif) | ![液态渐变球思考动画](docs/desktop-goo-orb-thinking.gif) |
+
+从发布页下载 `.dmg`，打开后将 **Qwen Audio Agent** 拖入“应用程序”即可。
+
+从源码生成本机测试版：
 
 ```bash
 npm run desktop:build:local
 ```
-
-构建完成后，打开 `dist/desktop/` 中的 `.dmg`，将 **Qwen Audio Agent**
-拖入“应用程序”即可。本地开发可直接运行 `npm run desktop`。
-
-正式发布使用 `npm run desktop:build`。该命令要求 Apple Developer ID
-签名与公证凭据，开启 hardened runtime，并为麦克风和网络访问应用最小权限。
-签名使用 `CSC_LINK`/`CSC_KEY_PASSWORD`（或钥匙串中的 `CSC_NAME`）；公证使用
-`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，也可使用
-`APPLE_API_KEY`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`。
 
 ## 后台常驻
 
@@ -195,50 +154,37 @@ qwenaudio gateway start
 qwenaudio gateway uninstall
 ```
 
-macOS 使用 `launchd`，Linux 使用 `systemd --user`。Gateway 和由它启动的后台
-Agent 会被统一管理。
-
 ## 选择后台 Agent
 
-通过 `AGENT_PROTOCOL` 选择 Gateway 使用的后台 Agent。例如 OpenCode CLI：
+通过 `AGENT_PROTOCOL` 选择后台 Agent。默认使用 OpenCode CLI：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
 ```
 
-qwen-audio-agent 默认以 `opencode serve` 模式启动 OpenCode CLI，也可以连接
-已经以该模式运行的 OpenCode；它不直接接入或控制 OpenCode Desktop。CLI 与
-Desktop 如果共享同一套用户数据和 Session 存储，可能看到相同 Session，但这
-不代表桌面版已被直接集成。
-
-OpenClaw Gateway：
+使用 OpenClaw：
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
 ```
 
-Qoder CLI：
+使用 Qoder CLI：
 
 ```dotenv
 AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
-Qoder 接入复用本机 `qodercli` 的登录状态和原生 Session。固定协调 Session
-负责选择、新建或继续项目 Session；语音委派给已有 Session 的内容会直接写入
-Qoder CLI 原生记录，之后可以继续同一个 CLI 项目对话。Qoder Desktop 的 Quest
-使用另一套记录格式，官方 SDK 目前无法列出或续接，因此不会出现在原有桌面
-Quest 中。Qoder 由官方 SDK 管理 CLI 子进程，因此不需要后台 URL，目前只支持
-`managed` 模式。
+OpenCode 接入的是 CLI，不直接控制 OpenCode Desktop；二者共享用户数据时可能
+看到相同 Session。Qoder 接入的是 CLI 原生 Session，暂不能续接 Qoder Desktop
+Quest。OpenCode 和 OpenClaw 也可以连接已经运行的服务。
 
-后台权限默认使用 `native`，由 Qoder/OpenCode 自己决定何时询问。若用户明确接受
-后台直接执行命令和修改文件，可在启动前设置
-`QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=full`；该模式仅支持受管的 Qoder 和
-OpenCode，不适用于兼容模式或 OpenClaw。
+后台权限默认使用 `native`，由后台 Agent 在需要时询问。只有在可信项目中，并且
+明确接受自动执行命令和修改文件时，才应启用：
 
-增强模式会为 qwen-audio-agent 启动独立的后台 Agent，同时保留用户已有的模型、
-权限、Skill 和 MCP 配置。也可以使用兼容模式连接已经运行的 OpenCode 或
-OpenClaw，不修改现有服务。
+```dotenv
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=full
+```
 
 详细选项见 [配置说明](docs/configuration.md)。
 
@@ -249,12 +195,21 @@ OpenClaw，不修改现有服务。
 - `USER.md`：称呼、所在地、偏好和常用项目
 - `frontend-memory.json`：用户明确要求长期记住的信息
 - `tasks.json`：任务结果和待通知状态
-- `workspaces/`：增强模式下 OpenCode、OpenClaw 和 Qoder 的默认工作目录
-- `backends/`：后台 Agent 的可变状态与托管配置
 
-这些文件不会写入源码仓库。不要在 `USER.md` 中保存密码、API Key、验证码或令牌。
-麦克风音频和实时对话会发送到配置的 Qwen Audio Realtime 服务；委派任务还可能
-流向用户配置的模型、工具和 MCP 服务。详细数据边界见[隐私说明](PRIVACY.md)。
+这些文件只保存在本机，不会写入源码仓库。可以直接编辑 `USER.md`，也可以在对话中
+要求助理记住或忘记信息。
+
+## 使用注意事项
+
+- 不要在用户档案或对话中保存密码、API Key、验证码和访问令牌。
+- 麦克风音频与实时对话会发送到配置的 Qwen Audio Realtime 服务。
+- 后台任务可能调用所选 Agent 的模型、工具、MCP 和外部服务。
+- `full` 权限允许后台执行命令和修改文件，只应在可信项目中使用。
+- Gateway 默认仅供本机访问；不要直接暴露到局域网或公网。
+- Linux / Windows 使用无回声消除全双工时，请佩戴耳机。
+
+详细数据边界见[隐私说明](PRIVACY.md)，网络与权限配置见
+[配置说明](docs/configuration.md)。
 
 ## 源码开发
 
@@ -269,10 +224,7 @@ npm run dev       # Gateway 与 WebUI 热更新
 npm run desktop   # macOS 桌面悬浮球
 ```
 
-默认 Gateway 只接受 `localhost`、`127.0.0.1` 和 `::1` 的 Host/Origin。
-远程使用时必须放在带访问认证的 HTTPS 反向代理之后，并通过
-`QWEN_AUDIO_AGENT_ALLOWED_ORIGINS` 明确信任代理公开地址。不要把 Gateway
-端口直接暴露到局域网或公网；详细配置见[配置说明](docs/configuration.md)。
+更多构建、测试和发布说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 参与贡献与安全
 
