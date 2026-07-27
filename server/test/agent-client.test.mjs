@@ -233,6 +233,10 @@ test('Qoder coordinator resumes an existing native project session', async () =>
   const projectCall = calls.find(call => (
     call.prompt === 'Continue the existing project naturally.'
   ))
+  assert.match(
+    calls[0].options.systemPrompt.append,
+    /Preserve the user requested action level/,
+  )
   assert.equal(projectCall.options.cwd, '/projects/existing')
   assert.equal(projectCall.options.resume, 'project-session')
   assert.equal(calls.length, 3)

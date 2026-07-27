@@ -20,6 +20,7 @@ const SESSION_TOOL_PREFIX = `mcp__${SESSION_TOOL_SERVER}__`
 const MAX_SESSION_RESULTS = 50
 const QODER_COORDINATOR_INSTRUCTIONS = [
   'Use qwen_audio_agent session tools whenever a request belongs to a project Session.',
+  'Preserve the user requested action level when delegating. If the user asks to implement, fix, or continue work, ask the project Session to do that work; do not replace it with a read-only status review, option list, or a wait for confirmation unless the user requested planning/review or an indispensable choice is missing.',
   'For presentation.inline, return either null or exactly an object with title, format, and content.',
   'Never return a bare string in presentation.inline.',
 ].join('\n')
