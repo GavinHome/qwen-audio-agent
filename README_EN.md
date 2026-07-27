@@ -213,19 +213,25 @@ backend Agent it starts are managed together.
 
 ## Choose a Backend Agent
 
-Select the Gateway backend with `AGENT_PROTOCOL`. For example, OpenCode:
+Select the Gateway backend with `AGENT_PROTOCOL`. For example, OpenCode CLI:
 
 ```dotenv
 AGENT_PROTOCOL=opencode
 ```
 
-OpenClaw:
+By default, qwen-audio-agent starts the OpenCode CLI in `opencode serve` mode.
+It can also connect to OpenCode already running in that mode. It does not
+directly integrate with or control OpenCode Desktop. The CLI and Desktop may
+show the same Sessions when they share user data and Session storage, but that
+does not constitute direct Desktop integration.
+
+OpenClaw Gateway:
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
 ```
 
-To use Qoder:
+Qoder CLI:
 
 ```dotenv
 AGENT_PROTOCOL=qoder

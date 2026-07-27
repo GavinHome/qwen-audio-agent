@@ -200,19 +200,24 @@ Agent 会被统一管理。
 
 ## 选择后台 Agent
 
-通过 `AGENT_PROTOCOL` 选择 Gateway 使用的后台 Agent。例如 OpenCode：
+通过 `AGENT_PROTOCOL` 选择 Gateway 使用的后台 Agent。例如 OpenCode CLI：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
 ```
 
-OpenClaw：
+qwen-audio-agent 默认以 `opencode serve` 模式启动 OpenCode CLI，也可以连接
+已经以该模式运行的 OpenCode；它不直接接入或控制 OpenCode Desktop。CLI 与
+Desktop 如果共享同一套用户数据和 Session 存储，可能看到相同 Session，但这
+不代表桌面版已被直接集成。
+
+OpenClaw Gateway：
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
 ```
 
-切换到 Qoder：
+Qoder CLI：
 
 ```dotenv
 AGENT_PROTOCOL=qoder
