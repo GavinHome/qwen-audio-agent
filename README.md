@@ -38,9 +38,9 @@ qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通�
 
 | 后台 Agent | 状态 | 主要能力 | 推荐指数 |
 | --- | --- | --- | --- |
-| OpenCode CLI | 已支持 | 工具与代码任务、项目 Session、进度查询与取消 | ★★★★★ |
+| OpenCode | 已支持 | 工具与代码任务、项目 Session、进度查询与取消 | ★★★★★ |
 | OpenClaw | 已支持 | Agent、工具、任务执行与权限控制 | ★★★★☆ |
-| Qoder CLI | 已支持 | 原生 CLI Session、新建或继续项目、任务委派与取消 | ★★★★★ |
+| Qoder | 已支持 | 原生 CLI Session、新建或继续项目、任务委派与取消 | ★★★★★ |
 | Codex | 开发中 | 代码任务、工具调用与项目协作 | ★★★★☆ |
 | Hermes | 开发中 | 工具调用、任务执行与项目协作 | ★★★★☆ |
 
@@ -82,23 +82,29 @@ npm install -g qwen-audio-agent@latest
 qwenaudio config
 ```
 
-2. 打开命令显示的 `config.env`，填写 DashScope API Key：
+2. 打开命令显示的 `config.env`，填写 DashScope API Key，并选择 OpenCode：
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
+AGENT_PROTOCOL=opencode
 ```
 
-3. 启动服务：
+3. 在一个终端中启动 Gateway：
 
 ```bash
 qwenaudio
 ```
 
-4. 另开一个终端，选择语音界面：
+4. 另开一个终端，启动 TUI：
 
 ```bash
-qwenaudio tui     # 终端界面
-qwenaudio webui   # 浏览器界面
+qwenaudio tui
+```
+
+也可以使用浏览器界面：
+
+```bash
+qwenaudio webui
 ```
 
 ### TUI 使用注意
@@ -156,7 +162,7 @@ qwenaudio gateway uninstall
 
 ## 选择后台 Agent
 
-通过 `AGENT_PROTOCOL` 选择后台 Agent。默认使用 OpenCode CLI：
+通过 `AGENT_PROTOCOL` 选择后台 Agent。默认使用 OpenCode：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
@@ -168,16 +174,12 @@ AGENT_PROTOCOL=opencode
 AGENT_PROTOCOL=openclaw
 ```
 
-使用 Qoder CLI：
+使用 Qoder：
 
 ```dotenv
 AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
-
-OpenCode 接入的是 CLI，不直接控制 OpenCode Desktop；二者共享用户数据时可能
-看到相同 Session。Qoder 接入的是 CLI 原生 Session，暂不能续接 Qoder Desktop
-Quest。OpenCode 和 OpenClaw 也可以连接已经运行的服务。
 
 后台权限默认使用 `native`，由后台 Agent 在需要时询问。只有在可信项目中，并且
 明确接受自动执行命令和修改文件时，才应启用：

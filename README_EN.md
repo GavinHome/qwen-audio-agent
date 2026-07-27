@@ -48,9 +48,9 @@ assistant.
 
 | Backend Agent | Status | Main capabilities | Rating |
 | --- | --- | --- | --- |
-| OpenCode CLI | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
+| OpenCode | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
 | OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★☆ |
-| Qoder CLI | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
+| Qoder | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
 | Codex | In development | Coding tasks, tool calls, and project collaboration | ★★★★☆ |
 | Hermes | In development | Tool calls, task execution, and project collaboration | ★★★★☆ |
 
@@ -96,23 +96,30 @@ npm install -g qwen-audio-agent@latest
 qwenaudio config
 ```
 
-2. Open the displayed `config.env` file and add your DashScope API Key:
+2. Open the displayed `config.env` file, add your DashScope API Key, and select
+   OpenCode:
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
+AGENT_PROTOCOL=opencode
 ```
 
-3. Start the service:
+3. Start the Gateway in one terminal:
 
 ```bash
 qwenaudio
 ```
 
-4. Open another terminal and choose a voice interface:
+4. Open another terminal and start the TUI:
 
 ```bash
-qwenaudio tui     # Terminal interface
-qwenaudio webui   # Browser interface
+qwenaudio tui
+```
+
+You can use the browser interface instead:
+
+```bash
+qwenaudio webui
 ```
 
 ### TUI Notes
@@ -175,7 +182,7 @@ qwenaudio gateway uninstall
 
 ## Choose a Backend Agent
 
-Select the backend Agent with `AGENT_PROTOCOL`. OpenCode CLI is the default:
+Select the backend Agent with `AGENT_PROTOCOL`. OpenCode is the default:
 
 ```dotenv
 AGENT_PROTOCOL=opencode
@@ -187,18 +194,12 @@ Use OpenClaw:
 AGENT_PROTOCOL=openclaw
 ```
 
-Use Qoder CLI:
+Use Qoder:
 
 ```dotenv
 AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
-
-The OpenCode integration uses the CLI and does not directly control OpenCode
-Desktop. The CLI and Desktop may show the same Sessions when they share user
-data. The Qoder integration uses native CLI Sessions and cannot currently
-resume Qoder Desktop Quests. OpenCode and OpenClaw can also connect to an
-already-running service.
 
 Backend permissions default to `native`, so the backend Agent asks when
 permission is required. Enable the following option only in trusted projects
