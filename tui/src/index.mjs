@@ -363,29 +363,65 @@ export function createTerminalTranscriptRenderer({
   stdout = process.stdout,
 } = {}) {
   let active = null
+  let previewRows = 0
   const pendingLines = []
   const interactive = Boolean(stdout.isTTY)
-  const clearLine = () => stdout.write('\r\u001b[2K')
-  const visibleLength = text => Array.from(
-    String(text || '').replace(/\u001b\[[0-9;]*m/g, ''),
-  ).length
-  const previewLine = (prefix, content) => {
-    const columns = Math.max(20, Number(stdout.columns) || 80)
-    // Treat every code point as potentially double-width so the preview can
-    // never wrap and leave stale physical terminal rows behind.
-    const available = Math.max(4, Math.floor(
-      (columns - visibleLength(prefix) * 2 - 1) / 2,
-    ))
-    const points = Array.from(String(content || ''))
-    const preview = points.length > available
-      ? `…${points.slice(-(available - 1)).join('')}`
-      : points.join('')
-    return `${prefix} ${preview}`
+  const stripAnsi = text => String(text || '').replace(/\u001b\[[0-9;]*m/g, '')
+  const characterWidth = character => {
+    const codePoint = character.codePointAt(0) || 0
+    if (
+      codePoint === 0
+      || codePoint < 32
+      || (codePoint >= 0x7f && codePoint < 0xa0)
+      || (codePoint >= 0x300 && codePoint <= 0x36f)
+      || (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
+      || codePoint === 0x200d
+    ) return 0
+    return codePoint <= 0x7e ? 1 : 2
+  }
+  const displayWidth = text => Array.from(stripAnsi(text))
+    .reduce((width, character) => width + characterWidth(character), 0)
+  const previewLines = (prefix, content) => {
+    const columns = Math.max(8, Number(stdout.columns) || 80)
+    // Leave one terminal column unused to avoid exact-width auto-wrap, whose
+    // cursor behavior differs between terminals.
+    const maxWidth = Math.max(7, columns - 1)
+    const firstPrefix = `${prefix} `
+    const prefixWidth = displayWidth(firstPrefix)
+    const continuation = ' '.repeat(Math.min(prefixWidth, maxWidth - 2))
+    const continuationWidth = displayWidth(continuation)
+    const points = Array.from(String(content || '').replace(/\s+/g, ' '))
+    const lines = []
+    let line = firstPrefix
+    let width = prefixWidth
+    for (const point of points) {
+      const pointWidth = characterWidth(point)
+      const minimumWidth = lines.length === 0 ? prefixWidth : continuationWidth
+      if (width > minimumWidth && width + pointWidth > maxWidth) {
+        lines.push(line)
+        line = continuation
+        width = continuationWidth
+      }
+      line += point
+      width += pointWidth
+    }
+    lines.push(line)
+    return lines
+  }
+  const clearPreview = () => {
+    if (!interactive || previewRows === 0) return
+    stdout.write('\r\u001b[2K')
+    for (let row = 1; row < previewRows; row += 1) {
+      stdout.write('\u001b[1A\r\u001b[2K')
+    }
+    previewRows = 0
   }
   const redrawPreview = () => {
     if (!interactive || active?.kind !== 'preview') return
-    clearLine()
-    stdout.write(previewLine(active.prefix, active.content))
+    clearPreview()
+    const lines = previewLines(active.prefix, active.content)
+    stdout.write(lines.join('\n'))
+    previewRows = lines.length
   }
   const flushPending = () => {
     while (pendingLines.length) stdout.write(`${pendingLines.shift()}\n`)
@@ -414,7 +450,7 @@ export function createTerminalTranscriptRenderer({
     stream(prefix, content) {
       const nextPrefix = String(prefix || '')
       const nextContent = String(content || '')
-      if (active?.kind === 'preview' && interactive) clearLine()
+      if (active?.kind === 'preview') clearPreview()
       if (active?.kind !== 'stream' || active.prefix !== nextPrefix) {
         if (active?.kind === 'stream') closeActiveStream()
         stdout.write(`${nextPrefix} ${nextContent}`)
@@ -429,7 +465,7 @@ export function createTerminalTranscriptRenderer({
       const nextPrefix = String(prefix || '')
       const nextContent = String(content || '')
       if (active?.kind === 'preview') {
-        if (interactive) clearLine()
+        clearPreview()
         stdout.write(`${nextPrefix} ${nextContent}\n`)
       } else if (active?.kind === 'stream' && active.prefix === nextPrefix) {
         const complete = completeTranscript(active.content, nextContent)
@@ -452,12 +488,12 @@ export function createTerminalTranscriptRenderer({
         pendingLines.push(String(line))
         return
       }
-      if (active?.kind === 'preview' && interactive) clearLine()
+      if (active?.kind === 'preview') clearPreview()
       stdout.write(`${line}\n`)
       redrawPreview()
     },
     cancel() {
-      if (active?.kind === 'preview' && interactive) clearLine()
+      if (active?.kind === 'preview') clearPreview()
       else if (active?.kind === 'stream') stdout.write('\n')
       active = null
       flushPending()

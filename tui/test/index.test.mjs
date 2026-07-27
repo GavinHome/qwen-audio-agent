@@ -399,7 +399,7 @@ test('does not split a streamed reply on a provisional user ASR snapshot', () =>
   )
 })
 
-test('keeps the mutable ASR preview on one physical terminal line', () => {
+test('wraps and redraws a long mutable ASR preview across terminal rows', () => {
   const writes = []
   const stdout = {
     isTTY: true,
@@ -413,7 +413,14 @@ test('keeps the mutable ASR preview on one physical terminal line', () => {
   renderer.finish('你 >', '这是一个很长很长的流式识别结果更新')
 
   const rendered = writes.join('')
-  assert.match(rendered, /…/)
+  const beforeFinal = rendered.slice(
+    0,
+    rendered.lastIndexOf('你 > 这是一个很长很长的流式识别结果更新\n'),
+  )
+  assert.match(beforeFinal, /你 > 这是一个/)
+  assert.match(beforeFinal, /\n {5}流式识别结果/)
+  assert.match(beforeFinal, /\u001b\[1A/)
+  assert.doesNotMatch(beforeFinal, /…/)
   assert.equal(
     rendered.endsWith('你 > 这是一个很长很长的流式识别结果更新\n'),
     true,
