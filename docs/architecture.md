@@ -15,8 +15,9 @@ layers:
    multi-step work.
 
 The backend may be OpenCode, OpenClaw, or Qoder. It may internally use tools,
-skills, agents, or other Sessions. Those are adapter-private implementation
-details and do not create additional qwen-audio-agent layers.
+skills, agents, or other Sessions. Those are backend-private implementation
+details and do not create additional qwen-audio-agent layers. All three
+backends connect through one ACP client and one shared coordination adapter.
 
 ## 2. Nonblocking request flow
 
@@ -89,9 +90,11 @@ It does not have tools for:
 `respond_agent_permission` is the only exception to the rule that Realtime does
 not control backend execution. It may relay only an explicit current-turn user
 decision for a pending, owner-scoped permission request supplied by the
-Gateway. It cannot create a request, choose a tool, infer consent, or modify a
-backend permission policy. OpenCode replies are limited to `always` and
-`reject`; `always` uses OpenCode's own Session-scoped suggested patterns.
+Gateway. It may understand natural affirmative or negative wording such as
+“可以” or “不允许”, but it cannot invent consent without a current-turn user
+utterance, create a request, choose a tool, or modify a backend permission
+policy. Replies are limited to `always` and `reject`; `always` uses the
+backend's Session-scoped permission option when available.
 
 The `objective` passed to `spawn_thinking` is a conservative interpretation of
 the user's request, not an execution plan. Recent voice context is separately
@@ -100,35 +103,22 @@ page” remain understandable. Final ASR remains the source of truth.
 
 ## 4. Fixed Backend Agent Session
 
-Each backend adapter owns its persistent Session identity. OpenCode uses:
+The ACP adapter owns one persistent coordinator Session identity per owner and
+backend:
 
 ```text
 qwen-audio-agent:<owner>:backend
 ```
 
-OpenClaw uses its equivalent Agent Session key:
-
-```text
-agent:<agent>:qwen-audio-agent:<owner>:backend
-```
-
-Qoder uses a native Session tagged with:
-
-```text
-qwen-audio-agent:<owner>:backend
-```
-
-The Qoder adapter finds that Session through Qoder's native Session index and
-resumes it on every coordinator turn. Project delegation likewise resumes the
-selected native Qoder Session in its recorded working directory, so the voice
-interaction remains part of the Qoder CLI transcript. Qoder Desktop Quests use
-a separate record format that the official SDK does not currently expose, so a
-Quest cannot be selected as a delegation target or updated by this adapter.
+The Gateway stores the native ACP Session ID behind that stable key and calls
+`session/resume` on later turns. Project delegation likewise resumes the
+selected native Session in its recorded working directory, so voice-originated
+work remains in the backend's own Session history rather than a Gateway copy.
 
 Voice browser session IDs and Work IDs never change that identity. A new voice
 conversation therefore continues using the same backend Agent context.
 
-Both the Gateway queue and the adapter serialize writes. This double guard
+Both the Gateway queue and the ACP adapter serialize writes. This double guard
 prevents concurrent messages from racing inside one backend Session.
 
 The backend Agent owns its execution strategy. qwen-audio-agent supplies the user
@@ -162,8 +152,8 @@ notification delivery state are persisted.
 
 ## 6. Progress animation
 
-Progress is observability, not control. Each adapter filters its backend event
-stream into generic activity belonging to the fixed backend Agent Session:
+Progress is observability, not control. The ACP adapter projects standard
+`session/update` notifications into generic activity:
 
 - tool name, bounded user-safe detail, and running/completed state;
 - text/reasoning activity represented only as “organizing result”.
@@ -204,7 +194,7 @@ after playback finishes. If the user interrupts, is speaking, or another
 response is pending, delivery waits and retries without duplicating context.
 Retries are bounded so one malformed result cannot block later completions.
 
-When the backend Agent hands work to a normal OpenCode or Qoder Session, the
+When the backend Agent hands work to another native backend Session, the
 intermediate transport response is instead:
 
 ```json
@@ -213,7 +203,7 @@ intermediate transport response is instead:
   "state": "delegated",
   "mode": "delegate",
   "delegation_id": "opaque run id",
-  "target_session_id": "opaque OpenCode Session id",
+  "target_session_id": "opaque backend Session id",
   "presentation": {
     "speech": "a natural confirmation authored by the backend Agent",
     "inline": null
@@ -227,11 +217,11 @@ the original Work to `delegated`, and
 releases both the backend Agent serialization lock and the Work scheduler
 lane. Other voice requests can therefore use the coordinator while the target
 Session runs. The adapter independently keeps the Work lifecycle and event
-subscription alive. Only a matching `session.idle` plus a persisted assistant
-result with the same delegation ID can complete the Work. The adapter then
-briefly reacquires the backend Agent lock and sends that verified result to it
-for final presentation. A busy target, an empty result, an unrelated Session
-event, or an older result cannot complete the Work.
+subscription alive. Only the matching ACP target prompt completion correlated
+to the delegation ID can complete the Work. The adapter then briefly
+reacquires the backend Agent lock and sends that verified result to it for
+final presentation. A busy target, an empty result, an unrelated Session
+update, or an older result cannot complete the Work.
 
 The normal backend request timeout applies separately to the initial
 coordinator turn and the final presentation turn. It does not apply while the
@@ -241,8 +231,8 @@ explicit Work cancellation or backend shutdown cancels the target Session.
 Cancellation is confirmed rather than optimistic. `queued` Work is cancelled
 locally. `running` or `finalizing` Work aborts its active backend request. For
 `delegated` Work, an idle coordinator is first asked to call
-`session_cancel`; if the coordinator Session is occupied, the OpenCode adapter
-directly aborts the exact correlated target Session. The Work remains
+`session_cancel`; if the coordinator Session is occupied, the ACP adapter
+directly sends `session/cancel` to the exact correlated target Session. The Work remains
 `cancelling` until one of those paths confirms the stop, then becomes
 `cancelled`. A failed stop becomes `failed` with the cancellation error.
 After a direct adapter abort, the Gateway records a cancellation fact and
@@ -257,11 +247,14 @@ after the asynchronous Session tool has already succeeded.
 
 ## 8. Backend-internal capabilities
 
-The backend Agent may use native backend tools or Sessions to work in another
-project or delegate internally. `session_start` and `session_send` return an
-opaque delegation ID. After either succeeds, the backend Agent must not poll,
-repeat the work, or answer from its own context; the adapter owns waiting,
-cancellation, permission routing, and result correlation.
+For OpenCode and Qoder, the Gateway injects the same five MCP tools into the
+coordinator through ACP: Session list, start, send, status, and cancel. OpenClaw
+ACP does not accept client-supplied MCP servers, so the same coordination
+contract maps to OpenClaw's native Session tools. `session_start` and
+`session_send` return an opaque delegation ID. After either succeeds, the
+backend Agent must not poll, repeat the work, or answer from its own context;
+the adapter owns waiting, cancellation, permission routing, and result
+correlation.
 
 `session_status` is observational only. If the query fails, the backend Agent
 must report the failure; it must not inspect the target directory with native
@@ -282,9 +275,9 @@ Work queue
    ↓
 backend Agent envelope
    ↓
-Backend adapter
+Shared ACP adapter
    ↓
-OpenCode Server, OpenClaw Gateway, or Qoder SDK/CLI
+OpenCode ACP, OpenClaw ACP bridge, or Qoder ACP
 ```
 
 Backend-specific API details belong only in `server/src/agent`. Realtime tools
@@ -301,12 +294,12 @@ own labels and interaction patterns.
 
 ## 10. Process ownership
 
-The Gateway is the only core service process. In managed mode it owns exactly
-one OpenCode or OpenClaw backend process and stops that process when the Gateway
-stops. Qoder is also managed mode, but its official SDK owns the per-query CLI
-children inside the Gateway rather than exposing a separate HTTP service.
-In compatible mode the Gateway owns no backend process; Qoder does not currently
-offer this mode.
+The Gateway is the only core product service. The shared adapter owns one ACP
+stdio child and stops it with the Gateway. OpenCode and Qoder run directly as
+ACP agents; managed OpenCode may additionally expose its native local Session
+UI. OpenClaw uses a small ACP bridge; in managed mode the Gateway also owns its
+OpenClaw Gateway, while compatible mode attaches the bridge to an
+already-running Gateway. Qoder does not currently offer compatible mode.
 
 Desktop, TUI and WebUI are replaceable Gateway clients. They must never spawn,
 restart or stop the Gateway or a backend. Closing a UI therefore cannot affect
@@ -333,5 +326,5 @@ Before merging a change, verify:
 5. Is completion spoken only from a final backend Agent result?
 6. Did any UI begin managing a Gateway or backend process?
 7. Can interruption postpone speech without cancelling submitted Work?
-7. Do tests cover FIFO serialization, fixed Session reuse, tool animation, and
+8. Do tests cover FIFO serialization, fixed Session reuse, tool animation, and
    delivery retry?

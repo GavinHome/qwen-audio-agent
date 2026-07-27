@@ -23,7 +23,7 @@ function fixture() {
   mkdirSync(root, { recursive: true })
   mkdirSync(homeDirectory, { recursive: true })
   for (const backend of ['opencode', 'openclaw', 'qoder']) {
-    const workspace = resolve(root, `config/${backend}-workspace`)
+    const workspace = resolve(root, `config/${backend}/workspace`)
     mkdirSync(workspace, { recursive: true })
     writeFileSync(resolve(workspace, 'AGENTS.md'), `# ${backend}\n`)
   }

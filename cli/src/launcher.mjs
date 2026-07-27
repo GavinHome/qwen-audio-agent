@@ -156,24 +156,47 @@ export async function main(argv, {
 
   if (options.command === 'gateway') {
     applyGatewayOptions(env, options)
-    const runtime = await prepareRuntime(options)
-    const health = await inspectGateway(options.url)
-    stdout.write(
-      `Gateway ${runtime.ownsProcesses ? '已启动' : '已在运行'}：${options.url}\n`
-      + `WebUI：${options.url}/\n`
-      + `${gatewaySummary(health)}\n`,
-    )
-    if (!runtime.ownsProcesses) return 0
-    const onSigint = () => runtime.close('SIGINT')
-    const onSigterm = () => runtime.close('SIGTERM')
+    let runtime
+    let shutdownSignal
+    const requestShutdown = signal => {
+      shutdownSignal ||= signal
+      runtime?.close(shutdownSignal)
+    }
+    const onSigint = () => requestShutdown('SIGINT')
+    const onSigterm = () => requestShutdown('SIGTERM')
+    // A terminal or SSH session closing sends SIGHUP rather than SIGINT.
+    // The Gateway runs in its own process group, so it would otherwise outlive
+    // this launcher and keep its ports occupied.
+    const onSighup = () => requestShutdown('SIGTERM')
+    // This is a final synchronous safeguard for unexpected launcher exits.
+    // ManagedRuntime.close only sends signals, so it is safe in an exit hook.
+    const onExit = () => runtime?.close('SIGTERM')
     signalSource.once('SIGINT', onSigint)
     signalSource.once('SIGTERM', onSigterm)
+    signalSource.once('SIGHUP', onSighup)
+    signalSource.once('exit', onExit)
     try {
+      runtime = await prepareRuntime(options)
+      if (shutdownSignal) {
+        if (!runtime.ownsProcesses) return 0
+        const stopped = runtime.wait()
+        runtime.close(shutdownSignal)
+        return await stopped
+      }
+      const health = await inspectGateway(options.url)
+      stdout.write(
+        `Gateway ${runtime.ownsProcesses ? '已启动' : '已在运行'}：${options.url}\n`
+        + `WebUI：${options.url}/\n`
+        + `${gatewaySummary(health)}\n`,
+      )
+      if (!runtime.ownsProcesses) return 0
       return await runtime.wait()
     } finally {
       signalSource.off('SIGINT', onSigint)
       signalSource.off('SIGTERM', onSigterm)
-      runtime.close()
+      signalSource.off('SIGHUP', onSighup)
+      signalSource.off('exit', onExit)
+      if (runtime?.ownsProcesses) runtime.close()
     }
   }
 

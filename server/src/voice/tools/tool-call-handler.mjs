@@ -9,8 +9,10 @@ import {
 import { currentTimeSnapshot } from '../../conversation/frontend-agent-context.mjs'
 
 const SENSITIVE_MEMORY = /(?:pass(?:word)?|secret|api[_ -]?key|access[_ -]?token|credential|验证码|密码|密钥|令牌|\bsk-[a-z0-9_-]+)/i
-const EXPLICIT_ALLOW = /(?:始终允许|永久允许|总是允许|一直允许|以后都允许|不再询问|同意|允许|确认|可以|没问题|\byes\b|\ballow\b)/i
-const EXPLICIT_REJECT = /(?:拒绝|不允许|不同意|不要|不可以|别做|停止|取消|\bno\b|\breject\b|\bdeny\b)/i
+
+function normalizedEvidence(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase()
+}
 
 function failure(errorCode, userMessage, {
   retryable = false,
@@ -68,11 +70,15 @@ export class ToolCallHandler {
   }
 
   async sendOutput(callId, output, turnId, taskId, options) {
+    const {
+      responseContext,
+      ...frontendOptions
+    } = options || {}
     await this.getFrontend()?.sendFunctionOutput(
       callId,
       output,
-      { turnId, taskId },
-      options,
+      { turnId, taskId, ...(responseContext || {}) },
+      frontendOptions,
     )
   }
 
@@ -196,6 +202,40 @@ export class ToolCallHandler {
       return
     }
 
+    const pendingPermissionTask = this.taskManager.list({
+      ownerId: this.ownerId,
+      sessionId: this.sessionId,
+      active: true,
+    }).find(task => task.authorization?.status === 'pending')
+    if (pendingPermissionTask) {
+      await this.sendOutput(
+        callId,
+        {
+          status: 'authorization_pending',
+          error: true,
+          error_code: 'permission_decision_required',
+          authorization_id: pendingPermissionTask.authorization.id,
+          operation: pendingPermissionTask.authorization.summary,
+          user_message: '当前有一项权限请求正在等待用户决定，不能把本轮回答提交成新工作。',
+          retryable: true,
+        },
+        turnId,
+        pendingPermissionTask.id,
+        {
+          response: {
+            instructions: [
+              '当前有一项权限请求正在等待决定，本轮不能调用 spawn_thinking。',
+              '重新结合刚才提出的具体权限问题和本轮用户原话判断。',
+              '若用户已自然表达同意或拒绝，立即调用 respond_agent_permission，并逐字引用本轮原话作为 evidence；不要要求固定口令。',
+              '若用户没有作出决定，只用一句自然的话继续确认。',
+              '绝对不要代替用户同意，也不要声称权限已经生效。',
+            ].join(' '),
+          },
+        },
+      )
+      return
+    }
+
     const resolved = await this.transcripts.resolveDelegation(
       turnId,
       args.objective,
@@ -300,6 +340,14 @@ export class ToolCallHandler {
       task.id,
       task.reused
         ? { createResponse: false }
+        : (
+            callContext.hasAudio
+            || callContext.transcriptDone
+            || callContext.pendingTranscripts?.some(item => (
+              String(item?.content || '').trim()
+            ))
+          )
+          ? { createResponse: false }
         : {
             // Let Realtime decide whether the user still needs an acknowledgement,
             // based on what it already said before invoking the tool.
@@ -326,11 +374,13 @@ export class ToolCallHandler {
   async respondAgentPermission(callId, turnId, args) {
     const authorizationId = String(args.authorization_id || '').trim()
     const decision = String(args.decision || '').trim()
+    const evidence = normalizedEvidence(args.evidence)
     const transcript = String(await this.transcripts.transcript(turnId)).trim()
-    const explicitlyAllowed = EXPLICIT_ALLOW.test(transcript)
-      && !EXPLICIT_REJECT.test(transcript)
-    const explicitlyRejected = EXPLICIT_REJECT.test(transcript)
-    if (!authorizationId || !['always', 'reject'].includes(decision)) {
+    if (
+      !authorizationId
+      || !['always', 'reject'].includes(decision)
+      || !evidence
+    ) {
       await this.sendOutput(
         callId,
         failure('invalid_permission_response', '没有找到有效的权限请求或决定。'),
@@ -338,16 +388,30 @@ export class ToolCallHandler {
       )
       return
     }
-    if (
-      (decision === 'always' && !explicitlyAllowed)
-      || (decision === 'reject' && !explicitlyRejected)
-    ) {
+    if (!normalizedEvidence(transcript).includes(evidence)) {
       await this.sendOutput(
         callId,
         failure(
-          'explicit_permission_required',
-          '需要用户明确说始终允许或拒绝，不能根据含糊回答推断。',
-          { retryable: true },
+          'permission_evidence_mismatch',
+          '权限决定没有对应到本轮用户原话，不能提交。',
+          { retryable: false },
+        ),
+        turnId,
+      )
+      return
+    }
+    const pendingTask = this.taskManager.list({
+      ownerId: this.ownerId,
+      sessionId: this.sessionId,
+      active: true,
+    }).find(task => task.authorization?.id === authorizationId)
+    if (!pendingTask) {
+      await this.sendOutput(
+        callId,
+        failure(
+          'permission_not_pending',
+          '这项权限请求已经失效或不属于当前任务。',
+          { retryable: false },
         ),
         turnId,
       )
@@ -370,10 +434,9 @@ export class ToolCallHandler {
       await this.sendOutput(callId, {
         status: permission.status,
         authorization_id: permission.id,
-        message: decision === 'always'
-          ? '已在当前后台会话中始终允许这类操作，后台将继续执行。'
-          : '已拒绝这项操作，后台会根据结果继续处理。',
-      }, turnId, permission.workId)
+      }, turnId, permission.workId, {
+        createResponse: false,
+      })
     } catch (error) {
       await this.sendOutput(
         callId,
@@ -532,6 +595,10 @@ export class ToolCallHandler {
       return
     }
     const lastActivity = task.activity.at(-1)
+    const consumesTaskNotification = (
+      ['completed', 'failed'].includes(task.status)
+      && ['pending', 'delivering'].includes(task.notificationStatus)
+    )
     await this.sendOutput(callId, {
       status: 'ok',
       work_id: task.id,
@@ -558,7 +625,9 @@ export class ToolCallHandler {
       error: ['failed', 'cancelled'].includes(task.status)
         ? task.error
         : null,
-    }, turnId, task.id)
+    }, turnId, task.id, consumesTaskNotification
+      ? { responseContext: { consumesTaskNotification: true } }
+      : undefined)
   }
 
   async getCurrentTime(callId, turnId) {

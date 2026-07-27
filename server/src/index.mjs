@@ -9,6 +9,7 @@ loadRuntimeEnvironment({ root })
 let backendRuntime
 let agentClient
 let stopPromise
+let exitTimer
 
 function stop(signal = 'SIGTERM') {
   if (stopPromise) return stopPromise
@@ -19,15 +20,40 @@ function stop(signal = 'SIGTERM') {
   return stopPromise
 }
 
+function stopAndExit(signal) {
+  if (!exitTimer) {
+    exitTimer = setTimeout(() => process.exit(0), 2000)
+  }
+  stop(signal).finally(() => process.exit(0))
+}
+
 try {
   backendRuntime = await startManagedBackend({ root })
+  const managedBackend = backendRuntime.child
+  const onManagedBackendExit = (code, signal) => {
+    if (stopPromise) return
+    const reason = signal || code || 'unknown'
+    process.stderr.write(`后台 Agent 意外退出：${reason}\n`)
+    stopPromise = Promise.resolve(agentClient?.close()).catch(error => {
+      process.stderr.write(`后台 Agent 停止失败：${error.message}\n`)
+    })
+    stopPromise.finally(() => process.exit(1))
+  }
+  if (managedBackend?.exitCode != null || managedBackend?.signalCode != null) {
+    onManagedBackendExit(
+      managedBackend.exitCode,
+      managedBackend.signalCode,
+    )
+  } else {
+    managedBackend?.once('exit', onManagedBackendExit)
+  }
   const agentModule = await import('./agent/agent-client.mjs')
   agentClient = agentModule.agent
   process.once('SIGINT', () => {
-    stop('SIGINT').finally(() => process.exit(0))
+    stopAndExit('SIGINT')
   })
   process.once('SIGTERM', () => {
-    stop('SIGTERM').finally(() => process.exit(0))
+    stopAndExit('SIGTERM')
   })
   process.once('exit', () => {
     backendRuntime?.close()

@@ -1,0 +1,1306 @@
+import { randomUUID } from 'node:crypto'
+import { createConnection } from 'node:net'
+import { resolve } from 'node:path'
+import { AgentError } from './backend-adapter.mjs'
+import { BACKEND_AGENT_INSTRUCTIONS } from './backend-agent-instructions.mjs'
+import { AcpProcessClient } from './acp-process-client.mjs'
+import { AcpSessionRegistry } from './acp-session-registry.mjs'
+import {
+  ACP_SESSION_TOOL_NAMES,
+  AcpSessionToolServer,
+} from './acp-session-tools.mjs'
+
+const MAX_SESSION_RESULTS = 100
+const MAX_DELEGATION_RESULT_CHARS = 12_000
+
+function clean(value) {
+  return String(value || '').trim()
+}
+
+function bounded(value, max = 300) {
+  return clean(value).replace(/\s+/g, ' ').slice(0, max)
+}
+
+function deferred() {
+  let resolvePromise
+  let rejectPromise
+  const promise = new Promise((resolve, reject) => {
+    resolvePromise = resolve
+    rejectPromise = reject
+  })
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
+}
+
+function endpointAvailable(value, timeoutMs = 300) {
+  let target
+  try {
+    target = new URL(value)
+  } catch {
+    return Promise.resolve(false)
+  }
+  const port = Number(
+    target.port || (target.protocol === 'https:' ? 443 : 80),
+  )
+  return new Promise(resolvePromise => {
+    const socket = createConnection({
+      host: target.hostname,
+      port,
+    })
+    const finish = available => {
+      socket.destroy()
+      resolvePromise(available)
+    }
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => finish(true))
+    socket.once('timeout', () => finish(false))
+    socket.once('error', () => finish(false))
+  })
+}
+
+function coordinatorKey(ownerId, protocol) {
+  return `${protocol}:${encodeURIComponent(clean(ownerId) || 'personal')}:backend`
+}
+
+function projectSessionKey(protocol, sessionId) {
+  return `${protocol}:${clean(sessionId)}`
+}
+
+function normalizeCoordinatorContent(content) {
+  const text = clean(content)
+  const candidate = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim()
+    || text
+  try {
+    const parsed = JSON.parse(candidate)
+    const inline = parsed?.presentation?.inline
+    if (typeof inline !== 'string') return text
+    parsed.presentation.inline = clean(inline)
+      ? {
+          title: 'Agent 结果',
+          format: 'markdown',
+          content: inline,
+        }
+      : null
+    return JSON.stringify(parsed)
+  } catch {
+    return text
+  }
+}
+
+function coordinatorPresentation(content) {
+  const candidate = clean(content).match(
+    /```(?:json)?\s*([\s\S]*?)```/i,
+  )?.[1] || clean(content)
+  try {
+    const presentation = JSON.parse(candidate)?.presentation
+    if (!presentation || typeof presentation !== 'object') return null
+    return {
+      speech: clean(presentation.speech),
+      inline: presentation.inline && typeof presentation.inline === 'object'
+        ? presentation.inline
+        : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function sessionSummary(session) {
+  return {
+    session_id: clean(session?.sessionId),
+    title: bounded(session?.title, 160),
+    directory: clean(session?.cwd),
+    updated_at: clean(session?.updatedAt),
+  }
+}
+
+function categoryForTool(update) {
+  const hint = [
+    update?.name,
+    update?.title,
+    JSON.stringify(update?.rawInput || {}),
+  ].join(' ').toLowerCase()
+  if (/image|draw|canvas|图片|图像|绘图/.test(hint)) return 'image'
+  if (/search|web|fetch|browser|搜索|查询/.test(hint)) return 'search'
+  if (/read|glob|grep|list|读取|查找/.test(hint)) return 'read'
+  if (/write|edit|patch|写入|修改/.test(hint)) return 'write'
+  return 'run'
+}
+
+function activityFromUpdate(update, known = new Map()) {
+  if (!['tool_call', 'tool_call_update'].includes(update?.sessionUpdate)) {
+    if (update?.sessionUpdate === 'agent_message_chunk') {
+      return { id: null, kind: 'text', status: 'running' }
+    }
+    return null
+  }
+  const id = clean(update.toolCallId)
+  const merged = {
+    ...(known.get(id) || {}),
+    ...update,
+  }
+  if (id) known.set(id, merged)
+  return {
+    id: id || null,
+    kind: 'tool',
+    tool: bounded(merged.name || merged.title, 100) || 'tool',
+    status: merged.status || 'running',
+    category: categoryForTool(merged),
+    detail: bounded(
+      merged.rawInput?.description
+      || merged.rawInput?.query
+      || merged.rawInput?.path
+      || merged.rawInput?.command
+      || '',
+    ),
+  }
+}
+
+function websocketUrl(httpUrl) {
+  const url = new URL(httpUrl)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString().replace(/\/+$/, '')
+}
+
+function nativeToolOutput(value) {
+  if (!value) return {}
+  if (typeof value === 'string') {
+    try {
+      return nativeToolOutput(JSON.parse(value))
+    } catch {
+      return {}
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const parsed = nativeToolOutput(item)
+      if (Object.keys(parsed).length) return parsed
+    }
+    return {}
+  }
+  if (typeof value !== 'object') return {}
+  if (
+    value.childSessionKey
+    || value.sessionKey
+    || value.sessionId
+    || value.session_id
+  ) return value
+  const details = nativeToolOutput(value.details)
+  if (Object.keys(details).length) return details
+  for (const block of Array.isArray(value.content) ? value.content : []) {
+    const parsed = nativeToolOutput(block?.text || block?.content || block)
+    if (Object.keys(parsed).length) return parsed
+  }
+  return {}
+}
+
+export function acpBackendProfile({
+  protocol,
+  root,
+  directory,
+  cliPath,
+  baseUrl,
+  token,
+  tokenFile,
+  coordinatorAgent,
+  configDirectory,
+  permissionMode,
+  model,
+}) {
+  const environment = {
+    ...process.env,
+    QWEN_AUDIO_AGENT_ENV_LOADED: '1',
+    QWEN_AUDIO_AGENT_NODE: process.execPath,
+    ...(configDirectory ? { QODER_CONFIG_DIR: configDirectory } : {}),
+  }
+  if (protocol === 'qoder') {
+    return {
+      label: 'Qoder',
+      command: cliPath || 'qodercli',
+      args: [
+        '--acp',
+        ...(clean(model) && clean(model) !== 'auto'
+          ? ['--model', clean(model)]
+          : []),
+        ...(permissionMode === 'full'
+          ? ['--dangerously-skip-permissions']
+          : []),
+      ],
+      cwd: directory,
+      env: environment,
+      externalMcp: true,
+      nativeDelegation: false,
+    }
+  }
+  if (protocol === 'openclaw') {
+    return {
+      label: 'OpenClaw',
+      command: resolve(root, 'scripts/openclaw'),
+      args: [
+        'acp',
+        '--url',
+        websocketUrl(baseUrl),
+        ...(clean(token) && clean(tokenFile)
+          ? ['--token-file', clean(tokenFile)]
+          : []),
+        '--verbose',
+      ],
+      cwd: directory,
+      env: {
+        ...environment,
+        ...(token ? { OPENCLAW_GATEWAY_TOKEN: token } : {}),
+      },
+      externalMcp: false,
+      nativeDelegation: true,
+    }
+  }
+  return {
+    label: 'OpenCode',
+    command: resolve(root, 'scripts/opencode-acp'),
+    args: [],
+    cwd: directory,
+    env: environment,
+    externalMcp: true,
+    nativeDelegation: false,
+  }
+}
+
+export class AcpBackendAdapter {
+  constructor({
+    protocol = 'opencode',
+    root = process.cwd(),
+    mode = 'managed',
+    permissionMode = 'native',
+    model = '',
+    timeoutMs = 300_000,
+    directory = process.cwd(),
+    cliPath = '',
+    configDirectory = '',
+    baseUrl = '',
+    token = '',
+    tokenFile = '',
+    coordinatorAgent = '',
+    sessionStatePath = null,
+    client,
+    clientFactory = options => new AcpProcessClient(options),
+    backendAvailable = endpointAvailable,
+    sessionToolServer,
+  } = {}) {
+    this.protocol = protocol
+    this.root = root
+    this.mode = mode === 'compatible' ? 'compatible' : 'managed'
+    this.permissionMode = permissionMode === 'full' ? 'full' : 'native'
+    this.model = clean(model)
+    this.timeoutMs = timeoutMs
+    this.directory = directory
+    this.baseUrl = clean(baseUrl) || null
+    this.coordinatorAgent = clean(coordinatorAgent)
+    this.profile = acpBackendProfile({
+      protocol,
+      root,
+      directory,
+      cliPath,
+      baseUrl,
+      token,
+      tokenFile,
+      coordinatorAgent,
+      configDirectory,
+      permissionMode: this.permissionMode,
+      model: this.model,
+    })
+    this.registry = new AcpSessionRegistry({ filePath: sessionStatePath })
+    this.sessionToolServer = sessionToolServer || new AcpSessionToolServer()
+    this.pendingPermissions = new Map()
+    this.permissionRules = new Set()
+    this.coordinatorSessions = new Map()
+    this.coordinatorSessionPromises = new Map()
+    this.sessionQueues = new Map()
+    this.activeCoordinatorTurns = new Set()
+    this.delegatedWorkRuns = new Map()
+    this.pendingCoordinatorFacts = new Map()
+    this.toolCalls = new Map()
+    // A managed OpenClaw Gateway and its ACP bridge use the same package.
+    // Starting both while the package runtime is still resolving can race and
+    // repeatedly tear down the bridge. Injected clients are already ready by
+    // definition and are used extensively by adapter tests.
+    this.backendAvailable = client ? null : backendAvailable
+    this.client = client || clientFactory({
+      label: this.profile.label,
+      command: this.profile.command,
+      args: this.profile.args,
+      cwd: this.profile.cwd,
+      env: this.profile.env,
+      timeoutMs,
+      onPermission: (params, context) => (
+        this.handlePermission(params, context)
+      ),
+      onUpdate: (update, context) => this.handleGlobalUpdate(update, context),
+    })
+  }
+
+  get label() {
+    return this.profile.label
+  }
+
+  describe() {
+    return {
+      kind: this.protocol,
+      label: this.label,
+      baseUrl: this.baseUrl,
+      uiPath: null,
+      model: this.model || null,
+      directory: this.directory,
+      mode: this.mode,
+      permissionMode: this.permissionMode,
+      transport: 'acp',
+      backendAgent: this.coordinatorAgent || 'qwen-audio-agent-backend',
+      sessionModel: 'one-persistent-backend-agent',
+      capabilities: {
+        delegation: true,
+        permissions: true,
+        backendUi: this.protocol === 'opencode',
+        nativeSessionHistory: true,
+        externalMcp: this.profile.externalMcp,
+      },
+    }
+  }
+
+  async health() {
+    try {
+      if (
+        this.protocol === 'openclaw'
+        && this.baseUrl
+        && this.backendAvailable
+        && !await this.backendAvailable(this.baseUrl)
+      ) {
+        return {
+          ok: false,
+          protocol: this.protocol,
+          mode: this.mode,
+          transport: 'acp',
+          error: 'OpenClaw Gateway 正在启动',
+        }
+      }
+      const initialized = await this.client.start()
+      return {
+        ok: true,
+        protocol: this.protocol,
+        mode: this.mode,
+        transport: 'acp',
+        agentInfo: initialized.agentInfo || null,
+        capabilities: initialized.agentCapabilities || {},
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        protocol: this.protocol,
+        mode: this.mode,
+        transport: 'acp',
+        error: `${error.message}${
+          clean(this.client.stderr) ? `：${clean(this.client.stderr)}` : ''
+        }`,
+      }
+    }
+  }
+
+  serialize(key, operation) {
+    const previous = this.sessionQueues.get(key) || Promise.resolve()
+    const current = previous.catch(() => {}).then(operation)
+    this.sessionQueues.set(key, current)
+    return current.finally(() => {
+      if (this.sessionQueues.get(key) === current) {
+        this.sessionQueues.delete(key)
+      }
+    })
+  }
+
+  async ensureCoordinatorSession(ownerId, mcpServers = []) {
+    const key = coordinatorKey(ownerId, this.protocol)
+    if (this.coordinatorSessions.has(key)) {
+      return this.coordinatorSessions.get(key)
+    }
+    if (this.coordinatorSessionPromises.has(key)) {
+      return this.coordinatorSessionPromises.get(key)
+    }
+    const pending = (async () => {
+      const stored = this.registry.get(key)
+      let session
+      if (stored?.sessionId) {
+        try {
+          session = await this.client.resumeSession(stored.sessionId, {
+            cwd: stored.cwd || this.directory,
+            mcpServers,
+            meta: this.coordinatorMeta(ownerId),
+            ownerId,
+            role: 'coordinator',
+          })
+          session.isNew = false
+        } catch {
+          this.registry.delete(key)
+        }
+      }
+      if (!session) {
+        session = await this.client.newSession({
+          cwd: this.directory,
+          mcpServers,
+          meta: this.coordinatorMeta(ownerId),
+          ownerId,
+          role: 'coordinator',
+        })
+        session.isNew = true
+      }
+      await this.configureSession(session, 'coordinator')
+      this.coordinatorSessions.set(key, session)
+      this.registry.set(key, session)
+      return session
+    })().finally(() => this.coordinatorSessionPromises.delete(key))
+    this.coordinatorSessionPromises.set(key, pending)
+    return pending
+  }
+
+  coordinatorMeta(ownerId) {
+    if (this.protocol !== 'openclaw' || !this.coordinatorAgent) return null
+    const owner = encodeURIComponent(
+      clean(ownerId) || 'personal',
+    ).toLowerCase()
+    return {
+      sessionKey: `agent:${this.coordinatorAgent}:qwen-audio-agent:${owner}:backend`,
+    }
+  }
+
+  async configureSession(session, role) {
+    const options = Array.isArray(session?.response?.configOptions)
+      ? session.response.configOptions
+      : []
+    const desired = [
+      ...(role === 'coordinator' && this.coordinatorAgent
+        ? [['mode', this.coordinatorAgent]]
+        : []),
+      ...(this.model && this.model !== 'auto'
+        ? [['model', this.model]]
+        : []),
+    ]
+    for (const [configId, value] of desired) {
+      const option = options.find(item => item.id === configId)
+      const supported = option?.type !== 'select'
+        || option.options?.some(item => item.value === value)
+      if (!option || !supported || option.currentValue === value) continue
+      await this.client.setSessionConfigOption(
+        session.sessionId,
+        configId,
+        value,
+      )
+      option.currentValue = value
+    }
+  }
+
+  permissionSignature(params) {
+    const tool = params?.toolCall || {}
+    return JSON.stringify([
+      clean(tool.name || tool.title),
+      tool.rawInput || null,
+    ])
+  }
+
+  optionFor(params, decision) {
+    const options = Array.isArray(params?.options) ? params.options : []
+    const kinds = decision === 'always'
+      ? ['allow_always', 'allow_once']
+      : ['reject_always', 'reject_once']
+    for (const kind of kinds) {
+      const option = options.find(candidate => candidate.kind === kind)
+      if (option) return option
+    }
+    return null
+  }
+
+  async handlePermission(params, { signal, session } = {}) {
+    const signature = this.permissionSignature(params)
+    const name = clean(params?.toolCall?.name || params?.toolCall?.title)
+    const internal = ACP_SESSION_TOOL_NAMES.some(toolName => (
+      name === toolName
+      || name.endsWith(`__${toolName}`)
+      || name.startsWith(`${toolName} (`)
+    ))
+    if (
+      this.permissionMode === 'full'
+      || internal
+      || this.permissionRules.has(signature)
+    ) {
+      const option = this.optionFor(params, 'always')
+      return option
+        ? { outcome: { outcome: 'selected', optionId: option.optionId } }
+        : { outcome: { outcome: 'cancelled' } }
+    }
+    const id = `auth_${randomUUID().replaceAll('-', '')}`
+    const pending = deferred()
+    const permission = {
+      id,
+      workId: session?.coordinationRunId || null,
+      status: 'pending',
+      category: bounded(name, 80) || 'unknown',
+      summary: [
+        bounded(name, 80),
+        bounded(
+          params?.toolCall?.rawInput?.description
+          || params?.toolCall?.rawInput?.command
+          || params?.toolCall?.rawInput?.path
+          || '',
+        ),
+      ].filter(Boolean).join('：'),
+      patterns: [],
+    }
+    const record = {
+      ...permission,
+      ownerId: clean(session?.ownerId),
+      params,
+      signature,
+      pending,
+      onEvent: session?.onEvent,
+    }
+    this.pendingPermissions.set(id, record)
+    record.onEvent?.({ type: 'backend.permission.requested', permission })
+    signal?.addEventListener('abort', () => {
+      if (!this.pendingPermissions.delete(id)) return
+      pending.resolve({ outcome: { outcome: 'cancelled' } })
+    }, { once: true })
+    return pending.promise
+  }
+
+  async respondPermission(id, decision, { ownerId } = {}) {
+    const record = this.pendingPermissions.get(String(id))
+    if (!record || record.ownerId !== clean(ownerId)) {
+      throw new AgentError('权限请求不存在、已经失效或不属于当前用户', {
+        protocol: this.protocol,
+      })
+    }
+    this.pendingPermissions.delete(record.id)
+    const approved = decision === 'always'
+    const option = this.optionFor(
+      record.params,
+      approved ? 'always' : 'reject',
+    )
+    if (approved) this.permissionRules.add(record.signature)
+    record.pending.resolve(option
+      ? { outcome: { outcome: 'selected', optionId: option.optionId } }
+      : { outcome: { outcome: 'cancelled' } })
+    const permission = {
+      id: record.id,
+      workId: record.workId,
+      status: approved ? 'approved' : 'denied',
+      category: record.category,
+      summary: record.summary,
+    }
+    record.onEvent?.({ type: 'backend.permission.resolved', permission })
+    return permission
+  }
+
+  onSessionUpdate(run, update) {
+    const activity = activityFromUpdate(update, this.toolCalls)
+    if (activity) run.onEvent?.({ type: 'backend.activity', activity })
+    if (!this.profile.nativeDelegation) return
+    if (!['tool_call', 'tool_call_update'].includes(update?.sessionUpdate)) {
+      return
+    }
+    const id = clean(update.toolCallId)
+    const merged = {
+      ...(run.nativeToolCalls.get(id) || {}),
+      ...update,
+    }
+    run.nativeToolCalls.set(id, merged)
+    if (merged.status !== 'completed' || run.delegation) return
+    const name = clean(merged.name || merged.title).toLowerCase()
+    if (!/sessions_(spawn|send)/.test(name)) return
+    const output = nativeToolOutput(merged.rawOutput)
+    const sessionId = clean(
+      output.childSessionKey
+      || output.sessionKey
+      || output.session_id
+      || output.sessionId,
+    )
+    if (!sessionId) return
+    const delegationId = clean(output.runId) || `openclaw_run_${randomUUID()}`
+    run.delegation = this.createNativeDelegation(run, {
+      delegationId,
+      sessionId,
+      directory: clean(
+        merged.rawInput?.cwd
+        || merged.rawInput?.directory
+        || this.directory,
+      ),
+      title: bounded(
+        merged.rawInput?.label
+        || merged.rawInput?.task
+        || merged.rawInput?.message,
+        160,
+      ) || 'OpenClaw 项目任务',
+    })
+  }
+
+  handleGlobalUpdate(update, { session } = {}) {
+    if (
+      !this.profile.nativeDelegation
+      || update?.sessionUpdate !== 'agent_message_chunk'
+      || update.content?.type !== 'text'
+    ) return
+    for (const run of this.delegatedWorkRuns.values()) {
+      const record = run.delegation
+      if (
+        !record
+        || !run.initialPromptDone
+        || record.parentSessionId !== clean(session?.sessionId)
+        || record.status !== 'running'
+      ) continue
+      record.announcement.push(String(update.content.text || ''))
+      clearTimeout(record.announcementTimer)
+      record.announcementTimer = setTimeout(() => {
+        const content = clean(record.announcement.join(''))
+        if (content) record.nativeCompletion.resolve(content)
+      }, 500)
+    }
+  }
+
+  async listProjectSessions({ query, directory, limit } = {}) {
+    const sessions = await this.client.listSessions({
+      cwd: clean(directory) || undefined,
+      limit: limit || 20,
+    })
+    this.registry.setProjects(sessions
+      .filter(session => clean(session?.sessionId) && clean(session?.cwd))
+      .map(session => [
+        projectSessionKey(this.protocol, session.sessionId),
+        session,
+      ]))
+    const coordinators = new Set(
+      [...this.coordinatorSessions.values()].map(item => item.sessionId),
+    )
+    const needle = clean(query).toLowerCase()
+    return {
+      sessions: sessions
+        .filter(session => !coordinators.has(clean(session.sessionId)))
+        .map(sessionSummary)
+        .filter(session => !needle || [
+          session.title,
+          session.directory,
+        ].join(' ').toLowerCase().includes(needle)),
+    }
+  }
+
+  rememberProjectSession(session) {
+    if (!clean(session?.sessionId) || !clean(session?.cwd)) return
+    this.registry.setProject(
+      projectSessionKey(this.protocol, session.sessionId),
+      session,
+    )
+  }
+
+  findDelegation({ delegation_id: delegationId, session_id: sessionId }) {
+    return [...this.delegatedWorkRuns.values()]
+      .map(run => run.delegation)
+      .find(record => (
+        (clean(delegationId) && record?.id === clean(delegationId))
+        || (clean(sessionId) && record?.sessionId === clean(sessionId))
+      ))
+  }
+
+  createDelegation(run, {
+    session,
+    prompt,
+    directory,
+    title,
+  }) {
+    if (run.delegation) {
+      throw new AgentError('当前协调轮次已经启动了一个第三层任务', {
+        protocol: this.protocol,
+      })
+    }
+    const controller = new AbortController()
+    const record = {
+      id: `${this.protocol}_run_${randomUUID()}`,
+      sessionId: session.sessionId,
+      directory,
+      title: bounded(title || prompt, 160) || `${this.label} 项目任务`,
+      ownerId: run.ownerId,
+      workId: run.coordinationRunId,
+      status: 'running',
+      controller,
+      result: null,
+      error: null,
+    }
+    run.delegation = record
+    this.delegatedWorkRuns.set(run.coordinationRunId, run)
+    record.promise = this.serialize(`target:${record.sessionId}`, async () => {
+      try {
+        session.ownerId = run.ownerId
+        session.coordinationRunId = run.coordinationRunId
+        session.onEvent = run.onEvent
+        const result = await this.client.prompt(record.sessionId, prompt, {
+          signal: controller.signal,
+          timeoutMs: 0,
+          onUpdate: update => this.onSessionUpdate(run, update),
+        })
+        record.status = 'completed'
+        record.result = result
+        return {
+          id: record.id,
+          sessionId: record.sessionId,
+          directory: record.directory,
+          title: record.title,
+          content: result.content,
+        }
+      } catch (error) {
+        record.status = controller.signal.aborted ? 'cancelled' : 'failed'
+        record.error = error
+        throw error
+      }
+    })
+    record.promise.catch(() => {})
+    return record
+  }
+
+  async startProjectSession(run, { prompt, directory, title }) {
+    const cwd = clean(directory)
+    const session = await this.client.newSession({
+      cwd,
+      ownerId: run.ownerId,
+      role: 'project',
+    })
+    this.rememberProjectSession({
+      ...session,
+      cwd,
+      title: clean(title || prompt),
+    })
+    await this.configureSession(session, 'project')
+    const record = this.createDelegation(run, {
+      session,
+      prompt: clean(prompt),
+      directory: cwd,
+      title,
+    })
+    return {
+      status: 'started',
+      delegation_id: record.id,
+      session_id: record.sessionId,
+      title: record.title,
+      directory: record.directory,
+    }
+  }
+
+  async continueProjectSession(
+    run,
+    { session_id: sessionId, prompt, directory },
+  ) {
+    const requestedDirectory = clean(directory)
+    const active = this.findDelegation({ session_id: sessionId })
+    const remembered = this.registry.getProject(
+      projectSessionKey(this.protocol, sessionId),
+    )
+    let existing = null
+    let cwd = clean(
+      requestedDirectory
+      || active?.directory
+      || remembered?.cwd,
+    )
+    if (!cwd) {
+      const sessions = await this.client.listSessions({
+        limit: MAX_SESSION_RESULTS,
+      })
+      existing = sessions.find(item => (
+        clean(item.sessionId) === clean(sessionId)
+      ))
+      cwd = clean(existing?.cwd)
+    }
+    if (!cwd) {
+      throw new AgentError(
+        `${this.label} Session 的项目目录未知，请先查询 Session 列表后再继续`,
+        { protocol: this.protocol },
+      )
+    }
+    const session = await this.client.resumeSession(clean(sessionId), {
+      cwd,
+      ownerId: run.ownerId,
+      role: 'project',
+    })
+    this.rememberProjectSession({
+      ...existing,
+      ...session,
+      cwd,
+      title: existing?.title || remembered?.title,
+    })
+    await this.configureSession(session, 'project')
+    const record = this.createDelegation(run, {
+      session,
+      prompt: clean(prompt),
+      directory: cwd,
+      title: clean(prompt),
+    })
+    return {
+      status: 'started',
+      delegation_id: record.id,
+      session_id: record.sessionId,
+      title: record.title,
+      directory: record.directory,
+    }
+  }
+
+  statusForDelegation(input) {
+    const record = this.findDelegation(input)
+    if (!record) return { status: 'not_found' }
+    return {
+      status: record.status,
+      delegation_id: record.id,
+      session_id: record.sessionId,
+      title: record.title,
+      directory: record.directory,
+      ...(record.status === 'completed'
+        ? { result: clean(record.result?.content).slice(0, 4000) }
+        : {}),
+      ...(record.status === 'failed'
+        ? { error: clean(record.error?.message || record.error) }
+        : {}),
+    }
+  }
+
+  async cancelDelegation(input) {
+    const record = this.findDelegation(input)
+    if (!record) return { status: 'not_found' }
+    if (!['completed', 'failed', 'cancelled'].includes(record.status)) {
+      record.status = 'cancelled'
+      record.controller.abort(new Error('用户已取消这项项目任务'))
+      await this.client.cancelSession(record.sessionId).catch(() => {})
+    }
+    return {
+      status: record.status,
+      delegation_id: record.id,
+      session_id: record.sessionId,
+    }
+  }
+
+  toolContext(run) {
+    return {
+      listSessions: input => this.listProjectSessions(input),
+      startSession: input => this.startProjectSession(run, input),
+      sendSession: input => this.continueProjectSession(run, input),
+      sessionStatus: input => this.statusForDelegation(input),
+      cancelSession: input => this.cancelDelegation(input),
+    }
+  }
+
+  coordinatorInstructions(message) {
+    const sessionInstructions = this.profile.externalMcp
+      ? [
+          'The qwen_audio_agent MCP tools are the only interface for opening,',
+          'continuing, querying, and cancelling third-layer project Sessions.',
+          'session_start and session_send are asynchronous. After either returns',
+          'status=started, return the delegated response required by the request',
+          'envelope and stop this turn. Never poll it in the same turn.',
+        ].join(' ')
+      : [
+          'For a separate or previous project, use OpenClaw native session tools:',
+          'sessions_spawn to create work, sessions_list to locate prior Sessions,',
+          'sessions_send to continue one, and sessions_history for status.',
+          'These are third-layer tasks. After spawn/send is accepted, return the',
+          'delegated response required by the request envelope and stop this turn.',
+        ].join(' ')
+    return [
+      '<qwen_audio_agent_backend_instructions>',
+      BACKEND_AGENT_INSTRUCTIONS,
+      sessionInstructions,
+      '</qwen_audio_agent_backend_instructions>',
+      '',
+      message,
+    ].join('\n')
+  }
+
+  async coordinatorTurn(message, {
+    ownerId,
+    coordinationRunId,
+    signal,
+    onEvent,
+  }) {
+    const run = {
+      ownerId: clean(ownerId),
+      coordinationRunId: clean(coordinationRunId),
+      onEvent,
+      delegation: null,
+      nativeToolCalls: new Map(),
+      initialPromptDone: false,
+    }
+    const ownerKey = clean(ownerId)
+    const pendingFacts = this.pendingCoordinatorFacts.get(ownerKey) || []
+    const prompt = pendingFacts.length
+      ? [
+          '<qwen_audio_agent_reconciliation>',
+          ...pendingFacts.map(fact => JSON.stringify(fact)),
+          '</qwen_audio_agent_reconciliation>',
+          '以上是 Gateway 已执行并验证的控制结果。请更新你的上下文，不要重复执行。',
+          '',
+          message,
+        ].join('\n')
+      : message
+    let registration = null
+    if (this.profile.externalMcp) {
+      registration = await this.sessionToolServer.register(
+        this.toolContext(run),
+      )
+    }
+    const mcpServers = registration ? [registration.descriptor] : []
+    const session = await this.ensureCoordinatorSession(ownerId, mcpServers)
+    run.sessionId = session.sessionId
+    session.ownerId = clean(ownerId)
+    session.coordinationRunId = clean(coordinationRunId)
+    session.onEvent = onEvent
+    this.activeCoordinatorTurns.add(session.sessionId)
+    try {
+      // Re-supply MCP definitions on resume: ACP Sessions do not require the
+      // agent to persist client-provided MCP connections across processes.
+      if (registration && !session.isNew) {
+        await this.client.resumeSession(session.sessionId, {
+          cwd: session.cwd || this.directory,
+          mcpServers,
+          meta: this.coordinatorMeta(ownerId),
+          ownerId,
+          role: 'coordinator',
+        })
+      }
+      const result = await this.client.prompt(
+        session.sessionId,
+        this.coordinatorInstructions(prompt),
+        {
+          signal,
+          timeoutMs: this.timeoutMs,
+          onUpdate: update => this.onSessionUpdate(run, update),
+        },
+      )
+      run.initialPromptDone = true
+      session.isNew = false
+      if (pendingFacts.length) this.pendingCoordinatorFacts.delete(ownerKey)
+      this.registry.set(
+        coordinatorKey(ownerId, this.protocol),
+        session,
+      )
+      return {
+        run,
+        session,
+        result: {
+          ...result,
+          content: normalizeCoordinatorContent(result.content),
+        },
+      }
+    } finally {
+      this.activeCoordinatorTurns.delete(session.sessionId)
+      registration?.release()
+      for (const [id, record] of this.pendingPermissions) {
+        if (record.workId !== clean(coordinationRunId)) continue
+        this.pendingPermissions.delete(id)
+        record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+      }
+    }
+  }
+
+  createNativeDelegation(run, {
+    delegationId,
+    sessionId,
+    directory,
+    title,
+  }) {
+    const controller = new AbortController()
+    const record = {
+      id: delegationId,
+      sessionId,
+      directory,
+      title,
+      ownerId: run.ownerId,
+      workId: run.coordinationRunId,
+      status: 'running',
+      controller,
+      result: null,
+      error: null,
+      parentSessionId: run.sessionId,
+      announcement: [],
+      announcementTimer: null,
+      nativeCompletion: deferred(),
+    }
+    this.delegatedWorkRuns.set(run.coordinationRunId, run)
+    record.promise = this.waitForNativeDelegation(record, run)
+    record.promise.catch(() => {})
+    return record
+  }
+
+  async waitForNativeDelegation(record, run) {
+    // OpenClaw delivers a completed child announcement back to its parent
+    // Session. Polling session/list is only used as a transport-independent
+    // wake-up signal; the coordinator remains the component that reads and
+    // presents the result.
+    let lastUpdated = ''
+    let changedAt = 0
+    while (!record.controller.signal.aborted) {
+      const announced = await Promise.race([
+        record.nativeCompletion.promise.then(content => ({ content })),
+        new Promise(resolvePromise => setTimeout(
+          () => resolvePromise(null),
+          1000,
+        )),
+      ])
+      if (announced?.content) {
+        record.status = 'completed'
+        record.result = { content: announced.content }
+        return {
+          id: record.id,
+          sessionId: record.sessionId,
+          directory: record.directory,
+          title: record.title,
+          content: announced.content,
+        }
+      }
+      const sessions = await this.client.listSessions({ limit: 100 })
+      const target = sessions.find(item => item.sessionId === record.sessionId)
+      if (target?.updatedAt && target.updatedAt !== lastUpdated) {
+        if (lastUpdated) changedAt = Date.now()
+        lastUpdated = target.updatedAt
+      }
+      // Some OpenClaw channels do not replay the child announcement as an
+      // unsolicited ACP update. A settled target timestamp wakes the
+      // coordinator, which then reads the authoritative sessions_history.
+      if (changedAt && Date.now() - changedAt >= 3000) {
+          record.status = 'completed'
+          const result = {
+            content: `OpenClaw Session ${record.sessionId} 已停止产生更新，请读取该 Session 的最终历史结果。`,
+          }
+          record.result = result
+          return {
+            id: record.id,
+            sessionId: record.sessionId,
+            directory: record.directory,
+            title: record.title,
+            content: result.content,
+          }
+      }
+    }
+    throw record.controller.signal.reason || new Error('任务已取消')
+  }
+
+  delegationResultPrompt(result, coordinationRunId) {
+    const nativeInstruction = this.profile.nativeDelegation
+      ? `请先调用 sessions_history 读取 sessionKey=${
+          result.sessionId
+        } 的最终结果，然后整理 presentation。`
+      : '请只整理该可信结果并生成 presentation。'
+    return [
+      '<qwen_audio_agent_delegation_result>',
+      JSON.stringify({
+        request_id: clean(coordinationRunId),
+        delegation_id: result.id,
+        target_session_id: result.sessionId,
+        directory: result.directory,
+        result: clean(result.content).slice(0, MAX_DELEGATION_RESULT_CHARS),
+      }, null, 2),
+      '</qwen_audio_agent_delegation_result>',
+      '这是由 Gateway 验证并关联到当前请求的第三层 Session 最终结果。',
+      nativeInstruction,
+      '返回当前 request_id 的 completed 最终 presentation；',
+      '不要再次执行、委托或查询目标任务。',
+    ].join('\n')
+  }
+
+  resultEnvelope(initial, delegation = null) {
+    return {
+      content: initial.result.content,
+      raw: initial.result.response,
+      protocol: this.protocol,
+      metadata: {
+        backendRef: {
+          provider: this.protocol,
+          role: 'backend',
+          sessionId: initial.session.sessionId,
+          directory: initial.session.cwd || this.directory,
+        },
+        ...(delegation
+          ? {
+              delegation: {
+                id: delegation.id,
+                sessionId: delegation.sessionId,
+                title: delegation.title,
+                directory: delegation.directory,
+              },
+            }
+          : {}),
+      },
+    }
+  }
+
+  async runCoordinator(message, {
+    ownerId,
+    coordinationRunId,
+    signal,
+    onEvent,
+  } = {}) {
+    const key = coordinatorKey(ownerId, this.protocol)
+    const initial = await this.serialize(
+      `coordinator:${key}`,
+      () => this.coordinatorTurn(message, {
+        ownerId,
+        coordinationRunId,
+        signal,
+        onEvent,
+      }),
+    )
+    if (!initial.run.delegation) return this.resultEnvelope(initial)
+    const delegation = initial.run.delegation
+    onEvent?.({
+      type: 'backend.delegated',
+      delegation: {
+        id: delegation.id,
+        sessionId: delegation.sessionId,
+        title: delegation.title,
+        directory: delegation.directory,
+        presentation: coordinatorPresentation(initial.result.content),
+      },
+    })
+    try {
+      const target = await delegation.promise
+      onEvent?.({
+        type: 'backend.delegation.completed',
+        delegation: {
+          id: target.id,
+          sessionId: target.sessionId,
+          title: target.title,
+          directory: target.directory,
+        },
+      })
+      const final = await this.serialize(
+        `coordinator:${key}`,
+        () => this.coordinatorTurn(
+          this.delegationResultPrompt(target, coordinationRunId),
+          {
+            ownerId,
+            coordinationRunId,
+            signal,
+            onEvent,
+          },
+        ),
+      )
+      return this.resultEnvelope(final, target)
+    } finally {
+      this.delegatedWorkRuns.delete(clean(coordinationRunId))
+    }
+  }
+
+  async coordinatorControl(workId, prompt, {
+    ownerId,
+    signal,
+  } = {}) {
+    const key = coordinatorKey(ownerId, this.protocol)
+    return this.serialize(
+      `coordinator:${key}`,
+      () => this.coordinatorTurn(prompt, {
+        ownerId,
+        coordinationRunId: workId,
+        signal,
+        onEvent: null,
+      }),
+    )
+  }
+
+  async cancelDelegatedWork(workId, { ownerId, signal } = {}) {
+    const run = this.delegatedWorkRuns.get(clean(workId))
+    const record = run?.delegation
+    if (!record || record.ownerId !== clean(ownerId)) {
+      throw new AgentError(`没有找到可取消的 ${this.label} 项目任务`, {
+        protocol: this.protocol,
+      })
+    }
+    const coordinator = this.coordinatorSessions.get(
+      coordinatorKey(ownerId, this.protocol),
+    )
+    const busy = coordinator
+      && this.activeCoordinatorTurns.has(coordinator.sessionId)
+    if (!busy) {
+      try {
+        const instruction = this.profile.externalMcp
+          ? `请调用 qwen_audio_agent_session_cancel 取消 delegation_id=${record.id}。`
+          : `请用 OpenClaw 原生 Session 工具立即停止 sessionKey=${record.sessionId} 对应的第三层任务。`
+        await this.coordinatorControl(workId, [
+          '<qwen_audio_agent_control kind="cancel">',
+          instruction,
+          '工具返回后只简短确认，不要做其他工作。',
+          '</qwen_audio_agent_control>',
+        ].join('\n'), { ownerId, signal })
+        return {
+          route: 'coordinator',
+          layer: 'delegated',
+          delegationId: record.id,
+          sessionId: record.sessionId,
+        }
+      } catch {
+        // Cancellation is urgent; fall through to the ACP transport.
+      }
+    }
+    await this.cancelDelegation({ delegation_id: record.id })
+    const ownerKey = clean(ownerId)
+    const facts = this.pendingCoordinatorFacts.get(ownerKey) || []
+    facts.push({
+      kind: 'delegated_session_cancelled',
+      work_id: clean(workId),
+      delegation_id: record.id,
+      target_session_id: record.sessionId,
+      confirmed_at: new Date().toISOString(),
+    })
+    this.pendingCoordinatorFacts.set(ownerKey, facts.slice(-20))
+    return {
+      route: 'adapter',
+      layer: 'delegated',
+      delegationId: record.id,
+      sessionId: record.sessionId,
+    }
+  }
+
+  async queryDelegatedWork(workId, question, { ownerId, signal } = {}) {
+    const run = this.delegatedWorkRuns.get(clean(workId))
+    const record = run?.delegation
+    if (!record || record.ownerId !== clean(ownerId)) {
+      throw new AgentError(`没有找到对应的 ${this.label} 项目任务`, {
+        protocol: this.protocol,
+      })
+    }
+    const instruction = this.profile.externalMcp
+      ? `请调用 qwen_audio_agent_session_status 查询 delegation_id=${record.id}。`
+      : `请调用 OpenClaw 原生 sessions_history 查询 sessionKey=${record.sessionId} 的真实状态和阶段结果。`
+    const result = await this.coordinatorControl(workId, [
+      '<qwen_audio_agent_control kind="status">',
+      instruction,
+      clean(question)
+        ? `用户的具体问题：${clean(question)}`
+        : '请自然地说明当前状态。',
+      '只根据工具结果返回 completed/respond JSON，不要扫描项目或执行任务。',
+      '</qwen_audio_agent_control>',
+    ].join('\n'), { ownerId, signal })
+    return this.resultEnvelope(result, record)
+  }
+
+  async uiUrl(ownerId) {
+    if (this.protocol !== 'opencode' || !this.baseUrl) return this.baseUrl
+    const key = coordinatorKey(ownerId, this.protocol)
+    const session = this.coordinatorSessions.get(key) || this.registry.get(key)
+    if (!session?.sessionId) return this.baseUrl
+    const serverKey = Buffer.from(this.baseUrl).toString('base64url')
+    return `${
+      this.baseUrl
+    }/server/${serverKey}/session/${encodeURIComponent(session.sessionId)}`
+  }
+
+  async close() {
+    for (const run of this.delegatedWorkRuns.values()) {
+      run.delegation?.controller.abort(
+        new Error(`${this.label} backend is shutting down`),
+      )
+    }
+    for (const record of this.pendingPermissions.values()) {
+      record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+    }
+    this.pendingPermissions.clear()
+    await Promise.allSettled([
+      this.sessionToolServer.close(),
+      this.client.close(),
+    ])
+  }
+}

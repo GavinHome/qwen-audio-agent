@@ -6,6 +6,12 @@ function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim()
 }
 
+function speechKey(value) {
+  return clean(value)
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, '')
+}
+
 export class ConversationSync {
   constructor({
     maxMessages = 100,
@@ -107,6 +113,21 @@ export class ConversationSync {
     this.prune()
     return (this.peek(ownerId, sessionId)?.messages || [])
       .map(message => ({ ...message }))
+  }
+
+  hasEquivalentAssistantSpeech({
+    ownerId,
+    sessionId,
+    turnId,
+    content,
+  }) {
+    const target = speechKey(content)
+    if (!target) return false
+    return this.list({ ownerId, sessionId }).some(message => (
+      message.role === 'assistant'
+      && message.turnId === turnId
+      && speechKey(message.content) === target
+    ))
   }
 
   frontendContext({ ownerId, sessionId }) {

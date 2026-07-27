@@ -25,7 +25,17 @@ try {
     process.stdout.write(`qwen-audio-agent 已在运行：${url}\n`)
   } else {
     process.stdout.write(`qwen-audio-agent 已就绪：${url}\n`)
-    process.exitCode = await runtime.wait()
+    const onSigint = () => runtime.close('SIGINT')
+    const onSigterm = () => runtime.close('SIGTERM')
+    process.once('SIGINT', onSigint)
+    process.once('SIGTERM', onSigterm)
+    try {
+      process.exitCode = await runtime.wait()
+    } finally {
+      process.off('SIGINT', onSigint)
+      process.off('SIGTERM', onSigterm)
+      runtime.close()
+    }
   }
 } catch (error) {
   process.stderr.write(`qwen-audio-agent 启动失败：${error.message}\n`)

@@ -133,7 +133,7 @@ const respondAgentPermissionTool = {
   type: 'function',
   function: {
     name: RESPOND_AGENT_PERMISSION_TOOL_NAME,
-    description: '回复当前正在等待用户决定的后台权限请求。只有用户在当前一轮明确表示始终允许或明确拒绝时才能调用；不得根据原任务、自行判断、含糊回应或沉默推断授权。always 会让当前后台会话对同类操作持续允许，reject 会拒绝本次操作。',
+    description: '回复当前正在等待用户决定的后台权限请求。由你结合刚提出的具体权限问题和用户本轮原话，智能判断为永久允许、拒绝或尚不明确；不要依赖固定关键词。若刚问的是“是否始终允许”，用户回答“可以”“行”“好”“允许”“同意”“没问题”等自然肯定表达就是明确同意，应调用 always，不得要求复述固定口令。明确拒绝时调用 reject，不明确时不要调用并继续询问。必须逐字引用本轮用户原话中的证据，不得只口头声称已授权。',
     parameters: {
       type: 'object',
       properties: {
@@ -146,8 +146,12 @@ const respondAgentPermissionTool = {
           enum: ['always', 'reject'],
           description: 'always 表示用户明确要求始终允许；reject 表示用户明确拒绝。',
         },
+        evidence: {
+          type: 'string',
+          description: '从本轮用户原话中逐字复制、直接支撑该决定的最短片段；不得改写、概括或补造。',
+        },
       },
-      required: ['authorization_id', 'decision'],
+      required: ['authorization_id', 'decision', 'evidence'],
       additionalProperties: false,
     },
   },
@@ -165,6 +169,7 @@ const TOOLS = [
 const resultResponseInstructions = [
   '这是先前提交工作的最终结果，不是用户的新请求。',
   '把 result 当作事实材料，结合当前对话自然回应；可以按语境概括、合并、承接或询问必要信息，避免重复已经表达过的内容。',
+  '输入包含多个 event 时，必须覆盖每个 event 的实质结果；不得只说其中一个，也不得让过程性或状态性内容掩盖真正完成的工作。',
   '开头直接说实际结果、关键发现、阻塞或必要问题，不用“好的、收到、任务完成了”等空泛承接语。',
   '不要朗读协议前缀、字段、执行 ID、路径、URL 或不适合口语的长内容。',
   '不要调用工具，不要添加事件中没有的事实，也不要把未完成说成完成。',
@@ -406,6 +411,13 @@ export class RealtimeFrontend {
     })
   }
 
+  ensureResponse(context = {}, { shouldCreate } = {}) {
+    return this.enqueueResponse('agent', context, () => {
+      if (shouldCreate && !shouldCreate()) return false
+      this.send({ type: 'response.create' })
+    })
+  }
+
   sendFunctionOutput(callId, output, context = {}, {
     createResponse = true,
     response,
@@ -446,10 +458,13 @@ export class RealtimeFrontend {
     })
   }
 
-  speak(text, origin = 'agent', context = {}) {
+  speak(text, origin = 'agent', context = {}, {
+    shouldSpeak,
+  } = {}) {
     const content = String(text || '').trim()
     if (!content) return Promise.resolve()
     return this.enqueueResponse(origin, context, () => {
+      if (shouldSpeak && !shouldSpeak()) return false
       this.send({
         type: 'response.create',
         response: this.provider.buildSpeakResponse(content, {
@@ -541,7 +556,16 @@ export class RealtimeFrontend {
       }
       this.pendingResponses.push(pending)
       try {
-        await create()
+        const created = await create()
+        if (created === false) {
+          const index = this.pendingResponses.indexOf(pending)
+          if (index >= 0) this.pendingResponses.splice(index, 1)
+          this.settlePending(pending, {
+            skipped: true,
+            phase: 'deduplicated',
+          })
+          return outcome
+        }
       } catch (error) {
         const index = this.pendingResponses.indexOf(pending)
         if (index >= 0) this.pendingResponses.splice(index, 1)

@@ -952,10 +952,14 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       )
     }
     if (event.type === 'task.delegated') {
-      turnStatusDisplay.status(
-        event,
-        `${style('[项目执行中]', 'yellow')} ${requestLabel(event.task)}`,
-      )
+      // A pending permission is the actionable state. Do not immediately
+      // obscure it with the broader delegated state for the same task.
+      if (event.task.authorization?.status !== 'pending') {
+        turnStatusDisplay.status(
+          event,
+          `${style('[项目执行中]', 'yellow')} ${requestLabel(event.task)}`,
+        )
+      }
     }
     if (event.type === 'task.finalizing') {
       turnStatusDisplay.status(
@@ -974,7 +978,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         event,
         `${style('[需要确认]', 'yellow')} ${
           event.task.authorization?.summary || '后台正在请求执行权限'
-        }（请直接说“始终允许”或“拒绝”）`,
+        }（请确认是否允许，或直接拒绝）`,
       )
     }
     if (event.type === 'task.failed') {

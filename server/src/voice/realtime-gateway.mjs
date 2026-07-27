@@ -21,9 +21,11 @@ import {
   ActiveVoiceClients,
   clientVoiceCapabilities,
 } from './active-voice-clients.mjs'
+import { isRecoverableRealtimeInactivityError } from './realtime-errors.mjs'
 
 const MAX_PENDING_AUDIO_CHUNKS = 30
 const RESPONSE_START_WATCHDOG_MS = 12000
+const PERMISSION_RESPONSE_GRACE_MS = 800
 const RESPONSE_CONTEXT_CLEANUP_MS = 30000
 
 function send(ws, event) {
@@ -110,6 +112,7 @@ export function attachRealtimeGateway(server, {
     let descriptor = clientDescriptor()
     let responseTurnCandidate = null
     let responseStartWatchdog = null
+    let permissionResponseTimer = null
     const announcementWindow = new AnnouncementWindow()
     const playbackTurns = new Map()
     const notificationClaimantId = `voice_${randomUUID()}`
@@ -118,6 +121,7 @@ export function attachRealtimeGateway(server, {
     const inputTurns = new TurnCorrelation()
     const transcripts = new TurnTranscripts()
     const announcedPermissions = new Set()
+    let permissionRetryTimer = null
     const activeTaskContext = () => taskManager.list({
       ownerId,
       sessionId,
@@ -138,6 +142,14 @@ export function attachRealtimeGateway(server, {
       lastActiveTaskSignature = signature
       frontend.updateAgentContext({ activeTasks })
     }
+    const schedulePermissionRetry = () => {
+      if (permissionRetryTimer || !outputEnabled || !frontend?.ready) return
+      permissionRetryTimer = setTimeout(() => {
+        permissionRetryTimer = null
+        announcePendingPermissions()
+      }, Math.max(100, config.announcementQuietMs))
+      permissionRetryTimer.unref?.()
+    }
     const announcePermission = task => {
       const permission = task?.authorization
       if (
@@ -146,13 +158,22 @@ export function attachRealtimeGateway(server, {
         || permission?.status !== 'pending'
         || announcedPermissions.has(permission.id)
       ) return
+      if (userSpeaking || announcementWindow.isBlocked()) {
+        schedulePermissionRetry()
+        return
+      }
       announcedPermissions.add(permission.id)
       frontend.injectPermission(permission, {
         turnId: task.turnId,
         taskId: task.id,
         authorizationId: permission.id,
+      }).then(outcome => {
+        if (outcome?.completed) return
+        announcedPermissions.delete(permission.id)
+        schedulePermissionRetry()
       }).catch(error => {
         announcedPermissions.delete(permission.id)
+        schedulePermissionRetry()
         send(ws, {
           type: 'error',
           message: `暂时无法询问权限：${error.message}`,
@@ -160,7 +181,14 @@ export function attachRealtimeGateway(server, {
       })
     }
     const announcePendingPermissions = () => {
-      activeTaskContext().forEach(announcePermission)
+      const activeTasks = activeTaskContext()
+      const pendingIds = new Set(activeTasks
+        .filter(task => task.authorization?.status === 'pending')
+        .map(task => task.authorization.id))
+      for (const id of announcedPermissions) {
+        if (!pendingIds.has(id)) announcedPermissions.delete(id)
+      }
+      activeTasks.forEach(announcePermission)
     }
     const announcements = new AnnouncementManager({
       getFrontend: () => frontend,
@@ -270,8 +298,37 @@ export function attachRealtimeGateway(server, {
     }
     const clearResponseCandidate = () => {
       clearTimeout(responseStartWatchdog)
+      clearTimeout(permissionResponseTimer)
       responseStartWatchdog = null
+      permissionResponseTimer = null
       responseTurnCandidate = null
+    }
+    const ensurePermissionResponseFor = context => {
+      clearTimeout(permissionResponseTimer)
+      const hasPendingPermission = () => activeTaskContext().some(task => (
+        task.authorization?.status === 'pending'
+      ))
+      if (!hasPendingPermission()) return
+      permissionResponseTimer = setTimeout(() => {
+        permissionResponseTimer = null
+        frontend?.ensureResponse({
+          turnId: context.turnId,
+          turnGeneration: context.turnGeneration,
+        }, {
+          shouldCreate: () => {
+            if (
+              responseTurnCandidate !== context
+              || !hasPendingPermission()
+            ) return false
+            clearResponseCandidate()
+            return true
+          },
+        }).catch(error => send(ws, {
+          type: 'error',
+          message: `暂时无法处理权限回答：${error.message}`,
+        }))
+      }, PERMISSION_RESPONSE_GRACE_MS)
+      permissionResponseTimer.unref?.()
     }
     const expectResponseFor = context => {
       clearResponseCandidate()
@@ -464,7 +521,10 @@ export function attachRealtimeGateway(server, {
       playbackTurns.delete(id)
       if (context) {
         context.playbackEnded = true
-        if (context.origin === 'announcement') {
+        if (
+          context.origin === 'announcement'
+          || context.consumesTaskNotification
+        ) {
           announcements.confirmMany(contextTaskIds(context))
         }
         finishResponseContextIfComplete(id, context)
@@ -542,6 +602,17 @@ export function attachRealtimeGateway(server, {
           frontend.speak(presentation.speech, 'agent', {
             turnId: task.turnId,
             taskId: task.id,
+          }, {
+            // The accepted spawn_thinking follow-up is queued before the
+            // coordinator can delegate. Evaluate this only when the delegated
+            // confirmation reaches the front of the response queue, after the
+            // earlier acknowledgement transcript has been recorded.
+            shouldSpeak: () => !conversationSync.hasEquivalentAssistantSpeech({
+              ownerId,
+              sessionId,
+              turnId: task.turnId,
+              content: presentation.speech,
+            }),
           }).catch(error => send(ws, {
             type: 'error',
             message: `暂时无法播报项目启动说明：${error.message}`,
@@ -668,6 +739,9 @@ export function attachRealtimeGateway(server, {
         }
         commitTurn(transcriptTurn)
         transcripts.record(transcriptTurn.turnId, transcript)
+        if (responseTurnCandidate === transcriptTurn) {
+          ensurePermissionResponseFor(transcriptTurn)
+        }
         conversationSync.record({
           ownerId,
           sessionId,
@@ -875,6 +949,11 @@ export function attachRealtimeGateway(server, {
             && textOnlySession
             && !responseFailed
           )
+          const completedTextTaskNotification = (
+            responseContext?.consumesTaskNotification
+            && textOnlySession
+            && !responseFailed
+          )
           if (
             responseContext
             && !responseFailed
@@ -891,6 +970,8 @@ export function attachRealtimeGateway(server, {
             } else {
               announcements.retryMany(contextTaskIds(responseContext))
             }
+          } else if (completedTextTaskNotification) {
+            announcements.confirmMany(contextTaskIds(responseContext))
           }
           responseContexts.delete(id)
         }
@@ -908,10 +989,26 @@ export function attachRealtimeGateway(server, {
         )
         timer.unref?.()
       } else if (event.type === 'error') {
+        const errorMessage = event.error?.message
+          || event.message
+          || '实时语音服务错误'
+        const recoverableInactivity = isRecoverableRealtimeInactivityError(
+          errorMessage,
+        )
+        const permissionSpeechCollision = (
+          event.__voiceOrigin === 'permission'
+          && /user is speaking/i.test(
+            errorMessage,
+          )
+        )
+        if (permissionSpeechCollision) {
+          schedulePermissionRetry()
+          return
+        }
         // 取消撞上已完成响应的良性竞态:提供方回"无进行中响应",对用户无意义,
         // 也不应触发失败簿记(此时本就没有响应在跑)。
         const benignCancelRace = /no active response/i.test(
-          event.error?.message || event.message || '',
+          errorMessage,
         )
         if (benignCancelRace) return
         const id = responseId(event)
@@ -943,7 +1040,13 @@ export function attachRealtimeGateway(server, {
           config.announcementQuietMs,
         )
         timer.unref?.()
-        send(ws, { type: 'error', message: event.error?.message || event.message || '实时语音服务错误' })
+        // Qwen may close an inactive response scope after 180 seconds while a
+        // delegated backend task is still running. The task remains healthy,
+        // and any pending announcement has already been returned to the retry
+        // queue above, so this provider housekeeping event is not user-facing.
+        if (!recoverableInactivity) {
+          send(ws, { type: 'error', message: errorMessage })
+        }
       }
     }
 
@@ -952,7 +1055,8 @@ export function attachRealtimeGateway(server, {
       if (connectPromise) return connectPromise
       const activeTasks = activeTaskContext()
       lastActiveTaskSignature = activeTaskSignature(activeTasks)
-      frontend = createRealtimeFrontend({
+      let createdFrontend
+      createdFrontend = createRealtimeFrontend({
         agentContext: {
           client: clientContext,
           textOnly: textOnlySession,
@@ -961,25 +1065,47 @@ export function attachRealtimeGateway(server, {
           activeTasks,
         },
         onEvent: handleEvent,
-        onError: error => send(ws, { type: 'error', message: error.message }),
-        onClose: () => send(ws, { type: 'voice.state', state: 'idle' }),
+        onError: error => {
+          if (!isRecoverableRealtimeInactivityError(error.message)) {
+            send(ws, { type: 'error', message: error.message })
+          }
+        },
+        onClose: () => {
+          send(ws, { type: 'voice.state', state: 'idle' })
+          if (frontend !== createdFrontend) return
+          frontend = null
+          if (!inputEnabled && !outputEnabled) return
+          const reconnectTimer = setTimeout(() => {
+            ensureFrontend()
+              .then(() => announcements.flush())
+              .catch(error => send(ws, {
+                type: 'error',
+                message: `实时语音连接恢复失败：${error.message}`,
+              }))
+          }, 0)
+          reconnectTimer.unref?.()
+        },
       })
-      connectPromise = frontend.connect()
+      frontend = createdFrontend
+      let createdConnectPromise
+      createdConnectPromise = createdFrontend.connect()
         .then(() => {
+          if (frontend !== createdFrontend) return
           refreshActiveTaskContext()
           announcePendingPermissions()
-          pendingAudio.forEach(audio => frontend.appendAudio(audio))
+          pendingAudio.forEach(audio => createdFrontend.appendAudio(audio))
           pendingAudio = []
           if (outputEnabled) claimPendingNotifications()
           send(ws, {
             type: 'voice.ready',
-            inputSampleRate: frontend.provider.inputSampleRate,
+            inputSampleRate: createdFrontend.provider.inputSampleRate,
           })
         })
         .finally(() => {
-          connectPromise = null
+          if (connectPromise === createdConnectPromise) connectPromise = null
         })
-      return connectPromise
+      connectPromise = createdConnectPromise
+      return createdConnectPromise
     }
 
     send(ws, { type: 'voice.state', state: 'idle' })
@@ -1110,6 +1236,8 @@ export function attachRealtimeGateway(server, {
       playbackTurns.clear()
       inputTurns.clear()
       announcements.close()
+      clearTimeout(permissionRetryTimer)
+      permissionRetryTimer = null
       frontend?.close()
     })
   })

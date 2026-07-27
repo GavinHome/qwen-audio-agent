@@ -59,6 +59,7 @@ function run(script, target, env = {}, args = []) {
       QWEN_AUDIO_AGENT_ENV_LOADED: '1',
       QWEN_AUDIO_AGENT_NODE: process.execPath,
       QWAUDIO_CONFIG_DIR: resolve(target.directory, 'config'),
+      OPENCLAW_BUNDLE_BIN: '',
       ...env,
     },
   })
@@ -119,7 +120,9 @@ test('OpenClaw auto mode prefers the user-installed command', {
 }, () => {
   const target = fixture()
   try {
-    command(resolve(target.bin, 'openclaw'))
+    command(resolve(target.bin, 'openclaw'), {
+      version: 'OpenClaw 2026.6.33',
+    })
     command(resolve(target.bin, 'npx'))
     assert.deepEqual(run('scripts/openclaw', target, {
       OPENCLAW_RUNTIME: 'auto',
@@ -147,6 +150,56 @@ test('OpenClaw auto mode prefers the user-installed command', {
   }
 })
 
+test('OpenClaw auto mode prefers an explicit enterprise bundle', {
+  skip: process.platform === 'win32',
+}, () => {
+  const target = fixture()
+  try {
+    const bundle = resolve(target.directory, 'bundle-openclaw')
+    command(bundle)
+    command(resolve(target.bin, 'openclaw'), {
+      version: 'OpenClaw 2026.6.33',
+    })
+    assert.deepEqual(run('scripts/openclaw', target, {
+      OPENCLAW_RUNTIME: 'auto',
+      OPENCLAW_BUNDLE_BIN: bundle,
+    }, ['acp']), [
+      'bundle-openclaw',
+      'acp',
+    ])
+  } finally {
+    target.close()
+  }
+})
+
+test('OpenClaw auto mode skips a different installed version', {
+  skip: process.platform === 'win32',
+}, () => {
+  const target = fixture()
+  try {
+    command(resolve(target.bin, 'openclaw'), {
+      version: 'OpenClaw 2026.7.1-2',
+    })
+    const packageBinary = resolve(target.bin, 'openclaw-package')
+    command(packageBinary)
+    writeFileSync(resolve(target.bin, 'npx'), [
+      '#!/bin/sh',
+      'printf "%s\\n" "$FAKE_OPENCLAW_PACKAGE_BIN"',
+      '',
+    ].join('\n'))
+    chmodSync(resolve(target.bin, 'npx'), 0o755)
+    assert.deepEqual(run('scripts/openclaw', target, {
+      OPENCLAW_RUNTIME: 'auto',
+      FAKE_OPENCLAW_PACKAGE_BIN: packageBinary,
+    }, ['acp']), [
+      'openclaw-package',
+      'acp',
+    ])
+  } finally {
+    target.close()
+  }
+})
+
 test('package mode uses pinned, configurable npm package versions', {
   skip: process.platform === 'win32',
 }, () => {
@@ -154,7 +207,16 @@ test('package mode uses pinned, configurable npm package versions', {
   const openClaw = fixture()
   try {
     command(resolve(openCode.bin, 'npx'))
-    command(resolve(openClaw.bin, 'npx'))
+    const packageBinary = resolve(openClaw.bin, 'openclaw-package')
+    command(packageBinary)
+    const resolverCapture = `${openClaw.capture}.resolve`
+    writeFileSync(resolve(openClaw.bin, 'npx'), [
+      '#!/bin/sh',
+      'printf "%s\\n" "$(basename "$0")" "$@" > "$RESOLVE_CAPTURE"',
+      'printf "%s\\n" "$FAKE_OPENCLAW_PACKAGE_BIN"',
+      '',
+    ].join('\n'))
+    chmodSync(resolve(openClaw.bin, 'npx'), 0o755)
     assert.deepEqual(run('scripts/opencode-server', openCode, {
       OPENCODE_RUNTIME: 'package',
       OPENCODE_PORT: '4321',
@@ -170,13 +232,25 @@ test('package mode uses pinned, configurable npm package versions', {
     ])
     assert.deepEqual(run('scripts/openclaw', openClaw, {
       OPENCLAW_RUNTIME: 'package',
+      RESOLVE_CAPTURE: resolverCapture,
+      FAKE_OPENCLAW_PACKAGE_BIN: packageBinary,
     }, ['gateway', 'run']), [
-      'npx',
-      '--yes',
-      'openclaw@2026.7.1-2',
+      'openclaw-package',
       'gateway',
       'run',
     ])
+    assert.deepEqual(
+      readFileSync(resolverCapture, 'utf8').trim().split('\n'),
+      [
+        'npx',
+        '--yes',
+        '--package',
+        'openclaw@2026.6.33',
+        '--',
+        'which',
+        'openclaw',
+      ],
+    )
   } finally {
     openCode.close()
     openClaw.close()
@@ -193,7 +267,10 @@ test('maps one common backend model into each native backend model', {
       version: '1.20.0',
       captureModels: true,
     })
-    command(resolve(openClaw.bin, 'openclaw'), { captureModels: true })
+    command(resolve(openClaw.bin, 'openclaw'), {
+      version: 'OpenClaw 2026.6.33',
+      captureModels: true,
+    })
     assert.deepEqual(run('scripts/opencode-server', openCode, {
       QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen-custom',
     }).slice(-3), [

@@ -233,19 +233,19 @@ export function loadRuntimeEnvironment({
     if (defaultOpenCodeWorkspace) {
       ensureManagedWorkspace(
         openCodeWorkspace,
-        resolve(root, 'config/opencode-workspace/AGENTS.md'),
+        resolve(root, 'config/opencode/workspace/AGENTS.md'),
       )
     }
     if (defaultOpenClawWorkspace) {
       ensureManagedWorkspace(
         openClawWorkspace,
-        resolve(root, 'config/openclaw-workspace/AGENTS.md'),
+        resolve(root, 'config/openclaw/workspace/AGENTS.md'),
       )
     }
     if (defaultQoderWorkspace) {
       ensureManagedWorkspace(
         qoderWorkspace,
-        resolve(root, 'config/qoder-workspace/AGENTS.md'),
+        resolve(root, 'config/qoder/workspace/AGENTS.md'),
       )
     }
     mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
