@@ -165,7 +165,7 @@ export function helpText() {
     '  -h, --help             显示帮助',
     '',
     'TUI 按键：',
-    '  x                      手动打断当前回复',
+    '  x                      手动打断当前回复（仅 Linux / Windows）',
     '  m                      静音 / 恢复麦克风',
     '  h                      在 TUI 内显示帮助',
     '  q                      退出 TUI',

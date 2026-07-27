@@ -105,12 +105,16 @@ test('uses full duplex on macOS and half duplex elsewhere', () => {
 
   assert.equal(mac.fullDuplex, true)
   assert.equal(mac.captureDuringPlayback, true)
+  assert.equal(mac.manualInterrupt, false)
   assert.equal(linux.fullDuplex, false)
   assert.equal(linux.captureDuringPlayback, false)
+  assert.equal(linux.manualInterrupt, true)
   assert.equal(windows.fullDuplex, false)
   assert.equal(windows.captureDuringPlayback, false)
+  assert.equal(windows.manualInterrupt, true)
   assert.match(helpText(mac), /macOS CoreAudio 全双工回声消除/)
-  assert.match(helpText(mac), /x  手动打断当前回复/)
+  assert.match(helpText(mac), /语音打断回复/)
+  assert.doesNotMatch(helpText(mac), /x  手动打断当前回复/)
   assert.match(helpText(linux), /回复播放完毕后可继续说话/)
   assert.match(helpText(linux), /按 x 可手动打断/)
   assert.doesNotMatch(helpText(linux), /输入文字|text\.message/)
@@ -129,8 +133,9 @@ test('drops queued microphone frames whenever half-duplex capture is gated', () 
   }), false)
 })
 
-test('manual interruption works in both full-duplex and half-duplex modes', () => {
-  for (const platform of ['darwin', 'linux']) {
+test('manual interruption works in half-duplex modes', () => {
+  for (const platform of ['linux', 'win32']) {
+    assert.equal(audioModeForPlatform(platform).manualInterrupt, true)
     const events = []
     performManualInterrupt({
       playback: {
@@ -145,7 +150,6 @@ test('manual interruption works in both full-duplex and half-duplex modes', () =
       },
       startMicrophone: () => events.push(['capture']),
       print: value => events.push(['print', value]),
-      audioMode: audioModeForPlatform(platform),
     })
     assert.deepEqual(events.slice(0, 4), [
       ['clear', 'user_interruption'],

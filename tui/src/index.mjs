@@ -56,7 +56,7 @@ function cookieFrom(response) {
 
 export function assertInteractiveTerminal(stdin = process.stdin) {
   if (!stdin.isTTY) {
-    throw new Error('minimal TUI 需要交互式终端，以支持静音和手动打断')
+    throw new Error('minimal TUI 需要交互式终端，以支持按键控制')
   }
 }
 
@@ -97,6 +97,7 @@ export function audioModeForPlatform(platform = process.platform) {
     return {
       captureDuringPlayback: true,
       fullDuplex: true,
+      manualInterrupt: false,
       label: 'CoreAudio Voice Processing（全双工 AEC）',
       shortLabel: 'CoreAudio AEC',
     }
@@ -104,6 +105,7 @@ export function audioModeForPlatform(platform = process.platform) {
   return {
     captureDuringPlayback: false,
     fullDuplex: false,
+    manualInterrupt: true,
     label: 'PortAudio（半双工）',
     shortLabel: 'PortAudio 半双工',
   }
@@ -112,10 +114,10 @@ export function audioModeForPlatform(platform = process.platform) {
 export function helpText(mode = audioModeForPlatform()) {
   return [
     mode.fullDuplex
-      ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除。'
+      ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除，可用语音打断回复。'
       : '语音模式：回复播放完毕后可继续说话；按 x 可手动打断播放。',
     '按键：',
-    '  x  手动打断当前回复',
+    ...(mode.manualInterrupt ? ['  x  手动打断当前回复'] : []),
     '  m  静音 / 恢复麦克风',
     '  h  显示帮助',
     '  q  退出',
@@ -148,7 +150,6 @@ export function performManualInterrupt({
   socket,
   startMicrophone,
   print,
-  audioMode,
 }) {
   playback.clear('user_interruption')
   transcriptRenderer.cancel()
@@ -156,12 +157,7 @@ export function performManualInterrupt({
     socket.send(JSON.stringify({ type: 'interrupt' }))
   }
   startMicrophone()
-  print(style(
-    audioMode.captureDuringPlayback
-      ? '[已手动打断]'
-      : '[已手动打断，麦克风已恢复]',
-    'yellow',
-  ))
+  print(style('[已手动打断，麦克风已恢复]', 'yellow'))
 }
 
 export function completeTranscript(streamed, final) {
@@ -861,14 +857,13 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         close()
       } else if (value === 'm') {
         setMuted(!muted)
-      } else if (value === 'x') {
+      } else if (value === 'x' && audioMode.manualInterrupt) {
         performManualInterrupt({
           playback,
           transcriptRenderer,
           socket,
           startMicrophone,
           print,
-          audioMode,
         })
       } else if (value === 'h') {
         print(helpText(audioMode))

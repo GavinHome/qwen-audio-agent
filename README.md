@@ -98,9 +98,9 @@ qwenaudio tui
 ```
 
 minimal TUI 在 macOS 使用 CoreAudio 回声消除全双工，回复播报期间继续收音，
-既支持直接说话打断，也支持按 `x` 手动打断。Linux 和 Windows 保持同一个
+只支持直接说话打断。Linux 和 Windows 保持同一个
 minimal 界面并使用 `sounddevice`/PortAudio 半双工：回复播报期间暂停麦克风，
-只能按 `x` 手动打断，播放结束后自动恢复收音。非 macOS 首次使用前请安装
+只支持按 `x` 手动打断，播放结束后自动恢复收音。非 macOS 首次使用前请安装
 `sounddevice`（并确保系统已安装 PortAudio）。
 
 或者打开 WebUI：

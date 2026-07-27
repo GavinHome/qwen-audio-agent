@@ -92,6 +92,6 @@ test('documents the service and client commands', () => {
   assert.match(text, /qwenaudio status/)
   assert.match(text, /qwenaudio config/)
   assert.match(text, /managed/)
-  assert.match(text, /x\s+手动打断当前回复/)
+  assert.match(text, /x\s+手动打断当前回复（仅 Linux \/ Windows）/)
   assert.doesNotMatch(text, /--mode|full/)
 })
