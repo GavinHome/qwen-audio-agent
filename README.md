@@ -134,6 +134,9 @@ qwenaudio webui
 
 桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。桌面 UI 已包含在 `.app`
 中，重新构建即可更新外观；Gateway 只提供 API、实时语音和后台 Agent 能力。
+桌面设置只管理 Gateway 连接地址和本机界面外观；Realtime 凭据、模型、音色以及
+后台 Agent 类型、模型和权限必须在 Gateway 启动配置或 CLI 参数中指定。设置页会
+只读显示当前 Gateway 实际使用的 Realtime 和后台 Agent。
 悬浮球启动后默认开启收音；只有麦克风准备成功后才会接入语音，权限被拒绝或初始化
 失败时会自动保持关闭。
 先按上面的步骤启动 Gateway，再从发布页下载 `.dmg`，打开后将

@@ -2,30 +2,11 @@ import { parseEnv } from 'node:util'
 
 const DEFAULTS = {
   gatewayUrl: 'http://127.0.0.1:3101',
-  realtimeProvider: 'dashscope',
-  protocol: 'opencode',
-  backendPermissionMode: 'native',
-  opencodeBaseUrl: 'http://127.0.0.1:4096',
-  openclawBaseUrl: 'http://127.0.0.1:18789',
-  backendModel: 'qwen3.7-max',
-  qoderModel: 'auto',
-  realtimeModel: 'qwen-audio-3.0-realtime-plus',
-  realtimeVoice: 'longanqian',
   orbStyle: 'fluid',
 }
 
 const SETTING_KEYS = {
   gatewayUrl: 'QWEN_AUDIO_AGENT_URL',
-  apiKey: 'DASHSCOPE_API_KEY',
-  realtimeProvider: 'QWEN_AUDIO_REALTIME_PROVIDER',
-  protocol: 'AGENT_PROTOCOL',
-  backendPermissionMode: 'QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE',
-  opencodeBaseUrl: 'OPENCODE_BASE_URL',
-  openclawBaseUrl: 'OPENCLAW_BASE_URL',
-  backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
-  qoderModel: 'QODER_MODEL',
-  realtimeModel: 'QWEN_AUDIO_REALTIME_MODEL',
-  realtimeVoice: 'QWEN_AUDIO_REALTIME_VOICE',
   orbStyle: 'QWEN_AUDIO_ORB_STYLE',
 }
 
@@ -44,63 +25,12 @@ function encoded(value) {
   return `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
-function cleanModel(value, fallback, label) {
-  const model = String(value || fallback).trim()
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(model)) {
-    throw new Error(`${label}名称格式无效`)
-  }
-  return model
-}
-
 export function parseSettings(content = '', fallback = {}) {
   const values = parseEnv(content)
-  const protocol = String(
-    values.AGENT_PROTOCOL || fallback.AGENT_PROTOCOL || DEFAULTS.protocol,
-  ).toLowerCase()
   return {
     gatewayUrl: values.QWEN_AUDIO_AGENT_URL
       || fallback.QWEN_AUDIO_AGENT_URL
       || DEFAULTS.gatewayUrl,
-    apiKey: values.DASHSCOPE_API_KEY || fallback.DASHSCOPE_API_KEY || '',
-    realtimeProvider: ['dashscope'].includes(
-      String(
-        values.QWEN_AUDIO_REALTIME_PROVIDER
-        || fallback.QWEN_AUDIO_REALTIME_PROVIDER
-        || '',
-      ).toLowerCase(),
-    ) ? String(
-        values.QWEN_AUDIO_REALTIME_PROVIDER
-        || fallback.QWEN_AUDIO_REALTIME_PROVIDER,
-      ).toLowerCase() : DEFAULTS.realtimeProvider,
-    protocol: ['opencode', 'openclaw', 'qoder'].includes(protocol)
-      ? protocol
-      : DEFAULTS.protocol,
-    backendPermissionMode: ['native', 'full'].includes(String(
-      values.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
-      || fallback.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
-      || '',
-    ).toLowerCase())
-      ? String(
-        values.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
-        || fallback.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE,
-      ).toLowerCase()
-      : DEFAULTS.backendPermissionMode,
-    opencodeBaseUrl: values.OPENCODE_BASE_URL || fallback.OPENCODE_BASE_URL
-      || DEFAULTS.opencodeBaseUrl,
-    openclawBaseUrl: values.OPENCLAW_BASE_URL || fallback.OPENCLAW_BASE_URL
-      || DEFAULTS.openclawBaseUrl,
-    backendModel: values.QWEN_AUDIO_AGENT_BACKEND_MODEL
-      || fallback.QWEN_AUDIO_AGENT_BACKEND_MODEL
-      || DEFAULTS.backendModel,
-    qoderModel: values.QODER_MODEL
-      || fallback.QODER_MODEL
-      || DEFAULTS.qoderModel,
-    realtimeModel: values.QWEN_AUDIO_REALTIME_MODEL
-      || fallback.QWEN_AUDIO_REALTIME_MODEL
-      || DEFAULTS.realtimeModel,
-    realtimeVoice: values.QWEN_AUDIO_REALTIME_VOICE
-      || fallback.QWEN_AUDIO_REALTIME_VOICE
-      || DEFAULTS.realtimeVoice,
     orbStyle: ['fluid', 'goo'].includes(
       String(
         values.QWEN_AUDIO_ORB_STYLE
@@ -115,63 +45,12 @@ export function parseSettings(content = '', fallback = {}) {
 }
 
 export function normalizeSettings(settings = {}) {
-  const realtimeProvider = String(
-    settings.realtimeProvider || DEFAULTS.realtimeProvider,
-  ).toLowerCase()
-  if (realtimeProvider !== 'dashscope') {
-    throw new Error('当前版本只支持 DashScope Realtime')
-  }
-  const protocol = String(settings.protocol || DEFAULTS.protocol).toLowerCase()
-  if (!['opencode', 'openclaw', 'qoder'].includes(protocol)) {
-    throw new Error('后台 Agent 只能选择 OpenCode、OpenClaw 或 Qoder')
-  }
-  const backendPermissionMode = String(
-    settings.backendPermissionMode || DEFAULTS.backendPermissionMode,
-  ).toLowerCase()
-  if (!['native', 'full'].includes(backendPermissionMode)) {
-    throw new Error('后台权限模式只能选择由后台决定或最高权限')
-  }
-  if (protocol === 'openclaw' && backendPermissionMode === 'full') {
-    throw new Error(
-      'OpenClaw 的最高权限需要单独配置，不能由此开关安全启用',
-    )
-  }
   return {
     gatewayUrl: cleanUrl(
       settings.gatewayUrl,
       DEFAULTS.gatewayUrl,
       'Gateway 地址',
     ),
-    apiKey: String(settings.apiKey || '').trim(),
-    realtimeProvider,
-    protocol,
-    backendPermissionMode,
-    opencodeBaseUrl: cleanUrl(
-      settings.opencodeBaseUrl,
-      DEFAULTS.opencodeBaseUrl,
-    ),
-    openclawBaseUrl: cleanUrl(
-      settings.openclawBaseUrl,
-      DEFAULTS.openclawBaseUrl,
-    ),
-    backendModel: cleanModel(
-      settings.backendModel,
-      DEFAULTS.backendModel,
-      '后台模型',
-    ),
-    qoderModel: cleanModel(
-      settings.qoderModel,
-      DEFAULTS.qoderModel,
-      'Qoder 模型',
-    ),
-    realtimeModel: cleanModel(
-      settings.realtimeModel,
-      DEFAULTS.realtimeModel,
-      '实时模型',
-    ),
-    realtimeVoice: String(
-      settings.realtimeVoice || DEFAULTS.realtimeVoice,
-    ).trim(),
     orbStyle: ['fluid', 'goo'].includes(
       String(settings.orbStyle || DEFAULTS.orbStyle).toLowerCase(),
     )

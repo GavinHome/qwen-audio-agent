@@ -138,7 +138,11 @@ qwenaudio webui
 The desktop app is a persistent voice orb that connects to the same Gateway.
 The desktop UI is bundled into the `.app`, so rebuilding the app is enough to
 update its appearance. The Gateway only provides the API, realtime voice, and
-backend Agent capabilities. The orb starts with microphone input enabled and
+backend Agent capabilities. Desktop settings manage only the Gateway connection
+URL and local appearance. Realtime credentials, model, voice, and backend Agent
+type, model, and permissions must be selected when configuring or launching the
+Gateway; the settings window displays the active values as read-only status.
+The orb starts with microphone input enabled and
 joins the voice session only after the microphone is ready. It remains disabled
 if permission is denied or initialization fails. Start the Gateway as described
 above, download the `.dmg` from the releases page, open it, and drag

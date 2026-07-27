@@ -311,18 +311,6 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
   })
   chmodSync(runtimeEnvironment.configPath, 0o600)
   const gatewayChanged = nextOrigin !== appOrigin
-  const coreChanged = [
-    'apiKey',
-    'realtimeProvider',
-    'protocol',
-    'backendPermissionMode',
-    'opencodeBaseUrl',
-    'openclawBaseUrl',
-    'backendModel',
-    'qoderModel',
-    'realtimeModel',
-    'realtimeVoice',
-  ].some(key => previous[key] !== normalized[key])
   const orbStyleChanged = previous.orbStyle !== normalized.orbStyle
   appOrigin = nextOrigin
   process.env.QWEN_AUDIO_AGENT_URL = nextOrigin
@@ -333,7 +321,7 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
   return {
     settings: normalized,
     restarted: false,
-    restartRequired: coreChanged,
+    restartRequired: false,
     runtime: nextRuntime,
   }
 })
