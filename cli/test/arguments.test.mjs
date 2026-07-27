@@ -9,6 +9,7 @@ test('defaults to the Gateway command and managed OpenCode', () => {
   assert.equal(options.url, 'http://127.0.0.1:3101')
   assert.equal(options.backend, 'opencode')
   assert.equal(options.backendMode, 'managed')
+  assert.equal(options.backendPermissionMode, 'native')
   assert.equal(options.backendUrl, 'http://127.0.0.1:4096')
 })
 
@@ -48,6 +49,43 @@ test('parses Gateway backend ownership settings', () => {
   assert.equal(options.backendMode, 'compatible')
   assert.equal(options.backendAgent, 'build')
   assert.equal(options.backendUrl, 'http://localhost:18888')
+})
+
+test('accepts Qoder only as a managed backend without a URL', () => {
+  const options = parseArguments([
+    'gateway',
+    '--backend', 'qoder',
+  ], {})
+  assert.equal(options.backend, 'qoder')
+  assert.equal(options.backendMode, 'managed')
+  assert.equal(options.backendUrl, '')
+  assert.throws(
+    () => parseArguments([
+      'gateway',
+      '--backend', 'qoder',
+      '--backend-mode', 'compatible',
+    ], {}),
+    /只支持 managed/,
+  )
+})
+
+test('parses supported backend permission modes', () => {
+  const options = parseArguments([
+    'gateway',
+    '--backend', 'qoder',
+    '--backend-permission-mode', 'full',
+  ], {})
+  assert.equal(options.backendPermissionMode, 'full')
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend', 'openclaw',
+    '--backend-permission-mode', 'full',
+  ], {}), /OpenClaw/)
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend-mode', 'compatible',
+    '--backend-permission-mode', 'full',
+  ], {}), /只支持由 Gateway 管理/)
 })
 
 test('parses foreground and service Gateway commands', () => {
@@ -104,6 +142,7 @@ test('documents the service and client commands', () => {
   assert.match(text, /qwenaudio status/)
   assert.match(text, /qwenaudio config/)
   assert.match(text, /managed/)
+  assert.match(text, /--backend-permission-mode MODE/)
   assert.match(text, /--audio-mode MODE/)
   assert.match(text, /x\s+半双工模式下手动打断当前回复/)
   assert.doesNotMatch(text, /--mode/)

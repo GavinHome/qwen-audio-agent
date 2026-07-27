@@ -22,7 +22,7 @@ function fixture() {
   const homeDirectory = resolve(base, 'home')
   mkdirSync(root, { recursive: true })
   mkdirSync(homeDirectory, { recursive: true })
-  for (const backend of ['opencode', 'openclaw']) {
+  for (const backend of ['opencode', 'openclaw', 'qoder']) {
     const workspace = resolve(root, `config/${backend}-workspace`)
     mkdirSync(workspace, { recursive: true })
     writeFileSync(resolve(workspace, 'AGENTS.md'), `# ${backend}\n`)
@@ -131,6 +131,10 @@ test('keeps managed backend data outside the installation directory', () => {
     resolve(result.configDirectory, 'workspaces/openclaw'),
   )
   assert.equal(
+    result.qoderWorkspace,
+    resolve(result.configDirectory, 'workspaces/qoder'),
+  )
+  assert.equal(
     result.openClawStateDirectory,
     resolve(result.configDirectory, 'backends/openclaw/state'),
   )
@@ -140,6 +144,7 @@ test('keeps managed backend data outside the installation directory', () => {
     result.openClawWorkspace,
   )
   assert.equal(env.OPENCLAW_STATE_DIR, result.openClawStateDirectory)
+  assert.equal(env.QODER_WORKSPACE, result.qoderWorkspace)
   assert.match(
     readFileSync(resolve(result.openCodeWorkspace, 'AGENTS.md'), 'utf8'),
     /opencode/,
@@ -166,9 +171,11 @@ test('desktop client setup does not require packaged backend templates', () => {
   assert.equal(existsSync(result.userProfilePath), true)
   assert.equal(existsSync(result.openCodeWorkspace), false)
   assert.equal(existsSync(result.openClawWorkspace), false)
+  assert.equal(existsSync(result.qoderWorkspace), false)
   assert.equal(env.OPENCODE_WORKSPACE, undefined)
   assert.equal(env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE, undefined)
   assert.equal(env.OPENCLAW_STATE_DIR, undefined)
+  assert.equal(env.QODER_WORKSPACE, undefined)
 })
 
 test('migrates private runtime data into the user config directory', () => {

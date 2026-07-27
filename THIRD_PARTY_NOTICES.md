@@ -16,6 +16,8 @@ qwen-audio-agent 使用并分发若干开源组件。项目自身使用 Apache L
 | remark-gfm | MIT | https://github.com/remarkjs/remark-gfm |
 | electron-builder | MIT | https://github.com/electron-userland/electron-builder |
 | OpenCode plugin SDK | MIT | https://github.com/anomalyco/opencode |
+| Qoder Agent SDK | Qoder Product Service Terms | https://qoder.com/product-service |
+| Zod | MIT | https://github.com/colinhacks/zod |
 | concurrently | MIT | https://github.com/open-cli-tools/concurrently |
 
 完整、可复现的依赖版本记录在 `package-lock.json`。npm 安装保留每个依赖包自带的

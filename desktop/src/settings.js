@@ -3,6 +3,7 @@ const gatewayUrl = document.querySelector('#gateway-url')
 const apiKey = document.querySelector('#api-key')
 const realtimeProvider = document.querySelector('#realtime-provider')
 const protocol = document.querySelector('#protocol')
+const backendPermissionMode = document.querySelector('#backend-permission-mode')
 const backendUrl = document.querySelector('#backend-url')
 const backendModel = document.querySelector('#backend-model')
 const realtimeModel = document.querySelector('#realtime-model')
@@ -13,14 +14,19 @@ const currentRealtime = document.querySelector('#current-realtime')
 const currentGateway = document.querySelector('#current-gateway')
 const currentBackend = document.querySelector('#current-backend')
 const submit = form.querySelector('button[type="submit"]')
+const fullPermissionOption = backendPermissionMode.querySelector(
+  'option[value="full"]',
+)
 
 let settings
 let runtime
 let draftUrls
+let draftModels
 let appliedFingerprint = ''
 let applying = false
 
 function selectedUrl() {
+  if (protocol.value === 'qoder') return ''
   return protocol.value === 'openclaw'
     ? draftUrls.openclawBaseUrl
     : draftUrls.opencodeBaseUrl
@@ -39,7 +45,17 @@ function friendlyError(error, fallback) {
 }
 
 function backendLabel(value) {
-  return value === 'openclaw' ? 'OpenClaw' : 'OpenCode'
+  if (value === 'openclaw') return 'OpenClaw'
+  if (value === 'qoder') return 'Qoder'
+  return 'OpenCode'
+}
+
+function updatePermissionAvailability() {
+  const supported = protocol.value !== 'openclaw'
+  fullPermissionOption.disabled = !supported
+  if (!supported && backendPermissionMode.value === 'full') {
+    backendPermissionMode.value = 'native'
+  }
 }
 
 function formSettings() {
@@ -50,7 +66,13 @@ function formSettings() {
     apiKey: apiKey.value,
     realtimeProvider: realtimeProvider.value,
     protocol: protocol.value,
-    backendModel: backendModel.value,
+    backendPermissionMode: backendPermissionMode.value,
+    backendModel: protocol.value === 'qoder'
+      ? draftModels.backendModel
+      : backendModel.value,
+    qoderModel: protocol.value === 'qoder'
+      ? backendModel.value
+      : draftModels.qoderModel,
     realtimeModel: realtimeModel.value,
     realtimeVoice: realtimeVoice.value,
     orbStyle: orbStyle.value,
@@ -63,7 +85,9 @@ function fingerprint(value) {
     apiKey: value.apiKey,
     realtimeProvider: value.realtimeProvider,
     protocol: value.protocol,
+    backendPermissionMode: value.backendPermissionMode,
     backendModel: value.backendModel,
+    qoderModel: value.qoderModel,
     realtimeModel: value.realtimeModel,
     realtimeVoice: value.realtimeVoice,
     orbStyle: value.orbStyle,
@@ -102,7 +126,9 @@ function renderRuntime() {
       const label = runtime.backend.label
         || backendLabel(runtime.backend.protocol)
       setBackendStatus(
-        `${label} · ${runtime.backend.baseUrl}`,
+        runtime.backend.baseUrl
+          ? `${label} · ${runtime.backend.baseUrl}`
+          : label,
         runtime.backend.connected,
       )
     }
@@ -114,12 +140,22 @@ function render() {
     opencodeBaseUrl: settings.opencodeBaseUrl,
     openclawBaseUrl: settings.openclawBaseUrl,
   }
+  draftModels = {
+    backendModel: settings.backendModel,
+    qoderModel: settings.qoderModel,
+  }
   gatewayUrl.value = settings.gatewayUrl
   apiKey.value = settings.apiKey
   realtimeProvider.value = settings.realtimeProvider
   protocol.value = settings.protocol
+  backendPermissionMode.value = settings.backendPermissionMode
+  updatePermissionAvailability()
   backendUrl.value = selectedUrl()
-  backendModel.value = settings.backendModel
+  backendModel.value = settings.protocol === 'qoder'
+    ? settings.qoderModel
+    : settings.backendModel
+  backendUrl.disabled = settings.protocol === 'qoder'
+  backendUrl.required = settings.protocol !== 'qoder'
   realtimeModel.value = settings.realtimeModel
   realtimeVoice.value = settings.realtimeVoice
   orbStyle.value = settings.orbStyle
@@ -129,7 +165,20 @@ function render() {
 }
 
 protocol.addEventListener('change', () => {
+  const previousProtocol = settings.protocol
+  if (previousProtocol === 'qoder') {
+    draftModels.qoderModel = backendModel.value
+  } else {
+    draftModels.backendModel = backendModel.value
+  }
+  settings.protocol = protocol.value
+  updatePermissionAvailability()
   backendUrl.value = selectedUrl()
+  backendUrl.disabled = protocol.value === 'qoder'
+  backendUrl.required = protocol.value !== 'qoder'
+  backendModel.value = protocol.value === 'qoder'
+    ? draftModels.qoderModel
+    : draftModels.backendModel
   showMessage('')
   updateApplyState()
 })
@@ -148,6 +197,7 @@ for (const control of [
   gatewayUrl,
   apiKey,
   realtimeProvider,
+  backendPermissionMode,
   backendModel,
   realtimeModel,
   realtimeVoice,

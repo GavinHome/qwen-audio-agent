@@ -40,6 +40,7 @@ export class OpenClawAdapter extends BackendAdapter {
   constructor(options) {
     super(options)
     this.mode = options.mode === 'compatible' ? 'compatible' : 'managed'
+    this.permissionMode = options.permissionMode === 'full' ? 'full' : 'native'
     this.agentId = String(options.coordinatorAgent || '').trim()
       || (this.mode === 'managed' ? MANAGED_AGENT : '')
     this.resolvedAgentId = null
@@ -64,6 +65,7 @@ export class OpenClawAdapter extends BackendAdapter {
       uiPath: '/api/backend/ui',
       model: this.model || null,
       mode: this.mode,
+      permissionMode: this.permissionMode,
       backendAgent: this.resolvedAgentId || this.agentId || null,
       sessionModel: 'one-persistent-backend-agent',
       protocol: this.protocol,

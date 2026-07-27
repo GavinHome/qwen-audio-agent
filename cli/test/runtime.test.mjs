@@ -138,9 +138,30 @@ test('derives selected backend configuration', () => {
   }, {}), {
     protocol: 'openclaw',
     mode: 'compatible',
+    permissionMode: 'native',
     agentId: 'build',
     baseUrl: 'http://localhost:18789',
   })
+})
+
+test('derives Qoder without an HTTP backend and rejects compatible mode', () => {
+  assert.deepEqual(resolveBackend({
+    backend: 'qoder',
+    backendMode: 'managed',
+  }, {}), {
+    protocol: 'qoder',
+    mode: 'managed',
+    permissionMode: 'native',
+    agentId: '',
+    baseUrl: null,
+  })
+  assert.throws(
+    () => resolveBackend({
+      backend: 'qoder',
+      backendMode: 'compatible',
+    }, {}),
+    /只支持 managed/,
+  )
 })
 
 test('requires complete identity before reusing a Gateway', () => {

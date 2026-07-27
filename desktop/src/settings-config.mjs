@@ -4,9 +4,11 @@ const DEFAULTS = {
   gatewayUrl: 'http://127.0.0.1:3101',
   realtimeProvider: 'dashscope',
   protocol: 'opencode',
+  backendPermissionMode: 'native',
   opencodeBaseUrl: 'http://127.0.0.1:4096',
   openclawBaseUrl: 'http://127.0.0.1:18789',
   backendModel: 'qwen3.7-max',
+  qoderModel: 'auto',
   realtimeModel: 'qwen-audio-3.0-realtime-plus',
   realtimeVoice: 'longanqian',
   orbStyle: 'fluid',
@@ -17,9 +19,11 @@ const SETTING_KEYS = {
   apiKey: 'DASHSCOPE_API_KEY',
   realtimeProvider: 'QWEN_AUDIO_REALTIME_PROVIDER',
   protocol: 'AGENT_PROTOCOL',
+  backendPermissionMode: 'QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE',
   opencodeBaseUrl: 'OPENCODE_BASE_URL',
   openclawBaseUrl: 'OPENCLAW_BASE_URL',
   backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
+  qoderModel: 'QODER_MODEL',
   realtimeModel: 'QWEN_AUDIO_REALTIME_MODEL',
   realtimeVoice: 'QWEN_AUDIO_REALTIME_VOICE',
   orbStyle: 'QWEN_AUDIO_ORB_STYLE',
@@ -68,9 +72,19 @@ export function parseSettings(content = '', fallback = {}) {
         values.QWEN_AUDIO_REALTIME_PROVIDER
         || fallback.QWEN_AUDIO_REALTIME_PROVIDER,
       ).toLowerCase() : DEFAULTS.realtimeProvider,
-    protocol: ['opencode', 'openclaw'].includes(protocol)
+    protocol: ['opencode', 'openclaw', 'qoder'].includes(protocol)
       ? protocol
       : DEFAULTS.protocol,
+    backendPermissionMode: ['native', 'full'].includes(String(
+      values.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
+      || fallback.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
+      || '',
+    ).toLowerCase())
+      ? String(
+        values.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
+        || fallback.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE,
+      ).toLowerCase()
+      : DEFAULTS.backendPermissionMode,
     opencodeBaseUrl: values.OPENCODE_BASE_URL || fallback.OPENCODE_BASE_URL
       || DEFAULTS.opencodeBaseUrl,
     openclawBaseUrl: values.OPENCLAW_BASE_URL || fallback.OPENCLAW_BASE_URL
@@ -78,6 +92,9 @@ export function parseSettings(content = '', fallback = {}) {
     backendModel: values.QWEN_AUDIO_AGENT_BACKEND_MODEL
       || fallback.QWEN_AUDIO_AGENT_BACKEND_MODEL
       || DEFAULTS.backendModel,
+    qoderModel: values.QODER_MODEL
+      || fallback.QODER_MODEL
+      || DEFAULTS.qoderModel,
     realtimeModel: values.QWEN_AUDIO_REALTIME_MODEL
       || fallback.QWEN_AUDIO_REALTIME_MODEL
       || DEFAULTS.realtimeModel,
@@ -105,8 +122,19 @@ export function normalizeSettings(settings = {}) {
     throw new Error('当前版本只支持 DashScope Realtime')
   }
   const protocol = String(settings.protocol || DEFAULTS.protocol).toLowerCase()
-  if (!['opencode', 'openclaw'].includes(protocol)) {
-    throw new Error('后台 Agent 只能选择 OpenCode 或 OpenClaw')
+  if (!['opencode', 'openclaw', 'qoder'].includes(protocol)) {
+    throw new Error('后台 Agent 只能选择 OpenCode、OpenClaw 或 Qoder')
+  }
+  const backendPermissionMode = String(
+    settings.backendPermissionMode || DEFAULTS.backendPermissionMode,
+  ).toLowerCase()
+  if (!['native', 'full'].includes(backendPermissionMode)) {
+    throw new Error('后台权限模式只能选择由后台决定或最高权限')
+  }
+  if (protocol === 'openclaw' && backendPermissionMode === 'full') {
+    throw new Error(
+      'OpenClaw 的最高权限需要单独配置，不能由此开关安全启用',
+    )
   }
   return {
     gatewayUrl: cleanUrl(
@@ -117,6 +145,7 @@ export function normalizeSettings(settings = {}) {
     apiKey: String(settings.apiKey || '').trim(),
     realtimeProvider,
     protocol,
+    backendPermissionMode,
     opencodeBaseUrl: cleanUrl(
       settings.opencodeBaseUrl,
       DEFAULTS.opencodeBaseUrl,
@@ -129,6 +158,11 @@ export function normalizeSettings(settings = {}) {
       settings.backendModel,
       DEFAULTS.backendModel,
       '后台模型',
+    ),
+    qoderModel: cleanModel(
+      settings.qoderModel,
+      DEFAULTS.qoderModel,
+      'Qoder 模型',
     ),
     realtimeModel: cleanModel(
       settings.realtimeModel,

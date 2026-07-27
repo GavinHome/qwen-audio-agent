@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   resolveBackendModels,
   resolveOpenCodeWorkspace,
+  resolveQoderWorkspace,
 } from '../src/core/config.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -23,6 +24,13 @@ test('uses only the explicit OPENCODE_WORKSPACE setting', () => {
       OPENCODE_DIRECTORY: 'legacy',
     }),
     resolve(root, 'projects/voice'),
+  )
+})
+
+test('uses the user data directory for the default Qoder workspace', () => {
+  assert.equal(
+    resolveQoderWorkspace({}, '/home/user/.config/qwaudio'),
+    '/home/user/.config/qwaudio/workspaces/qoder',
   )
 })
 

@@ -315,9 +315,11 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     'apiKey',
     'realtimeProvider',
     'protocol',
+    'backendPermissionMode',
     'opencodeBaseUrl',
     'openclawBaseUrl',
     'backendModel',
+    'qoderModel',
     'realtimeModel',
     'realtimeVoice',
   ].some(key => previous[key] !== normalized[key])

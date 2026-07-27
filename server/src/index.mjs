@@ -7,25 +7,32 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 loadRuntimeEnvironment({ root })
 
 let backendRuntime
-let stopping = false
+let agentClient
+let stopPromise
 
 function stop(signal = 'SIGTERM') {
-  if (stopping) return
-  stopping = true
+  if (stopPromise) return stopPromise
   backendRuntime?.close(signal)
+  stopPromise = Promise.resolve(agentClient?.close()).catch(error => {
+    process.stderr.write(`后台 Agent 停止失败：${error.message}\n`)
+  })
+  return stopPromise
 }
 
 try {
   backendRuntime = await startManagedBackend({ root })
+  const agentModule = await import('./agent/agent-client.mjs')
+  agentClient = agentModule.agent
   process.once('SIGINT', () => {
-    stop('SIGINT')
-    process.exit(0)
+    stop('SIGINT').finally(() => process.exit(0))
   })
   process.once('SIGTERM', () => {
-    stop('SIGTERM')
-    process.exit(0)
+    stop('SIGTERM').finally(() => process.exit(0))
   })
-  process.once('exit', () => stop())
+  process.once('exit', () => {
+    backendRuntime?.close()
+    agentClient?.close()
+  })
   await import('./app/bootstrap.mjs')
 } catch (error) {
   stop()

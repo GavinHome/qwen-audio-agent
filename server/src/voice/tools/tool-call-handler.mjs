@@ -371,7 +371,7 @@ export class ToolCallHandler {
         status: permission.status,
         authorization_id: permission.id,
         message: decision === 'always'
-          ? '已在当前 OpenCode 会话中始终允许这类操作，后台将继续执行。'
+          ? '已在当前后台会话中始终允许这类操作，后台将继续执行。'
           : '已拒绝这项操作，后台会根据结果继续处理。',
       }, turnId, permission.workId)
     } catch (error) {

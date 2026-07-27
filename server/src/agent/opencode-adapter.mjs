@@ -240,6 +240,7 @@ export class OpenCodeAdapter extends BackendAdapter {
     this.username = options.username || 'opencode'
     this.password = options.password || ''
     this.mode = options.mode === 'compatible' ? 'compatible' : 'managed'
+    this.permissionMode = options.permissionMode === 'full' ? 'full' : 'native'
     this.backendAgent = String(options.coordinatorAgent || '').trim()
       || (this.mode === 'managed' ? MANAGED_AGENT : '')
     this.resolvedAgent = null
@@ -451,6 +452,7 @@ export class OpenCodeAdapter extends BackendAdapter {
       model: this.model || null,
       directory: this.directory,
       mode: this.mode,
+      permissionMode: this.permissionMode,
       backendAgent: this.resolvedAgent || this.backendAgent || null,
       sessionModel: 'one-persistent-backend-agent',
     }

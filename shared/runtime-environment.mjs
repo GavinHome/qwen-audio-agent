@@ -20,9 +20,11 @@ const USER_CONFIG_TEMPLATE = [
   'DASHSCOPE_API_KEY=',
   'QWEN_AUDIO_REALTIME_PROVIDER=dashscope',
   '',
-  '# 可选：AGENT_PROTOCOL=opencode 或 openclaw',
+  '# 可选：AGENT_PROTOCOL=opencode、openclaw 或 qoder',
   '# AGENT_PROTOCOL=opencode',
   '# QWEN_AUDIO_AGENT_BACKEND_MODE=managed',
+  '# 权限模式：native（后台自行询问）或 full（最高权限；仅 managed OpenCode/Qoder）',
+  '# QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native',
   '# QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max',
   '# 兼容模式可选：QWEN_AUDIO_AGENT_BACKEND_AGENT=已有 Agent ID',
   '',
@@ -222,6 +224,10 @@ export function loadRuntimeEnvironment({
   const openClawStateDirectory = env.OPENCLAW_STATE_DIR
     ? resolve(root, env.OPENCLAW_STATE_DIR)
     : resolve(configDirectory, 'backends/openclaw/state')
+  const defaultQoderWorkspace = !env.QODER_WORKSPACE
+  const qoderWorkspace = env.QODER_WORKSPACE
+    ? resolve(root, env.QODER_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/qoder')
   let migratedFiles = []
   if (prepareBackendRuntime) {
     if (defaultOpenCodeWorkspace) {
@@ -236,10 +242,17 @@ export function loadRuntimeEnvironment({
         resolve(root, 'config/openclaw-workspace/AGENTS.md'),
       )
     }
+    if (defaultQoderWorkspace) {
+      ensureManagedWorkspace(
+        qoderWorkspace,
+        resolve(root, 'config/qoder-workspace/AGENTS.md'),
+      )
+    }
     mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
     env.OPENCODE_WORKSPACE = openCodeWorkspace
     env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE = openClawWorkspace
     env.OPENCLAW_STATE_DIR = openClawStateDirectory
+    env.QODER_WORKSPACE = qoderWorkspace
     migratedFiles = [
       [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
       [resolve(root, 'runtime/tasks.json'), taskStatePath],
@@ -258,6 +271,7 @@ export function loadRuntimeEnvironment({
     taskStatePath,
     openCodeWorkspace,
     openClawWorkspace,
+    qoderWorkspace,
     openClawStateDirectory,
     migratedFiles,
     loadedFiles,

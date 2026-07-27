@@ -10,8 +10,8 @@ already use.**
 qwen-audio-agent is a realtime voice frontend for mainstream Agents. You can
 keep talking as naturally as on a phone call, interrupt at any time, and use
 your voice to delegate searches, file operations, coding, and other long-running
-work. It connects to OpenCode by default, also supports OpenClaw, and provides a
-unified integration path for more backend Agents.
+work. It connects to OpenCode by default, also supports OpenClaw and Qoder, and
+provides a unified integration path for more backend Agents.
 
 It does not replace your backend Agent. Instead, it brings the Agent's existing
 models, tools, MCP servers, Skills, permissions, and project context naturally
@@ -38,7 +38,7 @@ you are always talking to the same assistant.
 - Voice conversation and delegated tasks proceed independently
 - Results return seamlessly to the conversation for follow-up or further work
 - Connect to your existing Agent tools, projects, memory, and workflows
-- Enhanced OpenCode support by default, with optional OpenClaw integration
+- Enhanced OpenCode support by default, with optional OpenClaw or Qoder integration
 - WebUI, terminal TUI, and a macOS desktop orb
 - Local user profile and personal memory across sessions
 
@@ -193,6 +193,27 @@ configuration. To switch to OpenClaw:
 AGENT_PROTOCOL=openclaw
 ```
 
+To use Qoder:
+
+```dotenv
+AGENT_PROTOCOL=qoder
+QODER_MODEL=auto
+```
+
+The Qoder adapter reuses the local `qodercli` login and native Session store.
+Its persistent coordinator can create a project Session or resume an existing
+one, and delegated voice interactions are appended to that native Qoder CLI
+history. Qoder Desktop Quests use a different record format that the official
+SDK cannot currently list or resume, so these interactions do not appear in an
+existing desktop Quest. Qoder uses its official SDK to manage CLI child
+processes, requires no backend URL, and currently supports managed mode only.
+
+Backend permissions default to `native`, leaving permission prompts to
+Qoder/OpenCode. Users who explicitly accept unattended command execution and
+file changes can set `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=full` before
+startup. Full mode is available only for managed Qoder and OpenCode, not
+compatible mode or OpenClaw.
+
 Enhanced mode starts a dedicated backend Agent for qwen-audio-agent while
 preserving your existing models, permissions, Skills, and MCP configuration.
 Compatible mode can instead connect to an already-running OpenCode or OpenClaw
@@ -209,7 +230,7 @@ User data is stored in `~/.config/qwaudio/`:
 - `frontend-memory.json`: information you explicitly ask the assistant to
   remember long term
 - `tasks.json`: task results and pending notification state
-- `workspaces/`: default OpenCode and OpenClaw working directories in enhanced
+- `workspaces/`: default OpenCode, OpenClaw, and Qoder working directories in enhanced
   mode
 - `backends/`: mutable backend Agent state and managed configuration
 
