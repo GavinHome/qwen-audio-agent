@@ -3,7 +3,7 @@ import { config } from '../core/config.mjs'
 import { TaskScheduler } from './task-scheduler.mjs'
 import { TaskStore } from './task-store.mjs'
 
-const ACTIVE = new Set(['queued', 'running'])
+const ACTIVE = new Set(['queued', 'running', 'delegated'])
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 
 function publicTask(task) {
@@ -27,6 +27,23 @@ function publicTask(task) {
     error: task.error,
     resultMetadata: task.resultMetadata || null,
     activity: [...(task.activity || [])],
+    delegation: task.delegation
+      ? {
+          status: task.delegation.status || 'running',
+          title: String(task.delegation.title || '').slice(0, 160),
+          presentation: task.delegation.presentation
+            ? {
+                speech: String(
+                  task.delegation.presentation.speech || '',
+                ).slice(0, 1200),
+                inline: task.delegation.presentation.inline || null,
+              }
+            : null,
+        }
+      : null,
+    authorization: task.authorization
+      ? { ...task.authorization }
+      : null,
     notificationStatus: task.notificationStatus,
     notificationDeliveredAt: task.notificationDeliveredAt,
   }
@@ -74,6 +91,8 @@ export class TaskManager {
           : saved.error || null,
         completedAt: wasActive ? Date.now() : saved.completedAt,
         activity: Array.isArray(saved.activity) ? saved.activity : [],
+        delegation: wasActive ? null : saved.delegation || null,
+        authorization: wasActive ? null : saved.authorization || null,
         notificationStatus: (
           wasActive || saved.notificationStatus === 'delivering'
         )
@@ -160,11 +179,14 @@ export class TaskManager {
       error: null,
       resultMetadata: null,
       activity: [],
+      delegation: null,
+      authorization: null,
       notificationStatus: 'none',
       notificationClaimantId: null,
       notificationClaimedAt: null,
       runner: runner || this.runner,
       abortController: null,
+      schedulerHeld: false,
     }
     task.promise = new Promise(resolve => {
       task.resolve = resolve
@@ -187,14 +209,46 @@ export class TaskManager {
     task.startedAt = Date.now()
     task.abortController = new AbortController()
     this.scheduler.acquire(task)
+    task.schedulerHeld = true
     this.emit('task.running', task)
     task.progressTimer = setInterval(() => {
-      if (task.status === 'running') {
+      if (ACTIVE.has(task.status)) {
         this.emit('task.progress', task, { persist: false })
       }
     }, 1000)
     task.progressTimer.unref?.()
     const onEvent = event => {
+      if (event?.type === 'backend.permission.requested' && event.permission) {
+        task.authorization = { ...event.permission }
+        this.emit('task.permission.requested', task)
+        return
+      }
+      if (event?.type === 'backend.permission.resolved' && event.permission) {
+        if (task.authorization?.id === event.permission.id) {
+          task.authorization = null
+        }
+        this.emit('task.permission.resolved', task)
+        return
+      }
+      if (event?.type === 'backend.delegated' && event.delegation) {
+        task.status = 'delegated'
+        task.delegation = { ...event.delegation }
+        if (task.schedulerHeld) {
+          this.scheduler.release(task)
+          task.schedulerHeld = false
+        }
+        this.emit('task.delegated', task)
+        this.drain()
+        return
+      }
+      if (
+        event?.type === 'backend.delegation.completed'
+        && event.delegation
+      ) {
+        task.delegation = { ...event.delegation, status: 'completed' }
+        this.emit('task.progress', task)
+        return
+      }
       if (event?.type !== 'backend.activity' || !event.activity) return
       const activity = event.activity
       const index = activity.id
@@ -230,8 +284,12 @@ export class TaskManager {
         clearInterval(task.progressTimer)
         task.progressTimer = null
         task.abortController = null
+        task.authorization = null
         if (task.status === 'cancelled') {
-          this.scheduler.release(task)
+          if (task.schedulerHeld) {
+            this.scheduler.release(task)
+            task.schedulerHeld = false
+          }
           this.drain()
           return
         }
@@ -240,7 +298,10 @@ export class TaskManager {
           ? task.completedAt - task.startedAt
           : 0
         task.notificationStatus = 'pending'
-        this.scheduler.release(task)
+        if (task.schedulerHeld) {
+          this.scheduler.release(task)
+          task.schedulerHeld = false
+        }
         this.emit(
           task.status === 'completed' ? 'task.completed' : 'task.failed',
           task,
@@ -261,8 +322,9 @@ export class TaskManager {
     ) {
       return null
     }
-    const wasRunning = task.status === 'running'
+    const wasRunning = task.status === 'running' || task.status === 'delegated'
     task.status = 'cancelled'
+    task.authorization = null
     task.completedAt = Date.now()
     task.elapsedMs = task.startedAt
       ? task.completedAt - task.startedAt

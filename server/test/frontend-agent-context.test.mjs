@@ -47,11 +47,21 @@ test('injects only bounded active task state as runtime context', () => {
         id: 'job_active',
         status: 'running',
         objective: '继续制作语音助手页面',
+        authorization: {
+          id: 'auth_one',
+          status: 'pending',
+          summary: '运行命令：npm test',
+        },
       },
       {
         id: 'job_queued',
         status: 'queued',
         objective: '等待处理的工作',
+      },
+      {
+        id: 'job_delegated',
+        status: 'delegated',
+        objective: '正在项目中处理',
       },
       {
         id: 'job_done',
@@ -64,7 +74,10 @@ test('injects only bounded active task state as runtime context', () => {
   assert.match(context, /## Active Agent Run Context/)
   assert.match(context, /work_id=job_active/)
   assert.match(context, /work_id=job_queued/)
-  assert.doesNotMatch(context, /permission|delivery=/)
+  assert.match(context, /work_id=job_delegated/)
+  assert.match(context, /authorization_id=auth_one/)
+  assert.match(context, /authorization_operation=运行命令：npm test/)
+  assert.doesNotMatch(context, /delivery=/)
   assert.match(context, /不要主动逐项播报/)
   assert.doesNotMatch(context, /job_done/)
 })

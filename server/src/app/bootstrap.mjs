@@ -157,6 +157,26 @@ app.delete('/api/tasks/:id', (req, res) => {
   res.json(task)
 })
 
+app.post('/api/permissions/:id', async (req, res, next) => {
+  const decision = String(req.body?.decision || '')
+  if (!['always', 'reject'].includes(decision)) {
+    return res.status(400).json({ error: 'decision must be always or reject' })
+  }
+  try {
+    const permission = await agent.respondPermission(
+      req.params.id,
+      decision,
+      { ownerId: req.identity.ownerId },
+    )
+    return res.json(permission)
+  } catch (error) {
+    if (error?.status === 404) {
+      return res.status(404).json({ error: error.message })
+    }
+    return next(error)
+  }
+})
+
 app.get('/api/tasks/:id/events', (req, res) => {
   const task = taskManager.get(req.params.id, { ownerId: req.identity.ownerId })
   if (!task) return res.status(404).json({ error: 'task not found' })
@@ -184,6 +204,9 @@ realtimeGateway = attachRealtimeGateway(server, {
   memoryStore: frontendMemory,
   coordinator,
   coordinatorAvailable: async () => (await agent.health()).ok === true,
+  respondPermission: (id, decision, options) => (
+    agent.respondPermission(id, decision, options)
+  ),
 })
 server.listen(config.port, config.host, () => {
   console.log(`qwen-audio-agent running at http://${config.host}:${config.port}`)

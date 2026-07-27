@@ -7,6 +7,7 @@ export function phaseForTask(task) {
   if (task.status === 'failed') return 'failed'
   if (task.status === 'cancelled') return 'cancelled'
   if (task.status === 'queued') return 'queued'
+  if (task.status === 'delegated') return 'delegated'
   if (task.workState === 'active') return 'running'
   return 'running'
 }
@@ -16,10 +17,12 @@ export function removeDeliveredTask(tasks, taskId) {
 }
 
 export function taskLabel(task) {
+  if (task.authorization?.status === 'pending') return '等待你的确认'
   if (task.phase === 'failed') return '处理失败'
   if (task.phase === 'cancelled') return '已取消'
   if (task.phase === 'disconnected') return '连接已中断'
   if (task.phase === 'queued') return '正在处理'
+  if (task.phase === 'delegated') return '项目正在执行'
   if (task.phase === 'completed') return '处理完成'
   if (task.phase === 'responding') return '正在回复'
   return '正在处理'
@@ -37,9 +40,17 @@ function latestVisibleActivity(activity = []) {
 }
 
 export function taskDetail(task) {
+  if (task.authorization?.status === 'pending') {
+    return task.authorization.summary || '后台正在请求执行权限'
+  }
   if (task.error) return task.error
   if (task.phase === 'cancelled') return '这项工作已停止'
   if (task.phase === 'queued') return task.objective
+  if (task.phase === 'delegated') {
+    return task.delegation?.title
+      ? `正在继续处理：${task.delegation.title}`
+      : '正在等待项目任务完成'
+  }
   if (task.phase === 'responding') return '结果已经返回，正在准备语音回复'
   if (task.phase === 'completed') return task.result || '结果已经发送'
   if (task.phase === 'disconnected') return '正在等待与后台重新连接'
@@ -80,6 +91,26 @@ export function taskView(task, previous = {}) {
         ? { activity: task.activity || previous.activity || [] }
         : {}
     ),
+    ...(
+      Object.hasOwn(task, 'delegation')
+      || Object.hasOwn(previous, 'delegation')
+        ? {
+            delegation: Object.hasOwn(task, 'delegation')
+              ? task.delegation
+              : previous.delegation,
+          }
+        : {}
+    ),
     error: task.error,
+    ...(
+      Object.hasOwn(task, 'authorization')
+      || Object.hasOwn(previous, 'authorization')
+        ? {
+            authorization: Object.hasOwn(task, 'authorization')
+              ? task.authorization
+              : previous.authorization,
+          }
+        : {}
+    ),
   }
 }

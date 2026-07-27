@@ -96,7 +96,7 @@ function recentSection(messages = []) {
 
 function activeRunSection(tasks = []) {
   const active = tasks
-    .filter(task => ['queued', 'running'].includes(task?.status))
+    .filter(task => ['queued', 'running', 'delegated'].includes(task?.status))
     .slice(0, MAX_ACTIVE_TASKS)
   if (!active.length) return []
   return [
@@ -107,6 +107,12 @@ function activeRunSection(tasks = []) {
       `work_id=${clean(task.id)}`,
       `status=${clean(task.status)}`,
       `objective=${clean(task.objective).slice(0, 300) || '未命名执行'}`,
+      task.authorization?.status === 'pending'
+        ? `authorization_id=${clean(task.authorization.id)}`
+        : '',
+      task.authorization?.status === 'pending'
+        ? `authorization_operation=${clean(task.authorization.summary).slice(0, 500)}`
+        : '',
     ].filter(Boolean).join(' | ')),
     '</active_agent_run_data>',
   ]

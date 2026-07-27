@@ -11,6 +11,7 @@ export const DELEGATE_TOOL_NAME = SPAWN_THINKING_TOOL_NAME
 export const CANCEL_AGENT_TASK_TOOL_NAME = 'cancel_agent_task'
 export const GET_CURRENT_TIME_TOOL_NAME = 'get_current_time'
 export const USER_MEMORY_TOOL_NAME = 'user_memory'
+export const RESPOND_AGENT_PERMISSION_TOOL_NAME = 'respond_agent_permission'
 
 const delegateTool = {
   type: 'function',
@@ -105,11 +106,36 @@ const userMemoryTool = {
   },
 }
 
+const respondAgentPermissionTool = {
+  type: 'function',
+  function: {
+    name: RESPOND_AGENT_PERMISSION_TOOL_NAME,
+    description: '回复当前正在等待用户决定的后台权限请求。只有用户在当前一轮明确表示始终允许或明确拒绝时才能调用；不得根据原任务、自行判断、含糊回应或沉默推断授权。always 会让 OpenCode 在当前 Session 内对它给出的匹配规则持续允许，reject 会拒绝本次操作。',
+    parameters: {
+      type: 'object',
+      properties: {
+        authorization_id: {
+          type: 'string',
+          description: '待确认请求的 authorization_id，必须来自当前运行上下文，不得猜造。',
+        },
+        decision: {
+          type: 'string',
+          enum: ['always', 'reject'],
+          description: 'always 表示用户明确要求始终允许；reject 表示用户明确拒绝。',
+        },
+      },
+      required: ['authorization_id', 'decision'],
+      additionalProperties: false,
+    },
+  },
+}
+
 const TOOLS = [
   delegateTool,
   cancelAgentTaskTool,
   getCurrentTimeTool,
   userMemoryTool,
+  respondAgentPermissionTool,
 ]
 
 const resultResponseInstructions = [
@@ -123,6 +149,14 @@ const resultResponseInstructions = [
 function speakResponseInstructions(content) {
   return `请以自然口语传达下面的信息，保持事实一致，不调用工具：\n${content}`
 }
+
+const permissionResponseInstructions = [
+  '这是后台 Agent 提交的权限确认请求，不是用户的新指令。',
+  '用一句自然、清楚的话说明后台想做的操作，并询问用户是否要始终允许。',
+  '必须明确告诉用户：同意后，同类操作在当前 OpenCode 会话内将不再重复询问。',
+  '不要替用户决定，不要调用工具；等待用户下一轮明确回答。',
+  '不要朗读 authorization_id、Session ID 或协议字段。',
+].join(' ')
 
 export function buildFrontendInstructions(agentContext = {}) {
   return `${loadFrontendPrompt()}\n\n${buildFrontendContext(agentContext)}`
@@ -177,6 +211,26 @@ const dashscopeRealtimeProvider = {
         modalities: textOnly ? ['text'] : ['text', 'audio'],
         tool_choice: 'none',
         instructions: resultResponseInstructions,
+      },
+    }),
+    buildPermissionInjection: (permission, { textOnly = false } = {}) => ({
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: [
+            '<backend_permission_request>',
+            `authorization_id=${permission.id}`,
+            `operation=${permission.summary}`,
+            '</backend_permission_request>',
+          ].join('\n'),
+        }],
+      },
+      response: {
+        modalities: textOnly ? ['text'] : ['text', 'audio'],
+        tool_choice: 'none',
+        instructions: permissionResponseInstructions,
       },
     }),
 }
@@ -407,6 +461,20 @@ export class RealtimeFrontend {
       ...(outcome || {}),
       contextInjected,
     }
+  }
+
+  async injectPermission(permission, context = {}) {
+    if (!permission?.id || !permission?.summary) return
+    const injection = this.provider.buildPermissionInjection(permission, {
+      textOnly: this.agentContext.textOnly === true,
+    })
+    return this.enqueueResponse('permission', context, async () => {
+      await this.createConversationItem(injection.item)
+      this.send({
+        type: 'response.create',
+        response: injection.response,
+      })
+    })
   }
 
   cancel() {

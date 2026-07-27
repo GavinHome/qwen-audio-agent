@@ -49,13 +49,14 @@ item is sent into the Backend Agent Session at a time.
 
 ## 3. Realtime boundary
 
-Realtime has exactly four tools:
+Realtime has exactly five tools:
 
 ```text
 spawn_thinking
 cancel_agent_task
 get_current_time
 user_memory
+respond_agent_permission
 ```
 
 `user_memory` keeps one small protocol for frontend-owned memory:
@@ -73,8 +74,14 @@ It does not have tools for:
 - selecting, creating, continuing, or cancelling backend Sessions;
 - choosing synchronous, asynchronous, foreground, or background execution;
 - querying qwen-audio-agent Work or selecting backend execution strategy;
-- replying to backend permission prompts;
 - selecting tools, Agents, or subagents.
+
+`respond_agent_permission` is the only exception to the rule that Realtime does
+not control backend execution. It may relay only an explicit current-turn user
+decision for a pending, owner-scoped permission request supplied by the
+Gateway. It cannot create a request, choose a tool, infer consent, or modify a
+backend permission policy. OpenCode replies are limited to `always` and
+`reject`; `always` uses OpenCode's own Session-scoped suggested patterns.
 
 The `objective` passed to `spawn_thinking` is a conservative interpretation of
 the user's request, not an execution plan. Recent voice context is separately
@@ -116,9 +123,9 @@ queued → running → completed
 ```
 
 Public fields are limited to the user request, timestamps, final result/error,
-generic tool activity, and notification state. There is no execution mode,
-delivery mode, subagent state, permission state, backend topology, or
-backend cancellation internals.
+generic tool activity, a bounded pending permission summary, and notification
+state. There is no execution mode, delivery mode, subagent state, backend
+permission identifier, backend topology, or backend cancellation internals.
 
 The UI presents both `queued` and `running` as the same “processing” state.
 Queue position is an internal scheduling detail and does not change the user's
@@ -137,8 +144,10 @@ stream into generic activity belonging to the fixed backend Agent Session:
 - text/reasoning activity represented only as “organizing result”.
 
 The UI maps this to stable phrases such as “searching”, “reading”, “generating
-an image”, or “organizing the result”. Session IDs, commands, subagent IDs,
-permissions, and raw reasoning are not shown.
+an image”, or “organizing the result”. Session IDs, subagent IDs, raw permission
+payloads, and raw reasoning are not shown. A pending permission may show the
+exact bounded operation or command needed for informed consent, after
+secret-like values are redacted.
 
 Activity never produces spoken status updates and never affects the queue.
 
@@ -170,15 +179,61 @@ after playback finishes. If the user interrupts, is speaking, or another
 response is pending, delivery waits and retries without duplicating context.
 Retries are bounded so one malformed result cannot block later completions.
 
+When the backend Agent hands work to a normal OpenCode Session, the intermediate
+transport response is instead:
+
+```json
+{
+  "work_id": "work id",
+  "state": "delegated",
+  "mode": "delegate",
+  "delegation_id": "opaque run id",
+  "target_session_id": "opaque OpenCode Session id",
+  "presentation": {
+    "speech": "a natural confirmation authored by the backend Agent",
+    "inline": null
+  }
+}
+```
+
+This response is never a user-visible completion. The adapter immediately
+lets the backend Agent naturally finish this short post-tool response, moves
+the original Work to `delegated`, and
+releases both the backend Agent serialization lock and the Work scheduler
+lane. Other voice requests can therefore use the coordinator while the target
+Session runs. The adapter independently keeps the Work lifecycle and event
+subscription alive. Only a matching `session.idle` plus a persisted assistant
+result with the same delegation ID can complete the Work. The adapter then
+briefly reacquires the backend Agent lock and sends that verified result to it
+for final presentation. A busy target, an empty result, an unrelated Session
+event, or an older result cannot complete the Work.
+
+The normal backend request timeout applies separately to the initial
+coordinator turn and the final presentation turn. It does not apply while the
+adapter is waiting for the delegated Session. During that interval, only an
+explicit Work cancellation or backend shutdown cancels the target Session.
+
+The delegated `presentation` is authored by the backend Agent with normal
+reasoning and is spoken immediately as a start confirmation. It may explain
+what was created, submitted, or planned, but it is not a final result. The
+adapter aborts the backend turn only as a timeout fallback if it fails to finish
+after the asynchronous Session tool has already succeeded.
+
 ## 8. Backend-internal capabilities
 
 The backend Agent may use native backend tools or Sessions to work in another
-project or delegate internally. This is permitted because the choice happens
-behind the backend Agent boundary.
+project or delegate internally. `session_start` and `session_send` return an
+opaque delegation ID. After either succeeds, the backend Agent must not poll,
+repeat the work, or answer from its own context; the adapter owns waiting,
+cancellation, permission routing, and result correlation.
+
+`session_status` is observational only. If the query fails, the backend Agent
+must report the failure; it must not inspect the target directory with native
+tools or duplicate the delegated work.
 
 Frontend code must not depend on which internal capability was chosen.
-Internal completions must be collected by the backend Agent and returned through
-its single final response contract.
+Frontend task snapshots may expose only a bounded title and generic delegated
+state, never delegation IDs, target Session IDs, directories, or raw events.
 
 ## 9. Dependency direction
 

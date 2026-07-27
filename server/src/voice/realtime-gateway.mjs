@@ -56,6 +56,7 @@ export function attachRealtimeGateway(server, {
   memoryStore,
   coordinator,
   coordinatorAvailable = async () => true,
+  respondPermission,
 }) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
   const activeVoiceClients = new ActiveVoiceClients()
@@ -116,6 +117,7 @@ export function attachRealtimeGateway(server, {
     const responseContexts = new Map()
     const inputTurns = new TurnCorrelation()
     const transcripts = new TurnTranscripts()
+    const announcedPermissions = new Set()
     const activeTaskContext = () => taskManager.list({
       ownerId,
       sessionId,
@@ -124,6 +126,8 @@ export function attachRealtimeGateway(server, {
     const activeTaskSignature = tasks => JSON.stringify(tasks.map(task => [
       task.id,
       task.status,
+      task.authorization?.id || null,
+      task.authorization?.status || null,
     ]))
     let lastActiveTaskSignature = ''
     const refreshActiveTaskContext = () => {
@@ -133,6 +137,30 @@ export function attachRealtimeGateway(server, {
       if (signature === lastActiveTaskSignature) return
       lastActiveTaskSignature = signature
       frontend.updateAgentContext({ activeTasks })
+    }
+    const announcePermission = task => {
+      const permission = task?.authorization
+      if (
+        !outputEnabled
+        || !frontend?.ready
+        || permission?.status !== 'pending'
+        || announcedPermissions.has(permission.id)
+      ) return
+      announcedPermissions.add(permission.id)
+      frontend.injectPermission(permission, {
+        turnId: task.turnId,
+        taskId: task.id,
+        authorizationId: permission.id,
+      }).catch(error => {
+        announcedPermissions.delete(permission.id)
+        send(ws, {
+          type: 'error',
+          message: `暂时无法询问权限：${error.message}`,
+        })
+      })
+    }
+    const announcePendingPermissions = () => {
+      activeTaskContext().forEach(announcePermission)
     }
     const announcements = new AnnouncementManager({
       getFrontend: () => frontend,
@@ -218,6 +246,7 @@ export function attachRealtimeGateway(server, {
       }),
       coordinator,
       coordinatorAvailable,
+      respondPermission,
     })
     const currentTurn = () => ({
       turnId,
@@ -485,6 +514,39 @@ export function attachRealtimeGateway(server, {
       }
       if (task.sessionId !== sessionId) return
       send(ws, { type: event.type, task })
+      if (event.type === 'task.permission.requested') {
+        refreshActiveTaskContext()
+        announcePermission(task)
+      }
+      if (event.type === 'task.permission.resolved') {
+        if (task.authorization?.id) {
+          announcedPermissions.delete(task.authorization.id)
+        }
+        refreshActiveTaskContext()
+      }
+      if (event.type === 'task.delegated') {
+        const presentation = task.delegation?.presentation
+        if (presentation?.inline?.content) {
+          send(ws, {
+            type: 'timeline.inline',
+            item: {
+              id: `inline_${task.id}_delegated`,
+              taskId: task.id,
+              turnId: task.turnId || null,
+              ...presentation.inline,
+            },
+          })
+        }
+        if (outputEnabled && frontend?.ready && presentation?.speech) {
+          frontend.speak(presentation.speech, 'agent', {
+            turnId: task.turnId,
+            taskId: task.id,
+          }).catch(error => send(ws, {
+            type: 'error',
+            message: `暂时无法播报项目启动说明：${error.message}`,
+          }))
+        }
+      }
       if (['task.completed', 'task.failed'].includes(event.type)) {
         recordResult(task)
         const inline = task.resultMetadata?.presentation?.inline
@@ -503,10 +565,13 @@ export function attachRealtimeGateway(server, {
       }
       if ([
         'task.running',
+        'task.delegated',
         'task.progress',
         'task.completed',
         'task.failed',
         'task.cancelled',
+        'task.permission.requested',
+        'task.permission.resolved',
       ].includes(event.type)) {
         refreshActiveTaskContext()
       }
@@ -899,6 +964,7 @@ export function attachRealtimeGateway(server, {
       connectPromise = frontend.connect()
         .then(() => {
           refreshActiveTaskContext()
+          announcePendingPermissions()
           pendingAudio.forEach(audio => frontend.appendAudio(audio))
           pendingAudio = []
           if (outputEnabled) claimPendingNotifications()
@@ -961,6 +1027,7 @@ export function attachRealtimeGateway(server, {
         }
         ensureFrontend()
           .then(() => {
+            announcePendingPermissions()
             claimPendingNotifications()
             announcements.flush()
           })

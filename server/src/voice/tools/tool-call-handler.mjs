@@ -3,10 +3,13 @@ import {
   DELEGATE_TOOL_NAME,
   GET_CURRENT_TIME_TOOL_NAME,
   USER_MEMORY_TOOL_NAME,
+  RESPOND_AGENT_PERMISSION_TOOL_NAME,
 } from '../realtime-provider.mjs'
 import { currentTimeSnapshot } from '../../conversation/frontend-agent-context.mjs'
 
 const SENSITIVE_MEMORY = /(?:pass(?:word)?|secret|api[_ -]?key|access[_ -]?token|credential|验证码|密码|密钥|令牌|\bsk-[a-z0-9_-]+)/i
+const EXPLICIT_ALLOW = /(?:始终允许|永久允许|总是允许|一直允许|以后都允许|不再询问|同意|允许|确认|可以|没问题|\byes\b|\ballow\b)/i
+const EXPLICIT_REJECT = /(?:拒绝|不允许|不同意|不要|不可以|别做|停止|取消|\bno\b|\breject\b|\bdeny\b)/i
 
 function failure(errorCode, userMessage, {
   retryable = false,
@@ -36,6 +39,7 @@ export class ToolCallHandler {
     getClientContext = () => ({}),
     getConversationContext = () => [],
     onMemoryChanged = () => {},
+    respondPermission,
   }) {
     this.taskManager = taskManager
     this.ownerId = ownerId
@@ -50,6 +54,7 @@ export class ToolCallHandler {
     this.getClientContext = getClientContext
     this.getConversationContext = getConversationContext
     this.onMemoryChanged = onMemoryChanged
+    this.respondPermission = respondPermission
     this.processedCalls = new Set()
     this.turnTasks = new Map()
   }
@@ -156,6 +161,10 @@ export class ToolCallHandler {
     }
     if (toolName === CANCEL_AGENT_TASK_TOOL_NAME) {
       await this.cancelAgentTask(callId, turnId, args)
+      return
+    }
+    if (toolName === RESPOND_AGENT_PERMISSION_TOOL_NAME) {
+      await this.respondAgentPermission(callId, turnId, args)
       return
     }
     if (toolName !== DELEGATE_TOOL_NAME) {
@@ -291,6 +300,70 @@ export class ToolCallHandler {
       this.onMemoryChanged()
     } catch {
       // Persistence succeeded even if a live prompt refresh did not.
+    }
+  }
+
+  async respondAgentPermission(callId, turnId, args) {
+    const authorizationId = String(args.authorization_id || '').trim()
+    const decision = String(args.decision || '').trim()
+    const transcript = String(await this.transcripts.transcript(turnId)).trim()
+    const explicitlyAllowed = EXPLICIT_ALLOW.test(transcript)
+      && !EXPLICIT_REJECT.test(transcript)
+    const explicitlyRejected = EXPLICIT_REJECT.test(transcript)
+    if (!authorizationId || !['always', 'reject'].includes(decision)) {
+      await this.sendOutput(
+        callId,
+        failure('invalid_permission_response', '没有找到有效的权限请求或决定。'),
+        turnId,
+      )
+      return
+    }
+    if (
+      (decision === 'always' && !explicitlyAllowed)
+      || (decision === 'reject' && !explicitlyRejected)
+    ) {
+      await this.sendOutput(
+        callId,
+        failure(
+          'explicit_permission_required',
+          '需要用户明确说始终允许或拒绝，不能根据含糊回答推断。',
+          { retryable: true },
+        ),
+        turnId,
+      )
+      return
+    }
+    if (!this.respondPermission) {
+      await this.sendOutput(
+        callId,
+        failure('permission_unavailable', '当前后台无法接收权限决定。'),
+        turnId,
+      )
+      return
+    }
+    try {
+      const permission = await this.respondPermission(
+        authorizationId,
+        decision,
+        { ownerId: this.ownerId },
+      )
+      await this.sendOutput(callId, {
+        status: permission.status,
+        authorization_id: permission.id,
+        message: decision === 'always'
+          ? '已在当前 OpenCode 会话中始终允许这类操作，后台将继续执行。'
+          : '已拒绝这项操作，后台会根据结果继续处理。',
+      }, turnId, permission.workId)
+    } catch (error) {
+      await this.sendOutput(
+        callId,
+        failure(
+          'permission_response_failed',
+          error?.message || '没有成功提交权限决定。',
+          { retryable: false },
+        ),
+        turnId,
+      )
     }
   }
 

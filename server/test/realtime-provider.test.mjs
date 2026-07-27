@@ -11,6 +11,7 @@ const FRONTEND_TOOL_NAMES = [
   'cancel_agent_task',
   'get_current_time',
   'user_memory',
+  'respond_agent_permission',
 ]
 
 function createQwenFrontend(options = {}) {
@@ -172,6 +173,7 @@ test('builds frontend identity, time, memory and reconnect context', () => {
   assert.match(prompt, /不要规定后台 Agent 使用哪个工具/)
   assert.match(prompt, /\[COMPLETE\]/)
   assert.doesNotMatch(prompt, /get_agent_tasks|reply_agent_permission/)
+  assert.match(prompt, /respond_agent_permission/)
   assert.match(prompt, /cancel_agent_task/)
   const memory = REALTIME_PROVIDERS.qwen
     .buildSession({ configured: false })

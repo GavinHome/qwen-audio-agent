@@ -70,6 +70,15 @@ export class AgentClient {
     return this.adapter.runCoordinator(message, options)
   }
 
+  respondPermission(id, decision, options = {}) {
+    if (!this.adapter.respondPermission) {
+      throw new AgentError('当前后台 Agent 不支持权限确认', {
+        protocol: this.protocol,
+      })
+    }
+    return this.adapter.respondPermission(id, decision, options)
+  }
+
   uiUrl(options = {}) {
     return this.adapter.uiUrl?.(options.ownerId)
       || Promise.resolve(this.adapter.describe().baseUrl)

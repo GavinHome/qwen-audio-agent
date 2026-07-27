@@ -311,6 +311,25 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   align-items: center;
   gap: 8px;
 }
+.agent-task .task-controls button {
+  padding: 5px 8px;
+  border: 1px solid #8171ca66;
+  border-radius: 8px;
+  color: #dcd6f7;
+  background: #211d33;
+  font: inherit;
+  cursor: pointer;
+}
+.agent-task .task-controls .permission-allow {
+  border-color: #4bc69466;
+  color: #a9efd4;
+  background: #142a23;
+}
+.agent-task .task-controls .permission-deny {
+  border-color: #d76f7555;
+  color: #f0b0b4;
+  background: #2b181c;
+}
 .agent-task.failed { border-color: #ef696955; }
 .agent-task.failed b { color: #ffaaaa; }
 .agent-task.cancelled { border-color: #939aa655; opacity: .82; }

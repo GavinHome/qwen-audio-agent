@@ -45,6 +45,100 @@ test('serializes work in the same coordinator lane while accepting immediately',
   assert.deepEqual(order, ['A:start', 'A:end', 'B:start'])
 })
 
+test('publishes a bounded pending permission on the active work', async () => {
+  const manager = new TaskManager()
+  let release
+  const events = []
+  manager.subscribe(event => events.push(event))
+  const task = manager.create({
+    objective: '运行检查',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    runner: async (_objective, { onEvent }) => {
+      onEvent({
+        type: 'backend.permission.requested',
+        permission: {
+          id: 'auth_one',
+          workId: 'work_one',
+          status: 'pending',
+          category: 'bash',
+          summary: '运行命令：npm test',
+        },
+      })
+      await new Promise(resolve => { release = resolve })
+      return { content: '完成' }
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.get(task.id).authorization.id, 'auth_one')
+  assert.equal(
+    events.some(event => event.type === 'task.permission.requested'),
+    true,
+  )
+  release()
+  await manager.wait(task.id)
+})
+
+test('keeps delegated work active while releasing its coordinator lane', async () => {
+  const manager = new TaskManager()
+  let finish
+  let secondStarted = false
+  const events = []
+  manager.subscribe(event => events.push(event))
+  const task = manager.create({
+    objective: '继续已有项目',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async (_objective, { onEvent }) => {
+      onEvent({
+        type: 'backend.delegated',
+        delegation: {
+          id: 'run-one',
+          sessionId: 'ses-target',
+          title: '已有项目',
+          directory: '/project',
+          presentation: {
+            speech: '项目已经接着做了。',
+            inline: null,
+          },
+        },
+      })
+      await new Promise(resolve => { finish = resolve })
+      return { content: '目标结果' }
+    },
+  })
+  const second = manager.create({
+    objective: '查询任务状态',
+    ownerId: 'owner',
+    sessionId: 'voice',
+    laneKey: 'coordinator:owner',
+    runner: async () => {
+      secondStarted = true
+      return { content: '仍在执行' }
+    },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  const delegated = manager.get(task.id)
+  assert.equal(delegated.status, 'delegated')
+  assert.equal(delegated.workState, 'active')
+  assert.equal(delegated.delegation.status, 'running')
+  assert.equal(delegated.delegation.title, '已有项目')
+  assert.equal(
+    delegated.delegation.presentation.speech,
+    '项目已经接着做了。',
+  )
+  assert.ok(events.some(event => event.type === 'task.delegated'))
+  assert.equal(secondStarted, true)
+  assert.equal(manager.get(second.id).status, 'completed')
+
+  finish()
+  await Promise.all([manager.wait(task.id), manager.wait(second.id)])
+  assert.equal(manager.get(task.id).status, 'completed')
+  assert.equal(manager.get(task.id).result, '目标结果')
+})
+
 test('cancels queued work without starting it', async () => {
   const manager = new TaskManager({ maxConcurrent: 1 })
   let releaseFirst

@@ -10,6 +10,7 @@ function harness({
   memoryStore = null,
   onMemoryChanged = () => {},
   coordinatorAvailable = async () => true,
+  respondPermission,
 } = {}) {
   const outputs = []
   const transcripts = new TurnTranscripts({ waitMs: 5 })
@@ -29,6 +30,7 @@ function harness({
     coordinatorAvailable,
     memoryStore,
     onMemoryChanged,
+    respondPermission,
     getConversationContext: () => [
       { role: 'user', content: '之前在改首页' },
     ],
@@ -163,6 +165,48 @@ test('cancels the most recently submitted active work', async () => {
   assert.equal(kit.manager.list({ active: true }).length, 0)
   assert.equal(kit.manager.list()[0].status, 'cancelled')
   release?.()
+})
+
+test('relays only an explicit always or reject permission decision', async () => {
+  const calls = []
+  const kit = harness({
+    respondPermission: async (id, decision, options) => {
+      calls.push({ id, decision, options })
+      return {
+        id,
+        workId: 'work-one',
+        status: decision === 'always' ? 'approved' : 'denied',
+      }
+    },
+  })
+  kit.transcripts.record('turn-one', '始终允许')
+  await kit.handler.handle({
+    call_id: 'permission-allow',
+    name: 'respond_agent_permission',
+    arguments: '{"authorization_id":"auth_one","decision":"always"}',
+  })
+  assert.deepEqual(calls[0], {
+    id: 'auth_one',
+    decision: 'always',
+    options: { ownerId: 'owner' },
+  })
+  assert.equal(kit.outputs.at(-1)[1].status, 'approved')
+
+  const ambiguous = harness({
+    respondPermission: async () => {
+      throw new Error('must not run')
+    },
+  })
+  ambiguous.transcripts.record('turn-one', '你看着办吧')
+  await ambiguous.handler.handle({
+    call_id: 'permission-ambiguous',
+    name: 'respond_agent_permission',
+    arguments: '{"authorization_id":"auth_two","decision":"always"}',
+  })
+  assert.equal(
+    ambiguous.outputs.at(-1)[1].error_code,
+    'explicit_permission_required',
+  )
 })
 
 test('uses one scoped memory tool for recall and remember', async () => {

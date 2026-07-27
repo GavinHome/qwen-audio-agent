@@ -65,6 +65,7 @@ test('backend Agent creates a normal top-level OpenCode session', async t => {
   }, context({ directory: workspace, worktree: workspace })))
 
   assert.equal(result.status, 'started')
+  assert.match(result.delegation_id, /^[0-9a-f-]{36}$/)
   assert.equal(result.session_id, 'ses_task')
   const create = calls.find(([name]) => name === 'create')[1]
   assert.equal(create.query.directory, taskPath)
@@ -88,62 +89,81 @@ test('OpenCode session tools reject other agents', async () => {
   )
 })
 
-test('managed OpenCode completion is injected back into backend Agent', async () => {
-  const calls = []
-  const managed = {
-    id: 'ses_task_done',
-    title: '普通 Chat',
+test('session send returns a delegation id for Gateway correlation', async () => {
+  const session = {
+    id: 'ses_existing',
+    title: '已有项目',
     directory: '/project',
     agent: 'build',
-    metadata: {
-      qwen_audio_agent_managed: true,
-      qwen_audio_agent_delivery_pending: true,
-      qwen_audio_agent_run_id: 'run_1',
-      qwen_audio_agent_backend_session_id: 'ses_coordinator',
-      qwen_audio_agent_backend_directory: '/workspace',
-    },
-    time: { created: 1, updated: 2 },
+    metadata: {},
   }
   const client = {
     session: {
       async get() {
-        return { data: managed }
-      },
-      async messages() {
-        return {
-          data: [{
-            info: { id: 'msg_result', role: 'assistant' },
-            parts: [{ type: 'text', text: '任务已经完成。' }],
-          }],
-        }
+        return { data: session }
       },
       async update(options) {
-        calls.push(['update', options])
-        managed.metadata = {
-          ...managed.metadata,
+        session.metadata = {
+          ...session.metadata,
           ...options.body.metadata,
         }
-        return { data: managed }
+        return { data: session }
       },
-      async promptAsync(options) {
-        calls.push(['promptAsync', options])
+      async promptAsync() {
         return { data: undefined }
       },
     },
   }
   const plugin = await QwenAudioAgentSessionsPlugin({ client })
-  await plugin.event({
-    event: {
-      type: 'session.idle',
-      properties: { sessionID: 'ses_task_done' },
-    },
-  })
+  const result = JSON.parse(
+    await plugin.tool.qwen_audio_agent_session_send.execute({
+      session_id: session.id,
+      prompt: '继续完成任务',
+      directory: '/project',
+    }, context()),
+  )
 
-  assert.equal(managed.metadata.qwen_audio_agent_delivery_pending, false)
-  const prompt = calls.find(([name]) => name === 'promptAsync')[1]
-  assert.equal(prompt.path.id, 'ses_coordinator')
-  assert.equal(prompt.query.directory, '/workspace')
-  assert.equal(prompt.body.agent, 'qwen-audio-agent-backend')
-  assert.match(prompt.body.parts[0].text, /任务已经完成/)
-  assert.match(prompt.body.parts[0].text, /qwen_audio_agent_backend_session_event/)
+  assert.equal(result.status, 'started')
+  assert.equal(result.session_id, session.id)
+  assert.equal(result.delegation_id, session.metadata.qwen_audio_agent_run_id)
+  assert.equal(session.metadata.qwen_audio_agent_delivery_pending, true)
+})
+
+test('session status returns a bounded latest assistant result', async () => {
+  const client = {
+    session: {
+      async get() {
+        return {
+          data: {
+            id: 'ses_existing',
+            title: '已有项目',
+            directory: '/project',
+            time: { updated: 2 },
+            metadata: {},
+          },
+        }
+      },
+      async status() {
+        return { data: { ses_existing: { type: 'busy' } } }
+      },
+      async messages() {
+        return {
+          data: [{
+            info: { role: 'assistant' },
+            parts: [{ type: 'text', text: '结'.repeat(13_000) }],
+          }],
+        }
+      },
+    },
+  }
+  const plugin = await QwenAudioAgentSessionsPlugin({ client })
+  const result = JSON.parse(
+    await plugin.tool.qwen_audio_agent_session_status.execute({
+      session_id: 'ses_existing',
+      directory: '/project',
+    }, context()),
+  )
+
+  assert.equal(result.state, 'busy')
+  assert.equal(result.latest_result.length, 12_000)
 })

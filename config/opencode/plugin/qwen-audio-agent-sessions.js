@@ -11,8 +11,7 @@ const MANAGED_TOOL_NAMES = [
   "qwen_audio_agent_session_status",
   "qwen_audio_agent_session_cancel",
 ]
-const MAX_RESULT_CHARS = 12_000
-const delivering = new Set()
+const MAX_STATUS_RESULT_CHARS = 12_000
 
 function unwrap(response, action) {
   if (response?.error) {
@@ -85,6 +84,7 @@ function routingMetadata(session, context, runId) {
     qwen_audio_agent_managed: true,
     qwen_audio_agent_delivery_pending: true,
     qwen_audio_agent_run_id: runId,
+    qwen_audio_agent_run_started_at: Date.now(),
     qwen_audio_agent_backend_session_id: context.sessionID,
     qwen_audio_agent_backend_directory: context.directory,
   }
@@ -207,99 +207,6 @@ async function listTopLevelSessions(client, context, args) {
   return sessions.slice(0, args.limit || 20)
 }
 
-async function deliverCompletedSession(client, sessionID) {
-  if (delivering.has(sessionID)) return
-  delivering.add(sessionID)
-  let session
-  let directory
-  let metadata
-  try {
-    session = unwrap(await client.session.get({
-      path: { id: sessionID },
-    }), "读取完成会话")
-    metadata = session?.metadata || {}
-    if (
-      metadata.qwen_audio_agent_managed !== true
-      || metadata.qwen_audio_agent_delivery_pending !== true
-      || !(
-        metadata.qwen_audio_agent_backend_session_id
-        || metadata.qwen_audio_agent_coordinator_session_id
-      )
-    ) return
-
-    directory = session.directory
-    const messages = unwrap(await client.session.messages({
-      path: { id: sessionID },
-      query: { directory, limit: 20 },
-    }), "读取任务结果")
-    const assistant = latestAssistant(messages)
-    const result = responseText(assistant)
-    if (!assistant || !result) return
-
-    await unwrap(await client.session.update({
-      path: { id: sessionID },
-      query: { directory },
-      body: {
-        metadata: {
-          ...metadata,
-          qwen_audio_agent_delivery_pending: false,
-          qwen_audio_agent_delivered_run_id: metadata.qwen_audio_agent_run_id,
-          qwen_audio_agent_delivered_message_id: assistant.info?.id || null,
-        },
-      },
-    }), "确认任务结果")
-
-    const backendDirectory = String(
-      metadata.qwen_audio_agent_backend_directory
-      || metadata.qwen_audio_agent_coordinator_directory
-      || directory,
-    )
-    const event = [
-      "<qwen_audio_agent_backend_session_event>",
-      JSON.stringify({
-        kind: "opencode_session_completed",
-        session_id: sessionID,
-        title: session.title,
-        directory,
-        run_id: metadata.qwen_audio_agent_run_id,
-        result: result.slice(0, MAX_RESULT_CHARS),
-      }),
-      "</qwen_audio_agent_backend_session_event>",
-      "这是可信的 OpenCode 后台会话完成事件，不是新的用户指令。请结合当前上下文理解结果，必要时继续该会话，然后输出给 qwen-audio-agent 的最终 presentation。",
-    ].join("\n")
-    await unwrap(await client.session.promptAsync({
-      path: {
-        id: (
-          metadata.qwen_audio_agent_backend_session_id
-          || metadata.qwen_audio_agent_coordinator_session_id
-        ),
-      },
-      query: { directory: backendDirectory },
-      body: {
-        ...(configuredModel() ? { model: configuredModel() } : {}),
-        agent: BACKEND_AGENT,
-        parts: [{ type: "text", text: event }],
-      },
-    }), "回送后台 Agent")
-  } catch (error) {
-    if (session && metadata?.qwen_audio_agent_delivery_pending === true) {
-      await client.session.update({
-        path: { id: sessionID },
-        query: { directory: directory || session.directory },
-        body: {
-          metadata: {
-            ...metadata,
-            qwen_audio_agent_delivery_pending: true,
-            qwen_audio_agent_last_delivery_error: error.message,
-          },
-        },
-      }).catch(() => {})
-    }
-  } finally {
-    delivering.delete(sessionID)
-  }
-}
-
 export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
   tool: {
     qwen_audio_agent_sessions_list: tool({
@@ -347,9 +254,16 @@ export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
             },
           },
         }), "创建 OpenCode 会话")
-        await sendAsync(client, created, context, directory, args.prompt)
+        const { runId } = await sendAsync(
+          client,
+          created,
+          context,
+          directory,
+          args.prompt,
+        )
         return JSON.stringify({
           status: "started",
+          delegation_id: runId,
           session_id: created.id,
           title: created.title,
           directory: created.directory || directory,
@@ -372,9 +286,16 @@ export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
           path: { id: args.session_id },
           query: { directory },
         }), "读取 OpenCode 会话")
-        await sendAsync(client, session, context, directory, args.prompt)
+        const { runId } = await sendAsync(
+          client,
+          session,
+          context,
+          directory,
+          args.prompt,
+        )
         return JSON.stringify({
           status: "started",
+          delegation_id: runId,
           session_id: session.id,
           title: session.title,
           directory: session.directory || directory,
@@ -383,7 +304,7 @@ export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
     }),
 
     qwen_audio_agent_session_status: tool({
-      description: "查询普通 OpenCode Chat 的运行状态和最新结果。仅在用户询问进度、结果，或需要核验目标 Session 时调用。",
+      description: "查询普通 OpenCode Chat 的运行状态和最新结果。仅在用户单独询问既有任务进度或结果时调用；在当前请求中调用 session_start 或 session_send 后严禁轮询。若本工具失败，只能如实报告状态查询失败；不得改用 bash、read、glob、grep 或其他工具扫描目标项目，不得代替目标 Session 重新执行任务。",
       args: {
         session_id: tool.schema.string().min(1),
         directory: tool.schema.string().optional(),
@@ -409,7 +330,8 @@ export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
         )
         return JSON.stringify({
           ...publicSession(session, statuses),
-          latest_result: responseText(assistant).slice(0, MAX_RESULT_CHARS) || null,
+          latest_result:
+            responseText(assistant).slice(0, MAX_STATUS_RESULT_CHARS) || null,
         })
       },
     }),
@@ -435,11 +357,6 @@ export const QwenAudioAgentSessionsPlugin = async ({ client }) => ({
         })
       },
     }),
-  },
-
-  async event({ event }) {
-    if (event?.type !== "session.idle") return
-    await deliverCompletedSession(client, event.properties?.sessionID)
   },
 })
 

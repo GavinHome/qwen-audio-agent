@@ -28,14 +28,39 @@ const PRESENTATION_SCHEMA = {
 
 export const COORDINATOR_DECISION_SCHEMA = {
   type: 'object',
-  properties: {
-    work_id: { type: 'string' },
-    state: { type: 'string', enum: ['completed'] },
-    mode: { type: 'string', enum: ['respond'] },
-    presentation: PRESENTATION_SCHEMA,
-  },
-  required: ['work_id', 'state', 'mode', 'presentation'],
-  additionalProperties: false,
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        work_id: { type: 'string' },
+        state: { type: 'string', enum: ['completed'] },
+        mode: { type: 'string', enum: ['respond'] },
+        presentation: PRESENTATION_SCHEMA,
+      },
+      required: ['work_id', 'state', 'mode', 'presentation'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: {
+        work_id: { type: 'string' },
+        state: { type: 'string', enum: ['delegated'] },
+        mode: { type: 'string', enum: ['delegate'] },
+        delegation_id: { type: 'string' },
+        target_session_id: { type: 'string' },
+        presentation: PRESENTATION_SCHEMA,
+      },
+      required: [
+        'work_id',
+        'state',
+        'mode',
+        'delegation_id',
+        'target_session_id',
+        'presentation',
+      ],
+      additionalProperties: false,
+    },
+  ],
 }
 
 export const NATIVE_COORDINATOR_DECISION_SCHEMA = COORDINATOR_DECISION_SCHEMA
@@ -189,6 +214,8 @@ export function buildCoordinatorPrompt({
     '返回一个 JSON 对象：',
     '{"work_id":"request_id","state":"completed","mode":"respond","presentation":{"speech":"适合语音表达的最终结果","inline":null}}',
     'work_id 对应 request_id。presentation 是本轮用户要求的最终结果；inline 可承载适合屏幕查看的 Markdown、代码或链接。',
+    '调用 session_start 或 session_send 并得到 started 后，可以根据用户原话、目标项目和工具返回，自行组织一次自然、有信息量的创建或提交成功说明，然后返回 state=delegated、mode=delegate、准确的 delegation_id、target_session_id 和 presentation。presentation.speech 就是要立刻告诉用户的说明；可以解释已经开始推进什么以及准备怎么做，但不要把尚未完成的工作说成已经完成。此后结束本轮，不要查询状态或自行重复执行；系统会等待目标 Session 完成。',
+    'session_status 只用于查询既有第三层任务状态。如果它调用失败，只能如实说明暂时无法取得状态；禁止改用 bash、read、glob、grep 或其他工具扫描目标项目，也禁止凭协调会话记忆代替目标 Session 回答原任务。',
     '这里只接受最终完成结果。不要返回 active、进度、受理确认、未来计划或“正在处理/稍等”；如果工作尚未完成，请继续处理，完成后再返回。',
   ].join('\n')
 }

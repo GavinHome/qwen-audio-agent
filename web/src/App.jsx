@@ -232,7 +232,7 @@ export default function App() {
     if (event.type === 'gateway.disconnected') {
       setActivity('qwen-audio-agent Gateway 已断开，正在重连')
       setAgentTasks(items => items.map(task => (
-        ['queued', 'running', 'responding'].includes(task.phase)
+        ['queued', 'running', 'delegated', 'responding'].includes(task.phase)
           ? { ...task, phase: 'disconnected' }
           : task
       )))
@@ -393,6 +393,35 @@ export default function App() {
         progress.id,
         task => taskView(progress, task),
         taskView(progress),
+      ))
+    }
+    if (event.type === 'task.delegated') {
+      const task = event.task
+      if (!task.turnId || task.turnId === currentTurnId.current) {
+        setActivity('项目正在执行')
+      }
+      setAgentTasks(items => upsertTask(
+        items,
+        task.id,
+        current => taskView(task, current),
+        taskView(task),
+      ))
+    }
+    if (
+      event.type === 'task.permission.requested'
+      || event.type === 'task.permission.resolved'
+    ) {
+      const task = event.task
+      if (event.type === 'task.permission.requested') {
+        setActivity('等待你的确认')
+      } else {
+        setActivity('正在继续处理')
+      }
+      setAgentTasks(items => upsertTask(
+        items,
+        task.id,
+        current => taskView(task, current),
+        taskView(task),
       ))
     }
     if (event.type === 'task.completed') {
@@ -658,6 +687,32 @@ export default function App() {
       <small>{taskDetail(agentTask)}</small>
     </div>
     {!['failed', 'disconnected'].includes(agentTask.phase) && <div className="task-controls">
+      {agentTask.authorization?.status === 'pending' && <>
+        <button
+          className="permission-allow"
+          onClick={() => {
+            fetch(`api/permissions/${encodeURIComponent(agentTask.authorization.id)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ decision: 'always' }),
+            }).catch(() => {})
+          }}
+        >
+          始终允许
+        </button>
+        <button
+          className="permission-deny"
+          onClick={() => {
+            fetch(`api/permissions/${encodeURIComponent(agentTask.authorization.id)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ decision: 'reject' }),
+            }).catch(() => {})
+          }}
+        >
+          拒绝
+        </button>
+      </>}
       <time>{Math.max(0, Math.round(agentTask.elapsedMs / 1000))}s</time>
     </div>}
   </aside>
