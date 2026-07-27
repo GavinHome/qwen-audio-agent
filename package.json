@@ -37,6 +37,7 @@
     "docs/architecture.md",
     "docs/architecture-overview.png",
     "docs/architecture-overview-en.png",
+    "docs/qwen-audio-agent-three-layer-architecture.png",
     "docs/configuration.md",
     "server/src/",
     "server/package.json",
