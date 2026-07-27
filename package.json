@@ -1,6 +1,6 @@
 {
   "name": "qwen-audio-agent",
-  "version": "0.2.0",
+  "version": "0.5.0",
   "description": "A realtime voice frontend for OpenCode and OpenClaw.",
   "author": "qwen-audio-agent contributors",
   "license": "Apache-2.0",
@@ -87,7 +87,11 @@
     "backend": "./scripts/backend",
     "openclaw": "./scripts/openclaw-gateway",
     "opencode": "./scripts/opencode-server",
-    "test": "npm run test --workspace server && npm run test --workspace web && npm run test --workspace tui && npm run test --workspace desktop && npm run test --workspace @qwen-audio-agent/cli",
+    "test": "node --test test/*.test.mjs && npm run test --workspace server && npm run test --workspace web && npm run test --workspace tui && npm run test --workspace desktop && npm run test --workspace @qwen-audio-agent/cli",
+    "version:set": "node scripts/set-version.mjs",
+    "version:patch": "node scripts/set-version.mjs patch",
+    "version:minor": "node scripts/set-version.mjs minor",
+    "version:major": "node scripts/set-version.mjs major",
     "release:check": "./scripts/release-check"
   },
   "dependencies": {

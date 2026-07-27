@@ -41,7 +41,18 @@ npm run release:check
 
 ## 发布
 
-版本标签必须与 `package.json` 完全一致，例如 `v0.2.0`。标签触发发布工作流：
+根目录 `package.json` 是项目版本的唯一来源。准备发布时使用以下任一命令，
+脚本会同步根包、所有 workspace 和 `package-lock.json`：
+
+```bash
+npm run version:patch                 # 0.5.0 → 0.5.1，兼容性修复
+npm run version:minor                 # 0.5.0 → 0.6.0，兼容性功能
+npm run version:major                 # 0.5.0 → 1.0.0，不兼容或稳定版
+npm run version:set -- 0.6.0-beta.1  # 指定预发布版本
+```
+
+更新版本后必须同步维护 `CHANGELOG.md` 并运行 `npm run release:check`。版本标签必须
+与根 `package.json` 完全一致，例如 `v0.5.0`。标签触发发布工作流：
 先运行完整检查，再以 npm provenance 发布公共包，随后构建、签名、公证 macOS
 DMG 并创建 GitHub Release。仓库维护者需预先配置 `NPM_TOKEN`、Apple Developer
 签名证书和公证凭据。

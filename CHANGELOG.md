@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
-- 终端客户端收敛到 `tui/`,提供两种风格:极简语音 TUI(`npm run tui`)
-  与全屏工作台 TUI(`npm run tui:full`,Textual,跨平台降级),另附
-  纯文字 CLI(`npm run tui:text`);两种风格共享 CoreAudio 回声消除助手。
+- 终端客户端收敛到 minimal TUI：macOS 使用 CoreAudio 回声消除全双工，
+  Linux 和 Windows 使用 PortAudio 半双工，并统一支持按键手动打断。
+- 暂时隐藏仍在开发中的全屏 TUI 和纯文字 CLI，不纳入 npm 发布包。
 - Gateway 新增 `text.message` 文字通道,与语音共用会话与任务体系;
   文字触发采用静音提交序列适配 Qwen Realtime。
 - 修复播放回执缺失响应上下文时的 Gateway 崩溃;静默打断竞态中

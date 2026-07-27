@@ -217,7 +217,7 @@ class VoiceEngine:
 
 
 def ensure_swift_helper():
-    """定位(必要时用 swiftc 编译)0.2.0 的 CoreAudio 助手,返回二进制路径。
+    """定位(必要时用 swiftc 编译)0.5.0 的 CoreAudio 助手,返回二进制路径。
 
     查找顺序:QWEN_AUDIO_AGENT_TUI_AEC_BINARY 环境变量 → 用户缓存目录
     (源码 tui/native/macos-voice-io.swift,过期自动重编)→ 脚本同目录。
@@ -250,7 +250,7 @@ def ensure_swift_helper():
 
 
 class SwiftAecEngine:
-    """macOS 系统级回声消除引擎:对接 0.2.0 的 CoreAudio 助手,外放全双工。
+    """macOS 系统级回声消除引擎:对接 0.5.0 的 CoreAudio 助手,外放全双工。
 
     协议(JSON 行):
       发 {"type":"play","audio":b64,"sampleRate":24000} / {"type":"clear"}
