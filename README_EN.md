@@ -19,7 +19,7 @@ into a realtime voice conversation.
 
 ## Keep Talking While Work Continues
 
-![qwen-audio-agent architecture](docs/architecture-overview.png)
+![qwen-audio-agent architecture](docs/architecture-overview-en.png)
 
 The realtime frontend listens, understands, and responds. It answers questions
 directly when it can, and delegates work to the backend Agent when external
