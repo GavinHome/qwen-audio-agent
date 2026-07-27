@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadRuntimeEnvironment } from '../../shared/runtime-environment.mjs'
@@ -15,16 +14,6 @@ import { manageGatewayService } from './gateway-service.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const gatewayPath = resolve(root, 'server/src/index.mjs')
 
-function childExit(child) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    child.once('error', rejectPromise)
-    child.once('exit', (code, signal) => {
-      if (signal === 'SIGINT' || signal === 'SIGTERM') resolvePromise(0)
-      else resolvePromise(code ?? 1)
-    })
-  })
-}
-
 async function runMinimal(options) {
   const moduleUrl = pathToFileURL(resolve(root, 'tui/src/index.mjs'))
   const { runTui } = await import(moduleUrl)
@@ -34,22 +23,6 @@ async function runMinimal(options) {
     takeover: options.takeover,
   })
   return 0
-}
-
-function runFull(options, spawnImpl = spawn) {
-  const child = spawnImpl(
-    process.env.PYTHON || 'python3',
-    [
-      resolve(root, 'tui/fullscreen/app.py'),
-      '--url',
-      options.url,
-      '--session',
-      options.sessionId,
-      ...(options.takeover ? ['--takeover'] : []),
-    ],
-    { cwd: root, stdio: 'inherit' },
-  )
-  return childExit(child)
 }
 
 function applyGatewayOptions(env, options) {
@@ -95,7 +68,6 @@ export async function main(argv, {
   signalSource = process,
   prepareEnvironment = () => loadRuntimeEnvironment({ root, env }),
   runMinimalTui = runMinimal,
-  runFullTui = runFull,
   prepareRuntime = options => ensureRuntime(options, { root, env }),
   inspectGateway = url => readGatewayHealth(url),
   manageService = (action, options) => manageGatewayService(action, options),
@@ -213,7 +185,6 @@ export async function main(argv, {
 
   const instance = acquireInstance(environment.configDirectory)
   try {
-    if (options.mode === 'full') return await runFullTui(options)
     return await runMinimalTui(options)
   } finally {
     instance.release()

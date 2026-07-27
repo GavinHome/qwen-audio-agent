@@ -49,10 +49,6 @@ function harness({ ownsProcesses = false } = {}) {
         calls.push(['minimal', options])
         return 11
       },
-      runFullTui: async options => {
-        calls.push(['full', options])
-        return 12
-      },
       runWebUi: async options => {
         calls.push(['webui', options])
         return 13
@@ -143,9 +139,9 @@ test('does not confuse a foreground Gateway with the background service', async 
 
 test('connects TUI and WebUI without starting services', async () => {
   const tui = harness()
-  assert.equal(await main(['tui', '--mode', 'full'], tui.dependencies), 12)
+  assert.equal(await main(['tui'], tui.dependencies), 11)
   assert.deepEqual(tui.calls.map(call => call[0]), [
-    'full',
+    'minimal',
     'instance.release',
   ])
 

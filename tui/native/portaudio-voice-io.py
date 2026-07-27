@@ -7,6 +7,7 @@ import json
 import queue
 import sys
 import threading
+import time
 
 try:
     import sounddevice as sd
@@ -27,6 +28,7 @@ def main():
     capture_enabled = threading.Event()
     playback = bytearray()
     events = queue.SimpleQueue()
+    last_status = {"message": "", "time": 0.0}
 
     def write_events():
         while True:
@@ -44,7 +46,13 @@ def main():
 
     def report_status(status):
         if status:
-            emit({"type": "error", "message": str(status)})
+            message = str(status)
+            now = time.monotonic()
+            if (message != last_status["message"]
+                    or now - last_status["time"] >= 1.0):
+                last_status["message"] = message
+                last_status["time"] = now
+                emit({"type": "error", "message": message})
 
     def capture_callback(indata, _frames, _time_info, status):
         report_status(status)

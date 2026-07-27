@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node --test",
-    "text": "node src/text-cli.mjs",
-    "fullscreen": "python3 fullscreen/app.py"
+    "test": "node --test"
   },
   "dependencies": {
     "ws": "^8.18.3"

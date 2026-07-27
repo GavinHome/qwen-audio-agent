@@ -15,12 +15,10 @@ test('defaults to the Gateway command and managed OpenCode', () => {
 test('parses independent TUI and WebUI client commands', () => {
   const tui = parseArguments([
     'tui',
-    '--mode', 'full',
     '--url', 'https://voice.example.com/path',
     '--session', 'project-one',
   ], {})
   assert.equal(tui.command, 'tui')
-  assert.equal(tui.mode, 'full')
   assert.equal(tui.url, 'https://voice.example.com')
   assert.equal(tui.sessionId, 'project-one')
 
@@ -66,8 +64,8 @@ test('parses foreground and service Gateway commands', () => {
 
 test('rejects client-only flags on unrelated commands', () => {
   assert.throws(
-    () => parseArguments(['webui', '--mode', 'full'], {}),
-    /只适用于 tui/,
+    () => parseArguments(['tui', '--mode', 'full'], {}),
+    /未知参数：--mode/,
   )
   assert.throws(
     () => parseArguments(['tui', '--no-open'], {}),
@@ -94,4 +92,6 @@ test('documents the service and client commands', () => {
   assert.match(text, /qwenaudio status/)
   assert.match(text, /qwenaudio config/)
   assert.match(text, /managed/)
+  assert.match(text, /x\s+手动打断当前回复/)
+  assert.doesNotMatch(text, /--mode|full/)
 })

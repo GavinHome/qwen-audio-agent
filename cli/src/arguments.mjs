@@ -10,7 +10,6 @@ const GATEWAY_ACTIONS = new Set([
   'status',
   'uninstall',
 ])
-const TUI_MODES = new Set(['minimal', 'full'])
 const BACKENDS = new Set(['opencode', 'openclaw'])
 const BACKEND_MODES = new Set(['managed', 'compatible'])
 
@@ -54,7 +53,6 @@ export function parseArguments(argv, env = process.env) {
   const options = {
     command,
     gatewayAction,
-    mode: 'minimal',
     url: env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
     sessionId: env.QWEN_AUDIO_AGENT_SESSION_ID || createVoiceSessionId(),
     backend: String(env.AGENT_PROTOCOL || 'opencode').toLowerCase(),
@@ -72,9 +70,7 @@ export function parseArguments(argv, env = process.env) {
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
-    if (argument === '--mode') {
-      options.mode = nextValue(args, index++, '--mode')
-    } else if (argument === '--url') {
+    if (argument === '--url') {
       options.url = nextValue(args, index++, '--url')
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend') {
@@ -101,9 +97,6 @@ export function parseArguments(argv, env = process.env) {
     else throw new Error(`未知参数：${argument}`)
   }
 
-  if (!TUI_MODES.has(options.mode)) {
-    throw new Error(`不支持的 TUI 模式：${options.mode}（可选 minimal、full）`)
-  }
   if (!BACKENDS.has(options.backend)) {
     throw new Error(`不支持的后台：${options.backend}（可选 opencode、openclaw）`)
   }
@@ -111,9 +104,6 @@ export function parseArguments(argv, env = process.env) {
     throw new Error(
       `不支持的后台模式：${options.backendMode}（可选 managed、compatible）`,
     )
-  }
-  if (command !== 'tui' && args.includes('--mode')) {
-    throw new Error('--mode 只适用于 tui')
   }
   if (command !== 'webui' && !options.openBrowser) {
     throw new Error('--no-open 只适用于 webui')
@@ -169,10 +159,15 @@ export function helpText() {
     '  --backend-agent ID     compatible 模式使用的 Agent',
     '',
     '界面选项：',
-    '  --mode minimal|full    TUI 模式（默认 minimal）',
     '  --session ID           复用指定语音会话',
     '  --takeover             接管当前语音控制权',
     '  --no-open              WebUI 只打印地址，不打开浏览器',
     '  -h, --help             显示帮助',
+    '',
+    'TUI 按键：',
+    '  x                      手动打断当前回复',
+    '  m                      静音 / 恢复麦克风',
+    '  h                      在 TUI 内显示帮助',
+    '  q                      退出 TUI',
   ].join('\n')
 }

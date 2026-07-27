@@ -54,6 +54,44 @@ function cookieFrom(response) {
   return raw.split(';', 1)[0]
 }
 
+export function assertInteractiveTerminal(stdin = process.stdin) {
+  if (!stdin.isTTY) {
+    throw new Error('minimal TUI 需要交互式终端，以支持静音和手动打断')
+  }
+}
+
+export async function readTuiHealth(baseUrl, {
+  fetchImpl = fetch,
+  timeoutMs = 5000,
+} = {}) {
+  let response
+  try {
+    response = await fetchImpl(`${baseUrl}/api/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (error) {
+    throw new Error(`无法连接 Gateway：${error.message}`)
+  }
+  let health
+  try {
+    health = await response.json()
+  } catch {
+    throw new Error('Gateway 健康检查返回了无效数据')
+  }
+  if (!response.ok) {
+    throw new Error(
+      health?.backend?.error || health?.error || 'Gateway 或后台 Agent 尚未就绪',
+    )
+  }
+  if (!health || typeof health !== 'object' || !health.backend) {
+    throw new Error('Gateway 健康检查缺少后台状态')
+  }
+  return {
+    cookie: cookieFrom(response),
+    health,
+  }
+}
+
 export function audioModeForPlatform(platform = process.platform) {
   if (platform === 'darwin') {
     return {
@@ -473,20 +511,16 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   if (options.help) {
     process.stdout.write(
       'qwen-audio-agent Voice TUI\n\n'
-      + '用法：npm run tui -- [--url URL] [--session ID]\n\n'
+      + '用法：qwenaudio tui [--url URL] [--session ID] [--takeover]\n\n'
       + `${helpText()}\n`,
     )
     return
   }
 
-  const healthResponse = await fetch(`${options.url}/api/health`)
-  const cookie = cookieFrom(healthResponse)
-  const health = await healthResponse.json()
-  if (!healthResponse.ok) {
-    throw new Error(health.backend?.error || 'qwen-audio-agent 或后台 Agent 尚未就绪')
-  }
+  assertInteractiveTerminal()
+  const { cookie, health } = await readTuiHealth(options.url)
 
-  const headers = cookie ? { Cookie: cookie } : {}
+  let headers = cookie ? { Cookie: cookie } : {}
   let inputSampleRate = health.realtimeInputSampleRate || 16000
   let muted = false
   let closed = false
@@ -499,6 +533,9 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   let everOwnedVoice = false
   let captureEnabled = false
   let captureStateSent = false
+  let audioBridge = null
+  let playback = null
+  let keypressHandler = null
   let close = () => {}
   let resolveClosed
   const closedPromise = new Promise(resolvePromise => {
@@ -515,6 +552,31 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     onAssistantDelta: content => transcriptRenderer.stream(assistantPrefix, content),
     onAssistant: content => transcriptRenderer.finish(assistantPrefix, content),
   })
+  const handleSigint = () => close()
+  const handleSigterm = () => close()
+  const cleanup = () => {
+    if (closed) return
+    closed = true
+    clearTimeout(reconnectTimer)
+    playback?.close()
+    audioBridge?.close()
+    if (keypressHandler) process.stdin.off('keypress', keypressHandler)
+    process.off('SIGINT', handleSigint)
+    process.off('SIGTERM', handleSigterm)
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.setRawMode(false)
+      } catch {
+        // The terminal may already have closed while the audio helper exited.
+      }
+    }
+    process.stdin.pause()
+    resolveClosed()
+  }
+  close = () => {
+    cleanup()
+    if (socket?.readyState < WebSocket.CLOSING) socket.close()
+  }
   const sendMicrophoneAudio = chunk => {
     if (canSendMicrophoneAudio({
       connected: socket?.readyState === WebSocket.OPEN,
@@ -534,7 +596,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     : startPortAudioVoiceIO
 
   let bridgeExited = false
-  const audioBridge = await startVoiceIO({
+  audioBridge = await startVoiceIO({
     captureSampleRate: inputSampleRate,
     onAudio: sendMicrophoneAudio,
     onError: message => print(`${style('[音频]', 'red')} ${message}`),
@@ -549,6 +611,10 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       }
     },
   })
+  if (closed) {
+    audioBridge.close()
+    return
+  }
   const setCaptureEnabled = enabled => {
     const next = Boolean(enabled)
     if (captureStateSent && captureEnabled === next) return false
@@ -559,7 +625,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   }
   setCaptureEnabled(false)
 
-  const playback = createPlayback({
+  playback = createPlayback({
     audioSink: audioBridge,
     onError: message => print(`${style('[播放错误]', 'red')} ${message}`),
     onStarted: responseId => {
@@ -615,22 +681,6 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       }
       print(style('[正在申请语音控制权]', 'green'))
     }
-  }
-
-  const cleanup = () => {
-    if (closed) return
-    closed = true
-    clearTimeout(reconnectTimer)
-    playback.close()
-    audioBridge.close()
-    if (process.stdin.isTTY) process.stdin.setRawMode(false)
-    process.stdin.pause()
-    resolveClosed()
-  }
-
-  close = () => {
-    cleanup()
-    if (socket?.readyState < WebSocket.CLOSING) socket.close()
   }
 
   const handleGatewayMessage = raw => {
@@ -727,11 +777,11 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       if (socket !== nextSocket || closed) return
       reconnectDelay = 500
       nextSocket.send(JSON.stringify({
-          type: 'connect',
-          voiceEnabled: !muted,
-          clientType: 'cli',
-          clientLabel: 'CLI',
-          takeover: options.takeover === true,
+        type: 'connect',
+        voiceEnabled: !muted,
+        clientType: 'cli',
+        clientLabel: 'CLI',
+        takeover: options.takeover === true,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         locale: Intl.DateTimeFormat().resolvedOptions().locale,
       }))
@@ -754,6 +804,8 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     nextSocket.on('close', () => {
       if (socket !== nextSocket) return
       socket = null
+      frontendReady = false
+      ownsVoice = false
       setCaptureEnabled(false)
       playback.clear()
       if (closed) {
@@ -765,17 +817,45 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         return
       }
       print(style('[qwen-audio-agent 连接中断，正在重连]', 'yellow'))
-      reconnectTimer = setTimeout(connectGateway, reconnectDelay)
-      reconnectDelay = Math.min(5000, reconnectDelay * 2)
+      scheduleReconnect()
     })
+  }
+
+  const scheduleReconnect = () => {
+    if (closed || bridgeExited) return
+    const delay = reconnectDelay
+    reconnectDelay = Math.min(5000, reconnectDelay * 2)
+    clearTimeout(reconnectTimer)
+    reconnectTimer = setTimeout(async () => {
+      if (closed || bridgeExited) return
+      try {
+        const refreshed = await readTuiHealth(options.url)
+        const nextRate = Number(
+          refreshed.health.realtimeInputSampleRate,
+        ) || inputSampleRate
+        if (nextRate !== inputSampleRate) {
+          print(
+            `${style('[音频配置已变化]', 'red')} Gateway 现在要求 `
+            + `${nextRate} Hz，请重新启动 TUI`,
+          )
+          close()
+          return
+        }
+        headers = refreshed.cookie ? { Cookie: refreshed.cookie } : {}
+        connectGateway()
+      } catch (error) {
+        print(style(`[等待 Gateway] ${error.message}`, 'yellow'))
+        scheduleReconnect()
+      }
+    }, delay)
   }
 
   connectGateway()
 
   emitKeypressEvents(process.stdin)
-  if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  process.stdin.setRawMode(true)
   process.stdin.resume()
-  process.stdin.on('keypress', async (value, key = {}) => {
+  keypressHandler = async (value, key = {}) => {
     try {
       if ((key.ctrl && key.name === 'c') || value === 'q') {
         close()
@@ -796,10 +876,11 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     } catch (error) {
       print(`[错误] ${error.message}`)
     }
-  })
+  }
+  process.stdin.on('keypress', keypressHandler)
 
-  process.once('SIGINT', close)
-  process.once('SIGTERM', close)
+  process.once('SIGINT', handleSigint)
+  process.once('SIGTERM', handleSigterm)
   await closedPromise
 }
 

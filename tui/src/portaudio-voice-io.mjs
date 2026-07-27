@@ -30,6 +30,7 @@ export async function startPortAudioVoiceIO({
   let stderr = ''
   let ready = false
   let closed = false
+  let exited = false
   let settleReady
   let rejectReady
   const readyPromise = new Promise((resolvePromise, rejectPromise) => {
@@ -89,6 +90,7 @@ export async function startPortAudioVoiceIO({
     failStartup(new Error(`无法启动 PortAudio 音频助手：${error.message}`))
   })
   child.once('exit', (code, signal) => {
+    exited = true
     clearTimeout(timeout)
     if (!ready) {
       failStartup(new Error(
@@ -134,6 +136,10 @@ export async function startPortAudioVoiceIO({
       if (closed) return
       send({ type: 'close' })
       closed = true
+      const timer = setTimeout(() => {
+        if (!exited && !child.killed) child.kill('SIGTERM')
+      }, 1000)
+      timer.unref()
     },
   }
 }

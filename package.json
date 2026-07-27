@@ -41,9 +41,10 @@
     "server/package.json",
     "shared/",
     "scripts/",
-    "tui/fullscreen/app.py",
     "tui/native/",
-    "tui/src/",
+    "tui/src/index.mjs",
+    "tui/src/macos-voice-io.mjs",
+    "tui/src/portaudio-voice-io.mjs",
     "tui/package.json",
     "web/dist/",
     "LICENSE",
@@ -87,9 +88,7 @@
     "openclaw": "./scripts/openclaw-gateway",
     "opencode": "./scripts/opencode-server",
     "test": "npm run test --workspace server && npm run test --workspace web && npm run test --workspace tui && npm run test --workspace desktop && npm run test --workspace @qwen-audio-agent/cli",
-    "release:check": "./scripts/release-check",
-    "tui:full": "npm run fullscreen --workspace tui --",
-    "tui:text": "npm run text --workspace tui --"
+    "release:check": "./scripts/release-check"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.5",

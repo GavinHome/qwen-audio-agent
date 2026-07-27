@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   audioModeForPlatform,
+  assertInteractiveTerminal,
   canSendMicrophoneAudio,
   completeTranscript,
   createPlayback,
@@ -10,6 +11,7 @@ import {
   helpText,
   parseArguments,
   performManualInterrupt,
+  readTuiHealth,
   websocketUrl,
 } from '../src/index.mjs'
 
@@ -41,6 +43,58 @@ test('builds the realtime websocket URL', () => {
   assert.equal(
     websocketUrl('https://voice.example.com', '中文 session'),
     'wss://voice.example.com/api/realtime?sessionId=%E4%B8%AD%E6%96%87+session',
+  )
+})
+
+test('requires an interactive terminal for reliable manual controls', () => {
+  assert.doesNotThrow(() => assertInteractiveTerminal({ isTTY: true }))
+  assert.throws(
+    () => assertInteractiveTerminal({ isTTY: false }),
+    /需要交互式终端/,
+  )
+})
+
+test('bounds and validates the Gateway health check', async () => {
+  let request
+  const result = await readTuiHealth('http://127.0.0.1:3101', {
+    fetchImpl: async (url, init) => {
+      request = { url, init }
+      return {
+        ok: true,
+        headers: {
+          getSetCookie: () => ['qwaudio=value; Path=/; HttpOnly'],
+          get: () => null,
+        },
+        json: async () => ({
+          backend: { ok: true },
+          realtimeInputSampleRate: 16000,
+        }),
+      }
+    },
+    timeoutMs: 25,
+  })
+  assert.equal(request.url, 'http://127.0.0.1:3101/api/health')
+  assert.ok(request.init.signal)
+  assert.equal(result.cookie, 'qwaudio=value')
+  assert.equal(result.health.backend.ok, true)
+
+  await assert.rejects(
+    readTuiHealth('http://127.0.0.1:3101', {
+      fetchImpl: async () => {
+        throw new Error('offline')
+      },
+    }),
+    /无法连接 Gateway：offline/,
+  )
+  await assert.rejects(
+    readTuiHealth('http://127.0.0.1:3101', {
+      fetchImpl: async () => ({
+        ok: true,
+        headers: { get: () => null },
+        json: async () => ({ ready: true }),
+      }),
+    }),
+    /缺少后台状态/,
   )
 })
 
