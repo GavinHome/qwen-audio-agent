@@ -2,11 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   audioModeForPlatform,
+  canSendMicrophoneAudio,
   completeTranscript,
+  createPlayback,
   createTerminalTranscriptRenderer,
   createTranscriptDisplay,
   helpText,
   parseArguments,
+  performManualInterrupt,
   websocketUrl,
 } from '../src/index.mjs'
 
@@ -47,12 +50,74 @@ test('uses full duplex on macOS and half duplex elsewhere', () => {
   const windows = audioModeForPlatform('win32')
 
   assert.equal(mac.fullDuplex, true)
+  assert.equal(mac.captureDuringPlayback, true)
   assert.equal(linux.fullDuplex, false)
+  assert.equal(linux.captureDuringPlayback, false)
   assert.equal(windows.fullDuplex, false)
+  assert.equal(windows.captureDuringPlayback, false)
   assert.match(helpText(mac), /macOS CoreAudio 全双工回声消除/)
+  assert.match(helpText(mac), /x  手动打断当前回复/)
   assert.match(helpText(linux), /回复播放完毕后可继续说话/)
   assert.match(helpText(linux), /按 x 可手动打断/)
   assert.doesNotMatch(helpText(linux), /输入文字|text\.message/)
+})
+
+test('drops queued microphone frames whenever half-duplex capture is gated', () => {
+  assert.equal(canSendMicrophoneAudio({
+    connected: true,
+    muted: false,
+    captureEnabled: true,
+  }), true)
+  assert.equal(canSendMicrophoneAudio({
+    connected: true,
+    muted: false,
+    captureEnabled: false,
+  }), false)
+})
+
+test('manual interruption works in both full-duplex and half-duplex modes', () => {
+  for (const platform of ['darwin', 'linux']) {
+    const events = []
+    performManualInterrupt({
+      playback: {
+        clear: reason => events.push(['clear', reason]),
+      },
+      transcriptRenderer: {
+        cancel: () => events.push(['cancel']),
+      },
+      socket: {
+        readyState: 1,
+        send: value => events.push(['send', JSON.parse(value)]),
+      },
+      startMicrophone: () => events.push(['capture']),
+      print: value => events.push(['print', value]),
+      audioMode: audioModeForPlatform(platform),
+    })
+    assert.deepEqual(events.slice(0, 4), [
+      ['clear', 'user_interruption'],
+      ['cancel'],
+      ['send', { type: 'interrupt' }],
+      ['capture'],
+    ])
+  }
+})
+
+test('ignores late audio from a response after manual interruption', () => {
+  const writes = []
+  const playback = createPlayback({
+    audioSink: {
+      write: buffer => {
+        writes.push(buffer)
+        return true
+      },
+      clear() {},
+    },
+  })
+
+  assert.equal(playback.write('AQI=', 24000, 'response-1'), true)
+  playback.clear('user_interruption')
+  assert.equal(playback.write('AwQ=', 24000, 'response-1'), false)
+  assert.equal(writes.length, 1)
 })
 
 test('prints a late final ASR before the assistant response for that turn', () => {

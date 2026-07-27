@@ -57,12 +57,14 @@ function cookieFrom(response) {
 export function audioModeForPlatform(platform = process.platform) {
   if (platform === 'darwin') {
     return {
+      captureDuringPlayback: true,
       fullDuplex: true,
       label: 'CoreAudio Voice Processing（全双工 AEC）',
       shortLabel: 'CoreAudio AEC',
     }
   }
   return {
+    captureDuringPlayback: false,
     fullDuplex: false,
     label: 'PortAudio（半双工）',
     shortLabel: 'PortAudio 半双工',
@@ -75,7 +77,7 @@ export function helpText(mode = audioModeForPlatform()) {
       ? '语音模式：请直接说话；使用 macOS CoreAudio 全双工回声消除。'
       : '语音模式：回复播放完毕后可继续说话；按 x 可手动打断播放。',
     '按键：',
-    ...(!mode.fullDuplex ? ['  x  打断当前回复并恢复麦克风'] : []),
+    '  x  手动打断当前回复',
     '  m  静音 / 恢复麦克风',
     '  h  显示帮助',
     '  q  退出',
@@ -92,6 +94,36 @@ function frontendLabel(holder) {
     cli: '终端',
     web: 'WebUI',
   }[holder?.type] || '其他前端'
+}
+
+export function canSendMicrophoneAudio({
+  connected,
+  muted,
+  captureEnabled,
+}) {
+  return Boolean(connected && !muted && captureEnabled)
+}
+
+export function performManualInterrupt({
+  playback,
+  transcriptRenderer,
+  socket,
+  startMicrophone,
+  print,
+  audioMode,
+}) {
+  playback.clear('user_interruption')
+  transcriptRenderer.cancel()
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'interrupt' }))
+  }
+  startMicrophone()
+  print(style(
+    audioMode.captureDuringPlayback
+      ? '[已手动打断]'
+      : '[已手动打断，麦克风已恢复]',
+    'yellow',
+  ))
 }
 
 export function completeTranscript(streamed, final) {
@@ -337,7 +369,7 @@ export function createTerminalTranscriptRenderer({
   }
 }
 
-function createPlayback({
+export function createPlayback({
   audioSink,
   onError,
   onStarted,
@@ -350,6 +382,16 @@ function createPlayback({
   const endTimers = new Map()
   const startedResponses = new Set()
   const responseEndMs = new Map()
+  const cancelledResponses = new Set()
+  const cancelledResponseOrder = []
+  const rememberCancelled = responseId => {
+    if (!responseId || cancelledResponses.has(responseId)) return
+    cancelledResponses.add(responseId)
+    cancelledResponseOrder.push(responseId)
+    while (cancelledResponseOrder.length > 200) {
+      cancelledResponses.delete(cancelledResponseOrder.shift())
+    }
+  }
   const stop = (reason = '') => {
     const activeResponseIds = new Set([
       ...startTimers.keys(),
@@ -360,6 +402,7 @@ function createPlayback({
     for (const timer of startTimers.values()) clearTimeout(timer)
     for (const timer of endTimers.values()) clearTimeout(timer)
     for (const responseId of activeResponseIds) {
+      rememberCancelled(responseId)
       onCancelled?.(responseId, reason)
     }
     startTimers.clear()
@@ -371,12 +414,16 @@ function createPlayback({
   }
   return {
     write(base64, rate = OUTPUT_SAMPLE_RATE, responseId = '') {
+      if (responseId && cancelledResponses.has(responseId)) return false
       const buffer = Buffer.from(base64, 'base64')
-      if (!buffer.length) return
+      if (!buffer.length) return true
       if (!audioSink.write(buffer, rate)) {
         onError?.('音频设备未接受播放数据')
-        if (responseId) onCancelled?.(responseId)
-        return
+        if (responseId) {
+          rememberCancelled(responseId)
+          onCancelled?.(responseId)
+        }
+        return false
       }
       const now = Date.now()
       const startMs = Math.max(now + 20, cursorMs)
@@ -394,9 +441,11 @@ function createPlayback({
         }, Math.max(0, startMs - now))
         startTimers.set(responseId, timer)
       }
+      return true
     },
     done(responseId = '') {
       if (!responseId || endTimers.has(responseId)) return
+      if (cancelledResponses.delete(responseId)) return
       const finish = () => {
         endTimers.delete(responseId)
         responseEndMs.delete(responseId)
@@ -448,6 +497,8 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   let frontendReady = false
   let ownsVoice = false
   let everOwnedVoice = false
+  let captureEnabled = false
+  let captureStateSent = false
   let close = () => {}
   let resolveClosed
   const closedPromise = new Promise(resolvePromise => {
@@ -465,10 +516,11 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     onAssistant: content => transcriptRenderer.finish(assistantPrefix, content),
   })
   const sendMicrophoneAudio = chunk => {
-    if (
-      socket?.readyState === WebSocket.OPEN
-      && !muted
-    ) {
+    if (canSendMicrophoneAudio({
+      connected: socket?.readyState === WebSocket.OPEN,
+      muted,
+      captureEnabled,
+    })) {
       socket.send(JSON.stringify({
         type: 'audio.append',
         audio: chunk.toString('base64'),
@@ -497,11 +549,11 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       }
     },
   })
-  let captureEnabled = null
   const setCaptureEnabled = enabled => {
     const next = Boolean(enabled)
-    if (captureEnabled === next) return false
+    if (captureStateSent && captureEnabled === next) return false
     captureEnabled = next
+    captureStateSent = true
     audioBridge.setCaptureEnabled(next)
     return true
   }
@@ -530,7 +582,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       }
     },
     onIdle: () => {
-      if (!audioMode.fullDuplex) startMicrophone()
+      if (!audioMode.captureDuringPlayback) startMicrophone()
     },
   })
 
@@ -633,15 +685,16 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     if (event.type === 'playback.clear') {
       playback.clear(event.reason || '')
       transcriptRenderer.cancel()
-      if (!audioMode.fullDuplex) startMicrophone()
+      if (!audioMode.captureDuringPlayback) startMicrophone()
     }
     if (event.type === 'audio.delta') {
-      if (!audioMode.fullDuplex) setCaptureEnabled(false)
-      playback.write(
+      if (!audioMode.captureDuringPlayback) setCaptureEnabled(false)
+      const accepted = playback.write(
         event.audio,
         Number(event.sampleRate) || OUTPUT_SAMPLE_RATE,
         event.responseId,
       )
+      if (!audioMode.captureDuringPlayback && !accepted) startMicrophone()
     }
     if (event.type === 'audio.done') playback.done(event.responseId)
     transcriptDisplay.handle(event)
@@ -728,14 +781,15 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         close()
       } else if (value === 'm') {
         setMuted(!muted)
-      } else if (value === 'x' && !audioMode.fullDuplex) {
-        playback.clear('user_interruption')
-        transcriptRenderer.cancel()
-        if (socket?.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'interrupt' }))
-        }
-        startMicrophone()
-        print(style('[已手动打断，麦克风已恢复]', 'yellow'))
+      } else if (value === 'x') {
+        performManualInterrupt({
+          playback,
+          transcriptRenderer,
+          socket,
+          startMicrophone,
+          print,
+          audioMode,
+        })
       } else if (value === 'h') {
         print(helpText(audioMode))
       }
