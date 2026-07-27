@@ -7,8 +7,9 @@
 **自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
 
 qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续说话、
-随时打断，也可以直接用语音安排搜索、文件、代码和其他耗时工作。默认连接
-OpenCode，也支持 OpenClaw，并为更多后台 Agent 保留统一的接入方式。
+随时打断，也可以直接用语音安排搜索、文件、代码和其他耗时工作。它通过统一的
+Adapter 架构连接不同 Agent；项目会持续接入主流 Agent，而不把产品绑定到某一个
+默认后台。
 
 它不替代后台 Agent，而是让已有的模型、工具、MCP、Skill、权限和项目上下文，
 自然进入实时语音对话。
@@ -36,13 +37,32 @@ Realtime 前台负责倾听、理解和表达。能直接回答的问题立即�
 图中的 OpenCode Adapter 是当前开发示例，不是架构限制。其他支持会话、事件、
 取消和权限交互的后台 Agent，也可以通过实现对应 Adapter 接入同一套三层架构。
 
+## Agent 支持
+
+qwen-audio-agent 的目标是为主流 Agent 提供统一的实时语音入口。不同 Agent 的
+原生会话、权限和进程模型并不相同，因此每个接入都由独立 Adapter 明确适配，而
+不是假设所有后台共享同一种接口。
+
+| Agent | 状态 | 当前接入能力 |
+| --- | --- | --- |
+| OpenCode | 已支持 | 托管或兼容模式、协调 Session、项目任务、事件、取消与权限 |
+| OpenClaw | 已支持 | 托管或兼容模式、固定协调 Agent、任务事件与权限转发 |
+| Qoder | 已支持 | 官方 SDK/CLI、原生 CLI Session 列表与续接、项目委派与权限 |
+| Codex | 开发中 | 独立功能分支，完成验证后合并 |
+| Hermes | 开发中 | 独立功能分支，完成验证后合并 |
+| 更多主流 Agent | 持续接入 | 复用统一 Adapter 契约逐步扩展 |
+
+“已支持”表示能力已经进入主分支；“开发中”表示仓库中已有独立功能分支，但尚不应
+视为发布版本能力。各 Agent 的原生能力不同，例如 Qoder Desktop Quest 暂时不能
+通过官方 SDK 续接，具体限制见下方配置说明。
+
 ## 核心体验
 
 - 像通话一样自由交流：全双工语音、自然打断、持续多轮对话
 - 对话与任务互不阻塞：前台持续回应，后台继续执行
 - 结果无缝回到上下文：可以追问、补充、修改和继续处理
 - 连接现有 Agent 能力：延续工具、项目、记忆与工作习惯
-- OpenCode 默认增强支持，并可切换 OpenClaw
+- 一个语音入口连接多种主流 Agent，并持续扩展 Adapter 生态
 - WebUI、终端 TUI 和 macOS 桌面悬浮球
 - 本地用户档案和跨会话个人记忆
 
@@ -134,6 +154,9 @@ qwenaudio webui
 
 桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。桌面 UI 已包含在 `.app`
 中，重新构建即可更新外观；Gateway 只提供 API、实时语音和后台 Agent 能力。
+桌面设置只管理 Gateway 连接地址和本机界面外观；Realtime 凭据、模型、音色以及
+后台 Agent 类型、模型和权限必须在 Gateway 启动配置或 CLI 参数中指定。设置页会
+只读显示当前 Gateway 实际使用的 Realtime 和后台 Agent。
 悬浮球启动后默认开启收音；只有麦克风准备成功后才会接入语音，权限被拒绝或初始化
 失败时会自动保持关闭。
 先按上面的步骤启动 Gateway，再从发布页下载 `.dmg`，打开后将
@@ -177,11 +200,36 @@ Agent 会被统一管理。
 
 ## 选择后台 Agent
 
-默认使用 OpenCode 增强模式，无需额外配置。切换到 OpenClaw：
+通过 `AGENT_PROTOCOL` 选择 Gateway 使用的后台 Agent。例如 OpenCode：
+
+```dotenv
+AGENT_PROTOCOL=opencode
+```
+
+OpenClaw：
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
 ```
+
+切换到 Qoder：
+
+```dotenv
+AGENT_PROTOCOL=qoder
+QODER_MODEL=auto
+```
+
+Qoder 接入复用本机 `qodercli` 的登录状态和原生 Session。固定协调 Session
+负责选择、新建或继续项目 Session；语音委派给已有 Session 的内容会直接写入
+Qoder CLI 原生记录，之后可以继续同一个 CLI 项目对话。Qoder Desktop 的 Quest
+使用另一套记录格式，官方 SDK 目前无法列出或续接，因此不会出现在原有桌面
+Quest 中。Qoder 由官方 SDK 管理 CLI 子进程，因此不需要后台 URL，目前只支持
+`managed` 模式。
+
+后台权限默认使用 `native`，由 Qoder/OpenCode 自己决定何时询问。若用户明确接受
+后台直接执行命令和修改文件，可在启动前设置
+`QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=full`；该模式仅支持受管的 Qoder 和
+OpenCode，不适用于兼容模式或 OpenClaw。
 
 增强模式会为 qwen-audio-agent 启动独立的后台 Agent，同时保留用户已有的模型、
 权限、Skill 和 MCP 配置。也可以使用兼容模式连接已经运行的 OpenCode 或
@@ -196,7 +244,7 @@ OpenClaw，不修改现有服务。
 - `USER.md`：称呼、所在地、偏好和常用项目
 - `frontend-memory.json`：用户明确要求长期记住的信息
 - `tasks.json`：任务结果和待通知状态
-- `workspaces/`：增强模式下 OpenCode 和 OpenClaw 的默认工作目录
+- `workspaces/`：增强模式下 OpenCode、OpenClaw 和 Qoder 的默认工作目录
 - `backends/`：后台 Agent 的可变状态与托管配置
 
 这些文件不会写入源码仓库。不要在 `USER.md` 中保存密码、API Key、验证码或令牌。

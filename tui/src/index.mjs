@@ -229,6 +229,59 @@ export function completeTranscript(streamed, final) {
   return finalText
 }
 
+export function createTurnStatusDisplay({
+  print,
+  maxRememberedTurns = 200,
+} = {}) {
+  const awaitingAssistant = new Set()
+  const turnOrder = []
+  const pending = new Map()
+
+  const remember = turnId => {
+    const id = String(turnId || '')
+    if (!id || awaitingAssistant.has(id)) return
+    awaitingAssistant.add(id)
+    turnOrder.push(id)
+    while (turnOrder.length > maxRememberedTurns) {
+      const forgotten = turnOrder.shift()
+      awaitingAssistant.delete(forgotten)
+      for (const line of pending.get(forgotten) || []) print(line)
+      pending.delete(forgotten)
+    }
+  }
+
+  const release = turnId => {
+    const id = String(turnId || '')
+    if (!id || !awaitingAssistant.delete(id)) return
+    for (const line of pending.get(id) || []) print(line)
+    pending.delete(id)
+  }
+
+  return {
+    begin(turnId) {
+      remember(turnId)
+    },
+    status(event, line) {
+      const turnId = String(event?.task?.turnId || '')
+      if (!turnId || !awaitingAssistant.has(turnId)) {
+        print(line)
+        return
+      }
+      const lines = pending.get(turnId) || []
+      lines.push(line)
+      pending.set(turnId, lines)
+    },
+    assistantFinished(turnId) {
+      release(turnId)
+    },
+    reset() {
+      for (const turnId of turnOrder) release(turnId)
+      turnOrder.length = 0
+      awaitingAssistant.clear()
+    },
+  }
+}
+
 export function createTranscriptDisplay({
   onUser,
   onAssistant,
@@ -260,7 +313,7 @@ export function createTranscriptDisplay({
   const flushTurn = turnId => {
     const pending = pendingAssistants.get(turnId) || []
     pendingAssistants.delete(turnId)
-    for (const content of pending) onAssistant(content)
+    for (const item of pending) onAssistant(item.content, item.event)
     for (const [responseId, content] of assistantDeltas) {
       if (assistantTurns.get(responseId) === turnId) onAssistantDelta(content)
     }
@@ -297,7 +350,7 @@ export function createTranscriptDisplay({
           String(event.content || '').replace(/\s+/g, ' '),
         )
         userDeltas.delete(turnId)
-        if (content) onUser(content)
+        if (content) onUser(content, event)
         if (turnId) {
           completeUserTurn(turnId)
           flushTurn(turnId)
@@ -351,11 +404,11 @@ export function createTranscriptDisplay({
         && !completedUserTurns.has(turnId)
       )
       if (!waitsForUser) {
-        onAssistant(content)
+        onAssistant(content, event)
         return true
       }
       const pending = pendingAssistants.get(turnId) || []
-      pending.push(content)
+      pending.push({ content, event })
       pendingAssistants.set(turnId, pending)
       return true
     },
@@ -654,13 +707,23 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   const print = text => transcriptRenderer.print(text)
   const userPrefix = style('你 >', 'cyan')
   const assistantPrefix = style('qwen-audio >', 'bold')
+  const turnStatusDisplay = createTurnStatusDisplay({ print })
   const transcriptDisplay = createTranscriptDisplay({
     onUserDelta: content => transcriptRenderer.update(userPrefix, content),
-    onUser: content => transcriptRenderer.finish(userPrefix, content),
+    onUser: (content, event) => {
+      transcriptRenderer.finish(userPrefix, content)
+      turnStatusDisplay.begin(event?.turnId)
+    },
     onUserDiscard: () => transcriptRenderer.discardPreview(),
     onAssistantDelta: content => transcriptRenderer.stream(assistantPrefix, content),
-    onAssistant: content => transcriptRenderer.finish(assistantPrefix, content),
-    onReset: () => transcriptRenderer.cancel(),
+    onAssistant: (content, event) => {
+      transcriptRenderer.finish(assistantPrefix, content)
+      turnStatusDisplay.assistantFinished(event?.turnId)
+    },
+    onReset: () => {
+      transcriptRenderer.cancel()
+      turnStatusDisplay.reset()
+    },
   })
   const handleSigint = () => close()
   const handleSigterm = () => close()
@@ -883,26 +946,44 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       if (content) print(`${style('── 执行结果 ──', 'cyan')}\n${content}`)
     }
     if (event.type === 'task.running') {
-      print(`${style('[正在处理]', 'yellow')} ${requestLabel(event.task)}`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[正在处理]', 'yellow')} ${requestLabel(event.task)}`,
+      )
     }
     if (event.type === 'task.delegated') {
-      print(`${style('[项目执行中]', 'yellow')} ${requestLabel(event.task)}`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[项目执行中]', 'yellow')} ${requestLabel(event.task)}`,
+      )
     }
     if (event.type === 'task.finalizing') {
-      print(`${style('[正在整理结果]', 'yellow')} ${requestLabel(event.task)}`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[正在整理结果]', 'yellow')} ${requestLabel(event.task)}`,
+      )
     }
     if (event.type === 'task.cancelling') {
-      print(`${style('[正在取消]', 'yellow')} ${requestLabel(event.task)}`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[正在取消]', 'yellow')} ${requestLabel(event.task)}`,
+      )
     }
     if (event.type === 'task.permission.requested') {
-      print(`${style('[需要确认]', 'yellow')} ${
-        event.task.authorization?.summary || '后台正在请求执行权限'
-      }（请直接说“始终允许”或“拒绝”）`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[需要确认]', 'yellow')} ${
+          event.task.authorization?.summary || '后台正在请求执行权限'
+        }（请直接说“始终允许”或“拒绝”）`,
+      )
     }
     if (event.type === 'task.failed') {
-      print(`${style('[处理失败]', 'red')} ${
-        event.task.error || requestLabel(event.task)
-      }`)
+      turnStatusDisplay.status(
+        event,
+        `${style('[处理失败]', 'red')} ${
+          event.task.error || requestLabel(event.task)
+        }`,
+      )
     }
     if (event.type === 'error') {
       transcriptRenderer.cancel()

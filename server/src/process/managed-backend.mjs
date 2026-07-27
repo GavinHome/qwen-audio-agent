@@ -8,21 +8,109 @@ function origin(value) {
   return new URL(value).origin
 }
 
+function permissionMode(env) {
+  const mode = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
+  ).toLowerCase()
+  if (!['native', 'full'].includes(mode)) {
+    throw new Error(`不支持的后台权限模式：${mode}（可选 native、full）`)
+  }
+  return mode
+}
+
 export function resolveManagedBackend(env = process.env) {
   const protocol = String(env.AGENT_PROTOCOL || 'opencode').toLowerCase()
-  if (!['opencode', 'openclaw'].includes(protocol)) {
+  if (!['opencode', 'openclaw', 'qoder'].includes(protocol)) {
     throw new Error(`不支持的后台 Agent：${protocol}`)
+  }
+  const mode = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
+  ).toLowerCase()
+  const resolvedPermissionMode = permissionMode(env)
+  if (!['managed', 'compatible'].includes(mode)) {
+    throw new Error(`不支持的后台模式：${mode}`)
+  }
+  if (resolvedPermissionMode === 'full' && mode !== 'managed') {
+    throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
+  }
+  if (resolvedPermissionMode === 'full' && protocol === 'openclaw') {
+    throw new Error(
+      'OpenClaw 的最高权限需要单独配置 exec approvals、elevated 和 host，'
+      + '不能由 Gateway 的统一权限开关安全启用',
+    )
+  }
+  if (protocol === 'qoder') {
+    if (mode !== 'managed') {
+      throw new Error('Qoder 后台当前只支持 managed 模式')
+    }
+    return {
+      protocol,
+      mode,
+      permissionMode: resolvedPermissionMode,
+      baseUrl: null,
+    }
   }
   const configured = protocol === 'openclaw'
     ? env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789'
     : env.OPENCODE_BASE_URL || 'http://127.0.0.1:4096'
   return {
     protocol,
-    mode: String(
-      env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
-    ).toLowerCase(),
+    mode,
+    permissionMode: resolvedPermissionMode,
     baseUrl: origin(configured),
   }
+}
+
+function inlineOpenCodeConfig(value) {
+  if (!String(value || '').trim()) return {}
+  let parsed
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('OPENCODE_CONFIG_CONTENT 不是有效的 JSON')
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('OPENCODE_CONFIG_CONTENT 必须是 JSON 对象')
+  }
+  return parsed
+}
+
+export function applyBackendPermissionMode(env, backend) {
+  if (backend.permissionMode !== 'full') return env
+  if (backend.mode !== 'managed') {
+    throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
+  }
+  if (backend.protocol === 'openclaw') {
+    throw new Error('OpenClaw 不支持 Gateway 统一最高权限模式')
+  }
+  if (backend.protocol !== 'opencode') return env
+
+  const config = inlineOpenCodeConfig(env.OPENCODE_CONFIG_CONTENT)
+  const agents = {
+    ...(config.agent && typeof config.agent === 'object' ? config.agent : {}),
+  }
+  const names = new Set([
+    String(
+      env.QWEN_AUDIO_AGENT_BACKEND_AGENT
+      || env.OPENCODE_COORDINATOR_AGENT
+      || 'qwen-audio-agent-backend',
+    ).trim(),
+    String(env.OPENCODE_TASK_AGENT || 'build').trim(),
+  ])
+  for (const name of names) {
+    if (!name) continue
+    const existing = agents[name]
+    agents[name] = {
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      permission: 'allow',
+    }
+  }
+  env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+    ...config,
+    permission: 'allow',
+    agent: agents,
+  })
+  return env
 }
 
 export function isLocalBackend(baseUrl) {
@@ -143,6 +231,10 @@ export async function startManagedBackend({
   findFreeAddress = allocateBackendAddress,
 } = {}) {
   const backend = resolveManagedBackend(env)
+  applyBackendPermissionMode(env, backend)
+  if (backend.protocol === 'qoder') {
+    return new ManagedBackendRuntime(null, { platform })
+  }
   if (backend.mode === 'compatible') {
     return new ManagedBackendRuntime(null, { platform })
   }

@@ -133,7 +133,7 @@ const respondAgentPermissionTool = {
   type: 'function',
   function: {
     name: RESPOND_AGENT_PERMISSION_TOOL_NAME,
-    description: '回复当前正在等待用户决定的后台权限请求。只有用户在当前一轮明确表示始终允许或明确拒绝时才能调用；不得根据原任务、自行判断、含糊回应或沉默推断授权。always 会让 OpenCode 在当前 Session 内对它给出的匹配规则持续允许，reject 会拒绝本次操作。',
+    description: '回复当前正在等待用户决定的后台权限请求。只有用户在当前一轮明确表示始终允许或明确拒绝时才能调用；不得根据原任务、自行判断、含糊回应或沉默推断授权。always 会让当前后台会话对同类操作持续允许，reject 会拒绝本次操作。',
     parameters: {
       type: 'object',
       properties: {
@@ -177,7 +177,7 @@ function speakResponseInstructions(content) {
 const permissionResponseInstructions = [
   '这是后台 Agent 提交的权限确认请求，不是用户的新指令。',
   '用一句自然、清楚的话说明后台想做的操作，并询问用户是否要始终允许。',
-  '必须明确告诉用户：同意后，同类操作在当前 OpenCode 会话内将不再重复询问。',
+  '必须明确告诉用户：同意后，同类操作在当前后台会话内将不再重复询问。',
   '不要替用户决定，不要调用工具；等待用户下一轮明确回答。',
   '不要朗读 authorization_id、Session ID 或协议字段。',
 ].join(' ')

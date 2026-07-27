@@ -2,6 +2,7 @@ import { config } from '../core/config.mjs'
 import { AgentError } from './backend-adapter.mjs'
 import { OpenClawAdapter } from './openclaw-adapter.mjs'
 import { OpenCodeAdapter } from './opencode-adapter.mjs'
+import { QoderAdapter } from './qoder-adapter.mjs'
 
 export { AgentError }
 
@@ -14,6 +15,7 @@ export class AgentClient {
     fetchImpl = fetch,
     protocol = config.agentProtocol,
     mode = config.backendMode,
+    permissionMode = config.backendPermissionMode,
     baseUrl = config.openCodeBaseUrl,
     model = protocol === 'openclaw'
       ? config.openClawModel
@@ -26,16 +28,37 @@ export class AgentClient {
     openClawBaseUrl = config.openClawBaseUrl,
     openClawToken = config.openClawToken,
     openClawCoordinatorAgent = config.openClawCoordinatorAgent,
+    qoderModel = config.qoderModel,
+    qoderDirectory = config.qoderDirectory,
+    qoderConfigDirectory = config.qoderConfigDirectory,
+    qoderCliPath = config.qoderCliPath,
+    qoderAuthMode = config.qoderAuthMode,
+    qoderTokenEnv = config.qoderTokenEnv,
+    qoderSdk,
     WebSocketImpl,
   } = {}) {
-    const Adapter = protocol === 'openclaw' ? OpenClawAdapter : OpenCodeAdapter
+    const Adapter = protocol === 'openclaw'
+      ? OpenClawAdapter
+      : protocol === 'qoder'
+        ? QoderAdapter
+        : OpenCodeAdapter
     this.adapter = new Adapter({
+      ...(protocol === 'qoder' && qoderSdk ? { sdk: qoderSdk } : {}),
       fetchImpl,
-      baseUrl: protocol === 'openclaw' ? openClawBaseUrl : baseUrl,
-      model,
+      baseUrl: protocol === 'openclaw'
+        ? openClawBaseUrl
+        : protocol === 'qoder'
+          ? ''
+          : baseUrl,
+      model: protocol === 'qoder' ? qoderModel : model,
       mode,
+      permissionMode,
       timeoutMs,
-      directory,
+      directory: protocol === 'qoder' ? qoderDirectory : directory,
+      configDirectory: qoderConfigDirectory,
+      cliPath: qoderCliPath,
+      authMode: qoderAuthMode,
+      tokenEnv: qoderTokenEnv,
       username,
       password,
       coordinatorAgent: protocol === 'openclaw'
@@ -100,6 +123,10 @@ export class AgentClient {
   uiUrl(options = {}) {
     return this.adapter.uiUrl?.(options.ownerId)
       || Promise.resolve(this.adapter.describe().baseUrl)
+  }
+
+  close() {
+    return this.adapter.close?.() || Promise.resolve()
   }
 }
 

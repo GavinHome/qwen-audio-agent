@@ -84,7 +84,12 @@ app.get('/api/health', async (req, res) => {
 })
 
 app.get('/api/backend/ui', async (req, res, next) => {
-  if (agent.protocol !== 'openclaw') {
+  if (agent.protocol === 'qoder') {
+    return res.status(404).json({
+      error: 'Qoder 后台使用本地原生 Session，没有独立的后台 Web 地址',
+    })
+  }
+  if (agent.protocol === 'opencode') {
     try {
       return res.redirect(302, await agent.uiUrl({
         ownerId: req.identity.ownerId,

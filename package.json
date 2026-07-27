@@ -1,7 +1,7 @@
 {
   "name": "qwen-audio-agent",
   "version": "0.6.0",
-  "description": "A realtime voice frontend for OpenCode and OpenClaw.",
+  "description": "A realtime voice frontend for mainstream AI agents.",
   "author": "qwen-audio-agent contributors",
   "license": "Apache-2.0",
   "repository": {
@@ -18,7 +18,8 @@
     "voice",
     "agent",
     "opencode",
-    "openclaw"
+    "openclaw",
+    "qoder"
   ],
   "type": "module",
   "bin": {
@@ -34,6 +35,7 @@
     "config/opencode/agents/",
     "config/opencode/plugin/",
     "config/opencode-workspace/AGENTS.md",
+    "config/qoder-workspace/AGENTS.md",
     "docs/architecture.md",
     "docs/architecture-overview.png",
     "docs/architecture-overview-en.png",
@@ -99,8 +101,10 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.5",
+    "@qoder-ai/qoder-agent-sdk": "^1.0.15",
     "express": "^4.22.2",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

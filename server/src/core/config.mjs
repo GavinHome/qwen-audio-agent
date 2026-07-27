@@ -24,6 +24,15 @@ export function resolveOpenCodeWorkspace(
     : resolve(configDirectory, 'workspaces/opencode')
 }
 
+export function resolveQoderWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.QODER_WORKSPACE
+    ? resolve(root, env.QODER_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/qoder')
+}
+
 const DEFAULT_BACKEND_MODEL = 'qwen3.7-max'
 
 function backendModelName(value) {
@@ -56,6 +65,17 @@ const backendMode = (
     : 'managed'
 )
 const backendModels = resolveBackendModels()
+const backendPermissionMode = String(
+  process.env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
+).toLowerCase()
+if (!['native', 'full'].includes(backendPermissionMode)) {
+  throw new Error(
+    `不支持的后台权限模式：${backendPermissionMode}（可选 native、full）`,
+  )
+}
+const requestedAgentProtocol = String(
+  process.env.AGENT_PROTOCOL || 'opencode',
+).toLowerCase()
 const sharedBackendAgent = String(
   process.env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
 ).trim()
@@ -96,10 +116,11 @@ export const config = {
     process.env.QWEN_AUDIO_AGENT_IDENTITY_MODE || 'personal'
   ).toLowerCase() === 'browser' ? 'browser' : 'personal',
   personalOwnerId: process.env.QWEN_AUDIO_AGENT_PERSONAL_OWNER_ID || 'user_personal',
-  agentProtocol: (
-    process.env.AGENT_PROTOCOL || 'opencode'
-  ).toLowerCase() === 'openclaw' ? 'openclaw' : 'opencode',
+  agentProtocol: ['openclaw', 'qoder'].includes(requestedAgentProtocol)
+    ? requestedAgentProtocol
+    : 'opencode',
   backendMode,
+  backendPermissionMode,
   agentTimeoutMs: numberSetting(process.env.AGENT_TIMEOUT_MS, 300000, { min: 10000 }),
   openClawBaseUrl: (
     process.env.OPENCLAW_BASE_URL
@@ -126,6 +147,22 @@ export const config = {
   openCodeUsername: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
   openCodePassword: process.env.OPENCODE_SERVER_PASSWORD || '',
   openCodeDirectory: resolveOpenCodeWorkspace(),
+  qoderDirectory: resolveQoderWorkspace(),
+  qoderConfigDirectory: process.env.QODER_CONFIG_DIR
+    ? resolve(process.env.QODER_CONFIG_DIR)
+    : '',
+  qoderCliPath: String(
+    process.env.QODERCLI_PATH || process.env.QODER_CLI_PATH || '',
+  ).trim(),
+  qoderAuthMode: (
+    String(process.env.QODER_AUTH_MODE || 'cli').toLowerCase() === 'token'
+      ? 'token'
+      : 'cli'
+  ),
+  qoderTokenEnv: String(
+    process.env.QODER_TOKEN_ENV || 'QODER_PERSONAL_ACCESS_TOKEN',
+  ).trim(),
+  qoderModel: String(process.env.QODER_MODEL || 'auto').trim() || 'auto',
   openCodeModel: (
     process.env.OPENCODE_MODEL
     || (backendMode === 'managed' ? backendModels.openCode : '')

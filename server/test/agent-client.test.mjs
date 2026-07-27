@@ -6,6 +6,20 @@ import {
   OpenClawAdapter,
 } from '../src/agent/openclaw-adapter.mjs'
 import { eventActivity, OpenCodeAdapter } from '../src/agent/opencode-adapter.mjs'
+import { QoderAdapter } from '../src/agent/qoder-adapter.mjs'
+
+test('Qoder full permission mode uses the SDK bypass flags', () => {
+  const adapter = new QoderAdapter({
+    permissionMode: 'full',
+    sdk: {
+      qodercliAuth: () => ({ type: 'qodercli' }),
+    },
+  })
+  const options = adapter.queryOptions()
+  assert.equal(options.permissionMode, 'bypassPermissions')
+  assert.equal(options.allowDangerouslySkipPermissions, true)
+  assert.equal(adapter.describe().permissionMode, 'full')
+})
 
 test('selects OpenCode and describes the fixed backend Agent model', () => {
   const client = new AgentClient({
@@ -65,6 +79,299 @@ test('selects OpenClaw without changing the backend Agent session model', () => 
   assert.equal(client.protocol, 'openclaw')
   assert.equal(client.describe().sessionModel, 'one-persistent-backend-agent')
   assert.equal(client.describe().model, 'bailian/qwen-custom')
+})
+
+test('selects Qoder as a native persistent backend Agent', () => {
+  const client = new AgentClient({
+    protocol: 'qoder',
+    qoderModel: 'auto',
+    qoderDirectory: '/coordinator',
+    qoderSdk: {
+      accessTokenFromEnv: () => ({ type: 'token' }),
+      qodercliAuth: () => ({ type: 'qodercli' }),
+      listSessions: async () => [],
+    },
+  })
+  assert.equal(client.protocol, 'qoder')
+  assert.equal(client.describe().label, 'Qoder')
+  assert.equal(client.describe().baseUrl, null)
+  assert.equal(client.describe().capabilities.nativeSessionHistory, true)
+})
+
+test('Qoder coordinator resumes an existing native project session', async () => {
+  const calls = []
+  const events = []
+  const sdk = {
+    accessTokenFromEnv: () => ({ type: 'token' }),
+    qodercliAuth: () => ({ type: 'qodercli' }),
+    createSdkMcpServer: ({ tools }) => ({ tools }),
+    tool: (name, description, inputSchema, handler) => ({
+      name,
+      description,
+      inputSchema,
+      handler,
+    }),
+    listSessions: async () => [{
+      sessionId: 'coordinator-session',
+      cwd: '/coordinator',
+      tag: 'qwen-audio-agent:owner-one:backend',
+      summary: 'Backend Agent',
+    }],
+    getSessionInfo: async sessionId => sessionId === 'project-session'
+      ? {
+          sessionId,
+          cwd: '/projects/existing',
+          summary: 'Existing project',
+        }
+      : undefined,
+    renameSession: async () => {},
+    tagSession: async () => {},
+    query: ({ prompt, options }) => {
+      const iterator = (async function* messages() {
+        calls.push({ prompt, options })
+        if (prompt === 'coordinate') {
+          const server = options.mcpServers.qwen_audio_agent
+          const send = server.tools.find(toolDefinition => (
+            toolDefinition.name === 'qwen_audio_agent_session_send'
+          ))
+          const output = await send.handler({
+            session_id: 'project-session',
+            prompt: 'Continue the existing project naturally.',
+          })
+          assert.match(output.content[0].text, /"status":"started"/)
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'coordinator-session',
+            cwd: '/coordinator',
+          }
+          yield {
+            type: 'result',
+            subtype: 'success',
+            is_error: false,
+            result: '{"state":"delegated"}',
+            session_id: 'coordinator-session',
+          }
+          return
+        }
+        if (prompt === 'Continue the existing project naturally.') {
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'project-session',
+            cwd: '/projects/existing',
+          }
+          yield {
+            type: 'assistant',
+            session_id: 'project-session',
+            message: {
+              content: [{
+                type: 'tool_use',
+                id: 'tool-one',
+                name: 'Read',
+                input: { file_path: 'README.md' },
+              }],
+            },
+          }
+          yield {
+            type: 'result',
+            subtype: 'success',
+            is_error: false,
+            result: 'Project work completed.',
+            session_id: 'project-session',
+          }
+          return
+        }
+        assert.match(prompt, /qwen_audio_agent_delegation_result/)
+        yield {
+          type: 'system',
+          subtype: 'init',
+          session_id: 'coordinator-session',
+          cwd: '/coordinator',
+        }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: JSON.stringify({
+            work_id: 'work-one',
+            state: 'completed',
+            mode: 'respond',
+            presentation: {
+              speech: 'Existing project completed.',
+              inline: 'Project details.',
+            },
+          }),
+          session_id: 'coordinator-session',
+        }
+      })()
+      iterator.close = async () => {}
+      return iterator
+    },
+  }
+  const adapter = new QoderAdapter({
+    sdk,
+    directory: '/coordinator',
+    timeoutMs: 1000,
+  })
+
+  const result = await adapter.runCoordinator('coordinate', {
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-one',
+    onEvent: event => events.push(event),
+  })
+
+  assert.match(result.content, /Existing project completed/)
+  assert.deepEqual(
+    JSON.parse(result.content).presentation.inline,
+    {
+      title: 'Qoder 结果',
+      format: 'markdown',
+      content: 'Project details.',
+    },
+  )
+  const projectCall = calls.find(call => (
+    call.prompt === 'Continue the existing project naturally.'
+  ))
+  assert.match(
+    calls[0].options.systemPrompt.append,
+    /Preserve the user requested action level/,
+  )
+  assert.equal(projectCall.options.cwd, '/projects/existing')
+  assert.equal(projectCall.options.resume, 'project-session')
+  assert.equal(calls.length, 3)
+  assert.ok(events.some(event => event.type === 'backend.delegated'))
+  assert.ok(events.some(event => (
+    event.type === 'backend.delegation.completed'
+  )))
+  assert.ok(events.some(event => (
+    event.type === 'backend.activity'
+    && event.activity.tool === 'Read'
+  )))
+})
+
+test('Qoder recovers when an interrupted new coordinator session already exists', async () => {
+  const calls = []
+  const renamed = []
+  const tagged = []
+  const sdk = {
+    accessTokenFromEnv: () => ({ type: 'token' }),
+    qodercliAuth: () => ({ type: 'qodercli' }),
+    createSdkMcpServer: ({ tools }) => ({ tools }),
+    tool: (name, description, inputSchema, handler) => ({
+      name,
+      description,
+      inputSchema,
+      handler,
+    }),
+    listSessions: async () => [],
+    getSessionInfo: async sessionId => ({
+      sessionId,
+      cwd: '/coordinator',
+      summary: 'Interrupted coordinator turn',
+    }),
+    renameSession: async (...args) => renamed.push(args),
+    tagSession: async (...args) => tagged.push(args),
+    query: ({ prompt, options }) => {
+      calls.push({ prompt, options })
+      const iterator = (async function* messages() {
+        if (calls.length === 1) {
+          throw new Error('Qoder CLI process exited with code 42')
+        }
+        yield {
+          type: 'system',
+          subtype: 'init',
+          session_id: options.resume,
+          cwd: '/coordinator',
+        }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: '{"state":"completed"}',
+          session_id: options.resume,
+        }
+      })()
+      iterator.close = async () => {}
+      return iterator
+    },
+  }
+  const adapter = new QoderAdapter({
+    sdk,
+    directory: '/coordinator',
+    timeoutMs: 1000,
+  })
+
+  const result = await adapter.runCoordinator('继续处理', {
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-recovery',
+  })
+
+  assert.equal(result.content, '{"state":"completed"}')
+  assert.equal(calls.length, 2)
+  assert.ok(calls[0].options.sessionId)
+  assert.equal(calls[0].options.resume, undefined)
+  assert.equal(calls[1].options.sessionId, undefined)
+  assert.equal(calls[1].options.resume, calls[0].options.sessionId)
+  assert.equal(renamed.length, 1)
+  assert.equal(tagged.length, 1)
+  assert.equal(tagged[0][1], 'qwen-audio-agent:owner-one:backend')
+})
+
+test('Qoder forwards its permission rules without inventing Gateway policy', async () => {
+  const events = []
+  const adapter = new QoderAdapter({
+    sdk: {},
+    directory: '/coordinator',
+  })
+  const permission = adapter.permissionCallback({
+    ownerId: 'owner-one',
+    coordinationRunId: 'work-one',
+    onEvent: event => events.push(event),
+  })
+  const suggestions = [{
+    type: 'addRules',
+    behavior: 'allow',
+    destination: 'session',
+    rules: [{ toolName: 'Bash', ruleContent: 'git status:*' }],
+  }]
+
+  const first = permission(
+    'Bash',
+    { command: 'git status' },
+    { toolUseID: 'tool-one', suggestions },
+  )
+  const requested = events.find(event => (
+    event.type === 'backend.permission.requested'
+  ))
+  assert.ok(requested?.permission?.id)
+
+  await adapter.respondPermission(
+    requested.permission.id,
+    'always',
+    { ownerId: 'owner-one' },
+  )
+  const firstResult = await first
+  assert.equal(firstResult.behavior, 'allow')
+  assert.equal(firstResult.decisionClassification, 'user_permanent')
+  assert.deepEqual(firstResult.updatedPermissions, suggestions)
+  assert.deepEqual(requested.permission.patterns, ['git status:*'])
+
+  const second = permission(
+    'Bash',
+    { command: 'git log -5' },
+    { toolUseID: 'tool-two' },
+  )
+  assert.equal(events.filter(event => (
+    event.type === 'backend.permission.requested'
+  )).length, 2)
+  const secondRequest = events.at(-1)
+  await adapter.respondPermission(
+    secondRequest.permission.id,
+    'reject',
+    { ownerId: 'owner-one' },
+  )
+  assert.equal((await second).behavior, 'deny')
 })
 
 test('reuses one backend Agent session and serializes all submitted work', async () => {

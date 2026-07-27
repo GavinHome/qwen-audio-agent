@@ -10,8 +10,9 @@ already use.**
 qwen-audio-agent is a realtime voice frontend for mainstream Agents. You can
 keep talking as naturally as on a phone call, interrupt at any time, and use
 your voice to delegate searches, file operations, coding, and other long-running
-work. It connects to OpenCode by default, also supports OpenClaw, and provides a
-unified integration path for more backend Agents.
+work. It connects different Agents through a unified Adapter architecture. The
+project will continue adding mainstream Agents instead of binding the product
+to one default backend.
 
 It does not replace your backend Agent. Instead, it brings the Agent's existing
 models, tools, MCP servers, Skills, permissions, and project context naturally
@@ -31,6 +32,28 @@ results return to the current context at an appropriate time, where the
 realtime frontend presents them naturally. Throughout the entire interaction,
 you are always talking to the same assistant.
 
+## Agent Support
+
+qwen-audio-agent aims to provide one realtime voice entry point for mainstream
+Agents. Because native sessions, permissions, and process models differ, every
+integration has an explicit Adapter rather than assuming one universal backend
+interface.
+
+| Agent | Status | Current integration |
+| --- | --- | --- |
+| OpenCode | Supported | Managed or compatible mode, coordinator Session, project tasks, events, cancellation, and permissions |
+| OpenClaw | Supported | Managed or compatible mode, fixed coordinator Agent, task events, and permission relay |
+| Qoder | Supported | Official SDK/CLI, native CLI Session discovery and resume, project delegation, and permissions |
+| Codex | In development | Independent feature branch, merged after validation |
+| Hermes | In development | Independent feature branch, merged after validation |
+| More mainstream Agents | Expanding | Added incrementally through the shared Adapter contract |
+
+"Supported" means the integration is present on the main branch. "In
+development" means an independent feature branch exists, but the capability
+must not yet be treated as released. Native limitations still apply; for
+example, Qoder Desktop Quests cannot currently be resumed through the official
+SDK.
+
 ## Core Experience
 
 - Free-flowing conversation with full-duplex audio, natural interruption, and
@@ -38,7 +61,7 @@ you are always talking to the same assistant.
 - Voice conversation and delegated tasks proceed independently
 - Results return seamlessly to the conversation for follow-up or further work
 - Connect to your existing Agent tools, projects, memory, and workflows
-- Enhanced OpenCode support by default, with optional OpenClaw integration
+- One voice entry point for multiple mainstream Agents, with an expanding Adapter ecosystem
 - WebUI, terminal TUI, and a macOS desktop orb
 - Local user profile and personal memory across sessions
 
@@ -138,7 +161,11 @@ qwenaudio webui
 The desktop app is a persistent voice orb that connects to the same Gateway.
 The desktop UI is bundled into the `.app`, so rebuilding the app is enough to
 update its appearance. The Gateway only provides the API, realtime voice, and
-backend Agent capabilities. The orb starts with microphone input enabled and
+backend Agent capabilities. Desktop settings manage only the Gateway connection
+URL and local appearance. Realtime credentials, model, voice, and backend Agent
+type, model, and permissions must be selected when configuring or launching the
+Gateway; the settings window displays the active values as read-only status.
+The orb starts with microphone input enabled and
 joins the voice session only after the microphone is ready. It remains disabled
 if permission is denied or initialization fails. Start the Gateway as described
 above, download the `.dmg` from the releases page, open it, and drag
@@ -186,12 +213,38 @@ backend Agent it starts are managed together.
 
 ## Choose a Backend Agent
 
-Enhanced OpenCode mode is enabled by default and requires no additional
-configuration. To switch to OpenClaw:
+Select the Gateway backend with `AGENT_PROTOCOL`. For example, OpenCode:
+
+```dotenv
+AGENT_PROTOCOL=opencode
+```
+
+OpenClaw:
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
 ```
+
+To use Qoder:
+
+```dotenv
+AGENT_PROTOCOL=qoder
+QODER_MODEL=auto
+```
+
+The Qoder adapter reuses the local `qodercli` login and native Session store.
+Its persistent coordinator can create a project Session or resume an existing
+one, and delegated voice interactions are appended to that native Qoder CLI
+history. Qoder Desktop Quests use a different record format that the official
+SDK cannot currently list or resume, so these interactions do not appear in an
+existing desktop Quest. Qoder uses its official SDK to manage CLI child
+processes, requires no backend URL, and currently supports managed mode only.
+
+Backend permissions default to `native`, leaving permission prompts to
+Qoder/OpenCode. Users who explicitly accept unattended command execution and
+file changes can set `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=full` before
+startup. Full mode is available only for managed Qoder and OpenCode, not
+compatible mode or OpenClaw.
 
 Enhanced mode starts a dedicated backend Agent for qwen-audio-agent while
 preserving your existing models, permissions, Skills, and MCP configuration.
@@ -209,7 +262,7 @@ User data is stored in `~/.config/qwaudio/`:
 - `frontend-memory.json`: information you explicitly ask the assistant to
   remember long term
 - `tasks.json`: task results and pending notification state
-- `workspaces/`: default OpenCode and OpenClaw working directories in enhanced
+- `workspaces/`: default OpenCode, OpenClaw, and Qoder working directories in enhanced
   mode
 - `backends/`: mutable backend Agent state and managed configuration
 

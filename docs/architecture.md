@@ -14,9 +14,9 @@ layers:
    requiring tools, current information, files, applications, code, or
    multi-step work.
 
-The backend may be OpenCode or OpenClaw. It may internally use tools, skills,
-agents, or other Sessions. Those are adapter-private implementation details and
-do not create additional qwen-audio-agent layers.
+The backend may be OpenCode, OpenClaw, or Qoder. It may internally use tools,
+skills, agents, or other Sessions. Those are adapter-private implementation
+details and do not create additional qwen-audio-agent layers.
 
 ## 2. Nonblocking request flow
 
@@ -112,6 +112,19 @@ OpenClaw uses its equivalent Agent Session key:
 agent:<agent>:qwen-audio-agent:<owner>:backend
 ```
 
+Qoder uses a native Session tagged with:
+
+```text
+qwen-audio-agent:<owner>:backend
+```
+
+The Qoder adapter finds that Session through Qoder's native Session index and
+resumes it on every coordinator turn. Project delegation likewise resumes the
+selected native Qoder Session in its recorded working directory, so the voice
+interaction remains part of the Qoder CLI transcript. Qoder Desktop Quests use
+a separate record format that the official SDK does not currently expose, so a
+Quest cannot be selected as a delegation target or updated by this adapter.
+
 Voice browser session IDs and Work IDs never change that identity. A new voice
 conversation therefore continues using the same backend Agent context.
 
@@ -191,8 +204,8 @@ after playback finishes. If the user interrupts, is speaking, or another
 response is pending, delivery waits and retries without duplicating context.
 Retries are bounded so one malformed result cannot block later completions.
 
-When the backend Agent hands work to a normal OpenCode Session, the intermediate
-transport response is instead:
+When the backend Agent hands work to a normal OpenCode or Qoder Session, the
+intermediate transport response is instead:
 
 ```json
 {
@@ -271,7 +284,7 @@ backend Agent envelope
    ↓
 Backend adapter
    ↓
-OpenCode Server or OpenClaw Gateway
+OpenCode Server, OpenClaw Gateway, or Qoder SDK/CLI
 ```
 
 Backend-specific API details belong only in `server/src/agent`. Realtime tools
@@ -290,7 +303,10 @@ own labels and interaction patterns.
 
 The Gateway is the only core service process. In managed mode it owns exactly
 one OpenCode or OpenClaw backend process and stops that process when the Gateway
-stops. In compatible mode it owns no backend process.
+stops. Qoder is also managed mode, but its official SDK owns the per-query CLI
+children inside the Gateway rather than exposing a separate HTTP service.
+In compatible mode the Gateway owns no backend process; Qoder does not currently
+offer this mode.
 
 Desktop, TUI and WebUI are replaceable Gateway clients. They must never spawn,
 restart or stop the Gateway or a backend. Closing a UI therefore cannot affect

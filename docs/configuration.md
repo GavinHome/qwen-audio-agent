@@ -77,6 +77,7 @@ OpenCode 是默认后台，默认地址为 `http://127.0.0.1:4096`：
 ```dotenv
 AGENT_PROTOCOL=opencode
 QWEN_AUDIO_AGENT_BACKEND_MODE=managed
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 OPENCODE_BASE_URL=http://127.0.0.1:4096
 ```
 
@@ -88,8 +89,59 @@ OPENCLAW_BASE_URL=http://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=
 ```
 
+Qoder 使用官方 Agent SDK 和本机 `qodercli`，没有 HTTP 后台地址：
+
+```dotenv
+AGENT_PROTOCOL=qoder
+QWEN_AUDIO_AGENT_BACKEND_MODE=managed
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
+QODER_MODEL=auto
+```
+
+Qoder Adapter 为每个用户维护一个固定的原生协调 Session，并向它提供列出、新建、
+继续、查询和取消项目 Session 的工具。继续已有项目时，Adapter 使用目标
+Session 的原始 `session_id` 和工作目录执行 `resume`，所以新交互会追加到 Qoder
+CLI Session 历史，而不是复制到 qwen-audio-agent 自己的数据库。这里的 Session
+范围是官方 SDK 能够通过 `listSessions` 发现的 CLI Session；Qoder Desktop Quest
+使用不同的记录格式，目前不能通过 SDK 列出、发送或续接。
+
+默认认证方式是复用 `qodercli` 登录。高级配置：
+
+```dotenv
+QODER_MODEL=auto
+QODERCLI_PATH=
+QODER_CONFIG_DIR=
+QODER_AUTH_MODE=cli
+
+# 使用个人访问令牌时：
+# QODER_AUTH_MODE=token
+# QODER_TOKEN_ENV=QODER_PERSONAL_ACCESS_TOKEN
+# QODER_PERSONAL_ACCESS_TOKEN=
+```
+
+Qoder SDK 自己管理按需启动的 CLI 子进程，因此当前只支持 `managed`，不能使用
+`compatible`，也不接受 `--backend-url`。
+
+## 后台权限模式
+
+`QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` 可设为：
+
+- `native`（默认）：权限由后台 Agent 自己判断和询问，Gateway 只负责原样转发。
+- `full`：启动时明确授予最高权限，后台可直接执行命令、读写文件，不再逐次确认。
+
+`full` 当前仅支持 `managed` 模式的 OpenCode 和 Qoder。Qoder 会使用 SDK 的
+`bypassPermissions`；OpenCode 会在受管进程的内联配置中为协调 Agent 和任务
+Agent 设置 `permission: "allow"`。`compatible` 模式连接的是外部进程，Gateway
+不会越权修改它。
+
+OpenClaw 的执行授权同时受 exec approvals、elevated 和执行 host 等配置约束，
+无法由一个统一开关安全、完整地表达；选择 `full` 时 Gateway 会明确拒绝启动，
+需要按 OpenClaw 自身方式单独配置。最高权限会放大误操作风险，只应在可信项目和
+可信提示词环境中启用。
+
 连接用户现有的 Server 时使用兼容模式。qwen-audio-agent 不会修改或重启该
-Server，而会选择已有的默认 Agent，并逐轮注入后台协议：
+Server，而会选择已有的默认 Agent，并逐轮注入后台协议。此模式适用于 OpenCode
+和 OpenClaw：
 
 ```dotenv
 QWEN_AUDIO_AGENT_BACKEND_MODE=compatible
@@ -158,7 +210,7 @@ qwenaudio gateway uninstall
 `journalctl --user -u qwen-audio-agent-gateway` 查看。
 
 TUI、WebUI 和桌面版只连接 Gateway，不直接连接、启动或停止 OpenCode /
-OpenClaw。桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时
+OpenClaw / Qoder。桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时
 生效；Gateway 地址会立即验证并切换。
 
 OpenCode 和 OpenClaw 使用一致的运行时发现顺序：
@@ -214,8 +266,11 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | `HOST` / `PORT` | `127.0.0.1` / `3101` |
 | `QWEN_AUDIO_AGENT_ALLOWED_ORIGINS` | 空；只允许 loopback |
 | `OPENCODE_WORKSPACE` | 用户配置目录下的 `workspaces/opencode` |
+| `QODER_WORKSPACE` | 用户配置目录下的 `workspaces/qoder` |
 | `QWEN_AUDIO_AGENT_BACKEND_MODEL` | `qwen3.7-max` |
 | `OPENCODE_MODEL` / `OPENCLAW_MODEL` | 由对应 Adapter 从公共模型推导 |
+| `QODER_MODEL` | `auto` |
+| `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` | `native` |
 | `QWEN_AUDIO_REALTIME_MODEL` | `qwen-audio-3.0-realtime-plus` |
 | `QWEN_AUDIO_REALTIME_PROVIDER` | `dashscope` |
 | `QWEN_AUDIO_REALTIME_VOICE` | `longanqian` |

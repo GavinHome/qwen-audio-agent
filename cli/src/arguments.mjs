@@ -10,8 +10,9 @@ const GATEWAY_ACTIONS = new Set([
   'status',
   'uninstall',
 ])
-const BACKENDS = new Set(['opencode', 'openclaw'])
+const BACKENDS = new Set(['opencode', 'openclaw', 'qoder'])
 const BACKEND_MODES = new Set(['managed', 'compatible'])
+const BACKEND_PERMISSION_MODES = new Set(['native', 'full'])
 const TUI_AUDIO_MODES = new Set(['half', 'full'])
 
 export function createVoiceSessionId() {
@@ -63,6 +64,9 @@ export function parseArguments(argv, env = process.env) {
     backendMode: String(
       env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
     ).toLowerCase(),
+    backendPermissionMode: String(
+      env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
+    ).toLowerCase(),
     backendAgent: String(
       env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
     ).trim(),
@@ -91,6 +95,13 @@ export function parseArguments(argv, env = process.env) {
     } else if (argument === '--backend-agent') {
       options.backendAgent = nextValue(args, index++, '--backend-agent').trim()
       options.gatewayConfigurationSpecified = true
+    } else if (argument === '--backend-permission-mode') {
+      options.backendPermissionMode = nextValue(
+        args,
+        index++,
+        '--backend-permission-mode',
+      ).toLowerCase()
+      options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-url') {
       options.backendUrl = nextValue(args, index++, '--backend-url')
       options.gatewayConfigurationSpecified = true
@@ -106,11 +117,19 @@ export function parseArguments(argv, env = process.env) {
   }
 
   if (!BACKENDS.has(options.backend)) {
-    throw new Error(`不支持的后台：${options.backend}（可选 opencode、openclaw）`)
+    throw new Error(
+      `不支持的后台：${options.backend}（可选 opencode、openclaw、qoder）`,
+    )
   }
   if (!BACKEND_MODES.has(options.backendMode)) {
     throw new Error(
       `不支持的后台模式：${options.backendMode}（可选 managed、compatible）`,
+    )
+  }
+  if (!BACKEND_PERMISSION_MODES.has(options.backendPermissionMode)) {
+    throw new Error(
+      `不支持的后台权限模式：${options.backendPermissionMode}`
+      + '（可选 native、full）',
     )
   }
   if (command !== 'webui' && !options.openBrowser) {
@@ -138,13 +157,29 @@ export function parseArguments(argv, env = process.env) {
   }
 
   options.url = cleanOrigin(options.url, ' Gateway URL')
-  const configuredBackendUrl = options.backend === 'openclaw'
+  const configuredBackendUrl = options.backend === 'qoder'
+    ? ''
+    : options.backend === 'openclaw'
     ? env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789'
     : env.OPENCODE_BASE_URL || 'http://127.0.0.1:4096'
-  options.backendUrl = cleanOrigin(
-    options.backendUrl || configuredBackendUrl,
-    '后台地址',
-  )
+  options.backendUrl = options.backend === 'qoder'
+    ? ''
+    : cleanOrigin(options.backendUrl || configuredBackendUrl, '后台地址')
+  if (options.backend === 'qoder' && options.backendMode !== 'managed') {
+    throw new Error('Qoder 后台当前只支持 managed 模式')
+  }
+  if (
+    options.backendPermissionMode === 'full'
+    && options.backendMode !== 'managed'
+  ) {
+    throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
+  }
+  if (
+    options.backendPermissionMode === 'full'
+    && options.backend === 'openclaw'
+  ) {
+    throw new Error('OpenClaw 不支持 Gateway 统一最高权限模式')
+  }
   options.sessionId = String(options.sessionId || '').trim()
   if (!options.sessionId) throw new Error('--session 不能为空')
   return options
@@ -169,8 +204,9 @@ export function helpText() {
     '',
     'Gateway 选项：',
     '  --url URL              Gateway 地址（默认 http://127.0.0.1:3101）',
-    '  --backend NAME         opencode（默认）或 openclaw',
+    '  --backend NAME         opencode（默认）、openclaw 或 qoder',
     '  --backend-mode MODE    managed（默认）或 compatible',
+    '  --backend-permission-mode MODE  native（默认）或 full（最高权限）',
     '  --backend-url URL      后台 Server 地址',
     '  --backend-agent ID     compatible 模式使用的 Agent',
     '',

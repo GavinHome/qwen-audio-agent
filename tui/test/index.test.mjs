@@ -8,6 +8,7 @@ import {
   createPlayback,
   createTerminalTranscriptRenderer,
   createTranscriptDisplay,
+  createTurnStatusDisplay,
   fullDuplexFallbackHint,
   helpText,
   parseArguments,
@@ -406,6 +407,46 @@ test('appends only new assistant text and defers interleaved status lines', () =
     'qwen-audio > 从前有一只小狐狸。\n'
       + '[正在处理] 查询天气\n',
   )
+})
+
+test('shows current-turn task status after the spoken acknowledgement', () => {
+  const output = []
+  const status = createTurnStatusDisplay({
+    print: line => output.push(line),
+  })
+
+  status.begin('turn-1')
+  status.status({
+    type: 'task.running',
+    task: { turnId: 'turn-1' },
+  }, '[正在处理] 画一个小猪')
+  status.status({
+    type: 'task.failed',
+    task: { turnId: 'turn-1' },
+  }, '[处理失败] Qoder CLI process exited with code 42')
+
+  output.push('qwen-audio > 正在为您生成一幅可爱的小猪画作。')
+  status.assistantFinished('turn-1')
+
+  assert.deepEqual(output, [
+    'qwen-audio > 正在为您生成一幅可爱的小猪画作。',
+    '[正在处理] 画一个小猪',
+    '[处理失败] Qoder CLI process exited with code 42',
+  ])
+})
+
+test('does not defer status from an older or unknown turn', () => {
+  const output = []
+  const status = createTurnStatusDisplay({
+    print: line => output.push(line),
+  })
+
+  status.status({
+    type: 'task.failed',
+    task: { turnId: 'old-turn' },
+  }, '[处理失败] 旧任务失败')
+
+  assert.deepEqual(output, ['[处理失败] 旧任务失败'])
 })
 
 test('does not split a streamed reply on a provisional user ASR snapshot', () => {
