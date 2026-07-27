@@ -24,9 +24,9 @@ Realtime 前台负责倾听、理解和表达。能直接回答的问题立即�
 完成结果会在合适的时机回到当前上下文，由 Realtime 自然承接和播报。整个过程中，
 用户面对的始终是同一个助理。
 
-### 详细架构：三层后台 Agent 接入
+### 详细架构
 
-![三层语音 Agent 接入参考架构](docs/qwen-audio-agent-three-layer-architecture.png)
+![qwen-audio-agent 接入参考架构](docs/qwen-audio-agent-three-layer-architecture.png)
 
 第一层 Realtime Agent 保持全双工语音交互；第二层 Gateway 管理任务生命周期，
 并通过 Backend Agent Adapter 连接后台协调 Agent；需要新建独立任务或继续已有
