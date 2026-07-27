@@ -223,6 +223,41 @@ test('ignores late audio from a response after manual interruption', () => {
   assert.equal(writes.length, 1)
 })
 
+test('uses native playback drain events instead of a wall-clock estimate', () => {
+  const commands = []
+  const events = []
+  const playback = createPlayback({
+    audioSink: {
+      write(buffer, rate, responseId) {
+        commands.push(['write', buffer, rate, responseId])
+        return true
+      },
+      done(responseId) {
+        commands.push(['done', responseId])
+        return true
+      },
+      clear() {},
+    },
+    onStarted: responseId => events.push(['started', responseId]),
+    onEnded: responseId => events.push(['ended', responseId]),
+    onIdle: () => events.push(['idle']),
+  })
+
+  playback.write('AQI=', 24000, 'response-1')
+  playback.done('response-1')
+  playback.done('response-1')
+  assert.deepEqual(events, [])
+  assert.deepEqual(commands.map(command => command[0]), ['write', 'done'])
+
+  playback.started('response-1')
+  playback.ended('response-1')
+  assert.deepEqual(events, [
+    ['started', 'response-1'],
+    ['ended', 'response-1'],
+    ['idle'],
+  ])
+})
+
 test('prints a late final ASR before the assistant response for that turn', () => {
   const output = []
   const display = createTranscriptDisplay({
@@ -399,6 +434,57 @@ test('does not split a streamed reply on a provisional user ASR snapshot', () =>
   )
 })
 
+test('discarding a provisional user snapshot does not cancel an assistant stream', () => {
+  const writes = []
+  const renderer = createTerminalTranscriptRenderer({
+    stdout: {
+      isTTY: true,
+      columns: 80,
+      write: content => writes.push(content),
+    },
+  })
+  const display = createTranscriptDisplay({
+    onUserDelta: content => renderer.update('你 >', content),
+    onUser: content => renderer.finish('你 >', content),
+    onUserDiscard: () => renderer.discardPreview(),
+    onAssistantDelta: content => renderer.stream('qwen-audio >', content),
+    onAssistant: content => renderer.finish('qwen-audio >', content),
+  })
+
+  display.handle({
+    type: 'transcript.delta',
+    role: 'assistant',
+    responseId: 'response-1',
+    content: '回复仍在',
+  })
+  display.handle({
+    type: 'transcript.delta',
+    role: 'user',
+    turnId: 'turn-1',
+    content: '回声',
+    replace: true,
+  })
+  display.handle({
+    type: 'transcript.discard',
+    role: 'user',
+    turnId: 'turn-1',
+  })
+  display.handle({
+    type: 'transcript.delta',
+    role: 'assistant',
+    responseId: 'response-1',
+    content: '继续',
+  })
+  display.handle({
+    type: 'transcript.final',
+    role: 'assistant',
+    responseId: 'response-1',
+    content: '回复仍在继续。',
+  })
+
+  assert.equal(writes.join(''), 'qwen-audio > 回复仍在继续。\n')
+})
+
 test('wraps and redraws a long mutable ASR preview across terminal rows', () => {
   const writes = []
   const stdout = {
@@ -468,6 +554,68 @@ test('releases a buffered response when the user transcript is discarded', () =>
   })
 
   assert.deepEqual(output, ['assistant:我听到了。'])
+})
+
+test('clears a mutable ASR preview when its turn is discarded', () => {
+  const writes = []
+  const renderer = createTerminalTranscriptRenderer({
+    stdout: {
+      isTTY: true,
+      columns: 40,
+      write: content => writes.push(content),
+    },
+  })
+  const display = createTranscriptDisplay({
+    onUserDelta: content => renderer.update('你 >', content),
+    onUser: content => renderer.finish('你 >', content),
+    onUserDiscard: () => renderer.discardPreview(),
+    onReset: () => renderer.cancel(),
+  })
+
+  display.handle({
+    type: 'transcript.delta',
+    role: 'user',
+    turnId: 'turn-1',
+    content: '残留的临时识别',
+    replace: true,
+  })
+  display.handle({
+    type: 'transcript.discard',
+    role: 'user',
+    turnId: 'turn-1',
+  })
+
+  assert.match(writes.join(''), /\r\u001b\[2K$/)
+})
+
+test('reset releases terminal output blocked behind an interrupted response', () => {
+  const writes = []
+  const renderer = createTerminalTranscriptRenderer({
+    stdout: {
+      isTTY: true,
+      columns: 40,
+      write: content => writes.push(content),
+    },
+  })
+  const display = createTranscriptDisplay({
+    onUser: () => {},
+    onAssistant: content => renderer.finish('qwen-audio >', content),
+    onAssistantDelta: content => renderer.stream('qwen-audio >', content),
+    onReset: () => renderer.cancel(),
+  })
+
+  display.handle({
+    type: 'transcript.delta',
+    role: 'assistant',
+    responseId: 'response-1',
+    content: '尚未完成的回复',
+  })
+  renderer.print('[连接中断，正在重连]')
+  assert.doesNotMatch(writes.join(''), /连接中断/)
+
+  display.reset()
+  renderer.print('[连接中断，正在重连]')
+  assert.match(writes.join(''), /连接中断，正在重连/)
 })
 
 test('prints duplicate final transcript events for one response only once', () => {

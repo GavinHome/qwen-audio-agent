@@ -58,11 +58,15 @@ export async function ensureMacVoiceIO({
 export async function startMacVoiceIO({
   captureSampleRate,
   onAudio,
+  onPlaybackStarted,
+  onPlaybackEnded,
   onError,
   onExit,
+  ensureImpl = ensureMacVoiceIO,
+  spawnImpl = spawn,
 } = {}) {
-  const binaryPath = await ensureMacVoiceIO()
-  const child = spawn(binaryPath, [
+  const binaryPath = await ensureImpl()
+  const child = spawnImpl(binaryPath, [
     '--capture-rate',
     String(captureSampleRate || 16000),
     '--playback-rate',
@@ -115,6 +119,10 @@ export async function startMacVoiceIO({
       settleReady(event)
     } else if (event.type === 'audio' && event.audio) {
       onAudio?.(Buffer.from(event.audio, 'base64'), event)
+    } else if (event.type === 'playback.started' && event.responseId) {
+      onPlaybackStarted?.(String(event.responseId))
+    } else if (event.type === 'playback.ended' && event.responseId) {
+      onPlaybackEnded?.(String(event.responseId))
     } else if (event.type === 'error') {
       const error = new Error(event.message || 'CoreAudio Voice Processing 错误')
       if (!ready) rejectReady(error)
@@ -150,12 +158,16 @@ export async function startMacVoiceIO({
   await readyPromise
   return {
     aec: true,
-    write(buffer, sampleRate = 24000) {
+    write(buffer, sampleRate = 24000, responseId = '') {
       return send({
         type: 'play',
         audio: buffer.toString('base64'),
         sampleRate,
+        responseId,
       })
+    },
+    done(responseId) {
+      return send({ type: 'done', responseId })
     },
     clear() {
       send({ type: 'clear' })

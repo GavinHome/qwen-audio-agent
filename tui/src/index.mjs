@@ -233,7 +233,9 @@ export function createTranscriptDisplay({
   onUser,
   onAssistant,
   onUserDelta = () => {},
+  onUserDiscard = () => {},
   onAssistantDelta = () => {},
+  onReset = () => {},
 }) {
   const maxRememberedTurns = 200
   const maxRememberedResponses = 200
@@ -306,6 +308,7 @@ export function createTranscriptDisplay({
       if (event.role === 'user' && event.type === 'transcript.discard') {
         const turnId = String(event.turnId || '')
         userDeltas.delete(turnId)
+        onUserDiscard(turnId)
         if (turnId) {
           completeUserTurn(turnId)
           flushTurn(turnId)
@@ -355,6 +358,17 @@ export function createTranscriptDisplay({
       pending.push(content)
       pendingAssistants.set(turnId, pending)
       return true
+    },
+    reset() {
+      userDeltas.clear()
+      assistantDeltas.clear()
+      completedUserTurns.clear()
+      completedUserTurnOrder.length = 0
+      completedAssistantResponses.clear()
+      completedAssistantResponseOrder.length = 0
+      pendingAssistants.clear()
+      assistantTurns.clear()
+      onReset()
     },
   }
 }
@@ -492,6 +506,12 @@ export function createTerminalTranscriptRenderer({
       stdout.write(`${line}\n`)
       redrawPreview()
     },
+    discardPreview() {
+      if (active?.kind !== 'preview') return
+      clearPreview()
+      active = null
+      flushPending()
+    },
     cancel() {
       if (active?.kind === 'preview') clearPreview()
       else if (active?.kind === 'stream') stdout.write('\n')
@@ -509,11 +529,9 @@ export function createPlayback({
   onCancelled,
   onIdle,
 }) {
-  let cursorMs = 0
-  const startTimers = new Map()
-  const endTimers = new Map()
+  const activeResponses = new Set()
   const startedResponses = new Set()
-  const responseEndMs = new Map()
+  const finishingResponses = new Set()
   const cancelledResponses = new Set()
   const cancelledResponseOrder = []
   const rememberCancelled = responseId => {
@@ -525,23 +543,13 @@ export function createPlayback({
     }
   }
   const stop = (reason = '') => {
-    const activeResponseIds = new Set([
-      ...startTimers.keys(),
-      ...endTimers.keys(),
-      ...startedResponses,
-      ...responseEndMs.keys(),
-    ])
-    for (const timer of startTimers.values()) clearTimeout(timer)
-    for (const timer of endTimers.values()) clearTimeout(timer)
-    for (const responseId of activeResponseIds) {
+    for (const responseId of activeResponses) {
       rememberCancelled(responseId)
       onCancelled?.(responseId, reason)
     }
-    startTimers.clear()
-    endTimers.clear()
+    activeResponses.clear()
     startedResponses.clear()
-    responseEndMs.clear()
-    cursorMs = 0
+    finishingResponses.clear()
     audioSink.clear()
   }
   return {
@@ -549,7 +557,7 @@ export function createPlayback({
       if (responseId && cancelledResponses.has(responseId)) return false
       const buffer = Buffer.from(base64, 'base64')
       if (!buffer.length) return true
-      if (!audioSink.write(buffer, rate)) {
+      if (!audioSink.write(buffer, rate, responseId)) {
         onError?.('音频设备未接受播放数据')
         if (responseId) {
           rememberCancelled(responseId)
@@ -557,44 +565,48 @@ export function createPlayback({
         }
         return false
       }
-      const now = Date.now()
-      const startMs = Math.max(now + 20, cursorMs)
-      cursorMs = startMs + (buffer.length / (rate * 2)) * 1000
-      if (responseId) responseEndMs.set(responseId, cursorMs)
-      if (
-        responseId
-        && !startedResponses.has(responseId)
-        && !startTimers.has(responseId)
-      ) {
-        const timer = setTimeout(() => {
-          startTimers.delete(responseId)
-          startedResponses.add(responseId)
-          onStarted?.(responseId)
-        }, Math.max(0, startMs - now))
-        startTimers.set(responseId, timer)
-      }
+      if (responseId) activeResponses.add(responseId)
       return true
     },
     done(responseId = '') {
-      if (!responseId || endTimers.has(responseId)) return
-      if (cancelledResponses.delete(responseId)) return
-      const finish = () => {
-        endTimers.delete(responseId)
-        responseEndMs.delete(responseId)
+      if (
+        !responseId
+        || cancelledResponses.has(responseId)
+        || !activeResponses.has(responseId)
+        || finishingResponses.has(responseId)
+      ) return
+      if (audioSink.done?.(responseId)) {
+        finishingResponses.add(responseId)
+      } else {
+        onError?.('音频设备未接受播放完成标记')
+        rememberCancelled(responseId)
+        activeResponses.delete(responseId)
         startedResponses.delete(responseId)
-        onEnded?.(responseId)
-        if (
-          startTimers.size === 0
-          && endTimers.size === 0
-          && startedResponses.size === 0
-          && responseEndMs.size === 0
-        ) {
-          onIdle?.()
-        }
+        finishingResponses.delete(responseId)
+        onCancelled?.(responseId)
+        if (activeResponses.size === 0) onIdle?.()
       }
-      const delay = Math.max(0, (responseEndMs.get(responseId) || Date.now()) - Date.now())
-      const timer = setTimeout(finish, delay)
-      endTimers.set(responseId, timer)
+    },
+    started(responseId = '') {
+      if (
+        !responseId
+        || cancelledResponses.has(responseId)
+        || !activeResponses.has(responseId)
+        || startedResponses.has(responseId)
+      ) return
+      startedResponses.add(responseId)
+      onStarted?.(responseId)
+    },
+    ended(responseId = '') {
+      if (
+        !responseId
+        || cancelledResponses.has(responseId)
+        || !activeResponses.delete(responseId)
+      ) return
+      startedResponses.delete(responseId)
+      finishingResponses.delete(responseId)
+      onEnded?.(responseId)
+      if (activeResponses.size === 0) onIdle?.()
     },
     clear: stop,
     close: stop,
@@ -645,8 +657,10 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   const transcriptDisplay = createTranscriptDisplay({
     onUserDelta: content => transcriptRenderer.update(userPrefix, content),
     onUser: content => transcriptRenderer.finish(userPrefix, content),
+    onUserDiscard: () => transcriptRenderer.discardPreview(),
     onAssistantDelta: content => transcriptRenderer.stream(assistantPrefix, content),
     onAssistant: content => transcriptRenderer.finish(assistantPrefix, content),
+    onReset: () => transcriptRenderer.cancel(),
   })
   const handleSigint = () => close()
   const handleSigterm = () => close()
@@ -706,7 +720,10 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   try {
     audioBridge = await startVoiceIO({
       captureSampleRate: inputSampleRate,
+      duplexMode: audioMode.fullDuplex ? 'full' : 'half',
       onAudio: sendMicrophoneAudio,
+      onPlaybackStarted: responseId => playback?.started(responseId),
+      onPlaybackEnded: responseId => playback?.ended(responseId),
       onError: reportAudioError,
       onExit: ({ code, signal }) => {
         bridgeExited = true
@@ -921,6 +938,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       ownsVoice = false
       setCaptureEnabled(false)
       playback.clear()
+      transcriptDisplay.reset()
       if (closed) {
         print('qwen-audio-agent 连接已关闭。')
         return

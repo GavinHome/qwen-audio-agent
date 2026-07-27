@@ -8,6 +8,7 @@ private struct Command: Decodable {
     let audio: String?
     let sampleRate: Double?
     let enabled: Bool?
+    let responseId: String?
 }
 
 private func pcmFormat(sampleRate: Double) -> AudioStreamBasicDescription {
@@ -67,49 +68,138 @@ private func resample(
     return output
 }
 
+private enum PlaybackSignal {
+    case started(String)
+    case ended(String)
+}
+
+private final class PlaybackEntry {
+    enum Kind {
+        case audio
+        case done
+    }
+
+    let kind: Kind
+    let responseId: String
+    let samples: [Int16]
+    var offset = 0
+
+    init(
+        kind: Kind,
+        responseId: String,
+        samples: [Int16] = []
+    ) {
+        self.kind = kind
+        self.responseId = responseId
+        self.samples = samples
+    }
+}
+
 private final class SampleQueue {
     private let lock = NSLock()
-    private var samples: [Int16] = []
-    private var offset = 0
+    private var entries: [PlaybackEntry] = []
+    private var entryIndex = 0
+    private var startedResponses = Set<String>()
 
-    func append(_ values: [Int16]) {
+    func append(_ values: [Int16], responseId: String) {
         guard !values.isEmpty else { return }
         lock.lock()
-        if offset > 16_384, offset * 2 > samples.count {
-            samples.removeFirst(offset)
-            offset = 0
-        }
-        samples.append(contentsOf: values)
+        compactIfNeeded()
+        entries.append(PlaybackEntry(
+            kind: .audio,
+            responseId: responseId,
+            samples: values
+        ))
         lock.unlock()
     }
 
-    func read(into destination: UnsafeMutableBufferPointer<Int16>) {
+    func finish(responseId: String) {
+        guard !responseId.isEmpty else { return }
         lock.lock()
-        let available = max(0, samples.count - offset)
-        let count = min(available, destination.count)
-        if count > 0 {
-            samples.withUnsafeBufferPointer { source in
-                destination.baseAddress?.update(
-                    from: source.baseAddress!.advanced(by: offset),
-                    count: count
+        compactIfNeeded()
+        entries.append(PlaybackEntry(
+            kind: .done,
+            responseId: responseId
+        ))
+        lock.unlock()
+    }
+
+    func read(
+        into destination: UnsafeMutableBufferPointer<Int16>
+    ) -> [PlaybackSignal] {
+        destination.baseAddress?.initialize(
+            repeating: 0,
+            count: destination.count
+        )
+        var signals: [PlaybackSignal] = []
+        var consumedResponses = Set<String>()
+        var destinationOffset = 0
+        lock.lock()
+        readLoop: while (
+            destinationOffset < destination.count
+            && entryIndex < entries.count
+        ) {
+            let entry = entries[entryIndex]
+            switch entry.kind {
+            case .done:
+                // Wait for the callback after the final samples were handed
+                // to CoreAudio before reporting completion.
+                if consumedResponses.contains(entry.responseId) {
+                    break readLoop
+                }
+                entryIndex += 1
+                startedResponses.remove(entry.responseId)
+                signals.append(.ended(entry.responseId))
+            case .audio:
+                if (
+                    !entry.responseId.isEmpty
+                    && !startedResponses.contains(entry.responseId)
+                ) {
+                    startedResponses.insert(entry.responseId)
+                    signals.append(.started(entry.responseId))
+                }
+                let count = min(
+                    destination.count - destinationOffset,
+                    entry.samples.count - entry.offset
                 )
+                if count > 0 {
+                    entry.samples.withUnsafeBufferPointer { source in
+                        destination.baseAddress?.advanced(by: destinationOffset)
+                            .update(
+                                from: source.baseAddress!.advanced(
+                                    by: entry.offset
+                                ),
+                                count: count
+                            )
+                    }
+                    entry.offset += count
+                    destinationOffset += count
+                    if !entry.responseId.isEmpty {
+                        consumedResponses.insert(entry.responseId)
+                    }
+                }
+                if entry.offset >= entry.samples.count {
+                    entryIndex += 1
+                }
             }
-            offset += count
         }
         lock.unlock()
-        if count < destination.count {
-            destination.baseAddress?.advanced(by: count).initialize(
-                repeating: 0,
-                count: destination.count - count
-            )
-        }
+        return signals
     }
 
     func clear() {
         lock.lock()
-        samples.removeAll(keepingCapacity: true)
-        offset = 0
+        entries.removeAll(keepingCapacity: true)
+        entryIndex = 0
+        startedResponses.removeAll(keepingCapacity: true)
         lock.unlock()
+    }
+
+    private func compactIfNeeded() {
+        if entryIndex > 128, entryIndex * 2 > entries.count {
+            entries.removeFirst(entryIndex)
+            entryIndex = 0
+        }
     }
 }
 
@@ -264,12 +354,26 @@ private final class VoiceIO {
             guard let data = buffer.mData else { continue }
             let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Int16>.size
             let destination = data.bindMemory(to: Int16.self, capacity: sampleCount)
-            playback.read(
+            let signals = playback.read(
                 into: UnsafeMutableBufferPointer(
                     start: destination,
                     count: sampleCount
                 )
             )
+            for signal in signals {
+                switch signal {
+                case .started(let responseId):
+                    emit([
+                        "type": "playback.started",
+                        "responseId": responseId,
+                    ])
+                case .ended(let responseId):
+                    emit([
+                        "type": "playback.ended",
+                        "responseId": responseId,
+                    ])
+                }
+            }
         }
         return noErr
     }
@@ -313,7 +417,11 @@ private final class VoiceIO {
         return noErr
     }
 
-    func play(base64: String, sampleRate: Double) {
+    func play(
+        base64: String,
+        sampleRate: Double,
+        responseId: String
+    ) {
         guard
             let data = Data(base64Encoded: base64),
             !data.isEmpty,
@@ -327,7 +435,11 @@ private final class VoiceIO {
                 to: voiceSampleRate
             )
         }
-        playback.append(converted)
+        playback.append(converted, responseId: responseId)
+    }
+
+    func finishPlayback(responseId: String) {
+        playback.finish(responseId: responseId)
     }
 
     func clearPlayback() {
@@ -407,9 +519,12 @@ do {
             if let audio = command.audio {
                 voiceIO.play(
                     base64: audio,
-                    sampleRate: command.sampleRate ?? 24_000
+                    sampleRate: command.sampleRate ?? 24_000,
+                    responseId: command.responseId ?? ""
                 )
             }
+        case "done":
+            voiceIO.finishPlayback(responseId: command.responseId ?? "")
         case "clear":
             voiceIO.clearPlayback()
         case "capture":

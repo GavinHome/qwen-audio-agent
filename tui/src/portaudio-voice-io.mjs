@@ -8,7 +8,10 @@ const PLAYBACK_SAMPLE_RATE = 24000
 
 export async function startPortAudioVoiceIO({
   captureSampleRate,
+  duplexMode = 'half',
   onAudio,
+  onPlaybackStarted,
+  onPlaybackEnded,
   onError,
   onExit,
   spawnImpl = spawn,
@@ -23,6 +26,8 @@ export async function startPortAudioVoiceIO({
       String(captureSampleRate || 16000),
       '--playback-rate',
       String(PLAYBACK_SAMPLE_RATE),
+      '--mode',
+      duplexMode,
     ],
     { stdio: ['pipe', 'pipe', 'pipe'] },
   )
@@ -66,6 +71,10 @@ export async function startPortAudioVoiceIO({
       settleReady()
     } else if (event.type === 'audio' && event.audio) {
       onAudio?.(Buffer.from(event.audio, 'base64'))
+    } else if (event.type === 'playback.started' && event.responseId) {
+      onPlaybackStarted?.(String(event.responseId))
+    } else if (event.type === 'playback.ended' && event.responseId) {
+      onPlaybackEnded?.(String(event.responseId))
     } else if (event.type === 'error' && event.message) {
       onError?.(String(event.message))
     }
@@ -119,7 +128,7 @@ export async function startPortAudioVoiceIO({
     setCaptureEnabled(enabled) {
       send({ type: 'capture', enabled: Boolean(enabled) })
     },
-    write(buffer, sampleRate = PLAYBACK_SAMPLE_RATE) {
+    write(buffer, sampleRate = PLAYBACK_SAMPLE_RATE, responseId = '') {
       if (Number(sampleRate) !== PLAYBACK_SAMPLE_RATE) {
         onError?.(`PortAudio 只接受 ${PLAYBACK_SAMPLE_RATE} Hz 播放音频`)
         return false
@@ -127,7 +136,11 @@ export async function startPortAudioVoiceIO({
       return send({
         type: 'play',
         audio: Buffer.from(buffer).toString('base64'),
+        responseId,
       })
+    },
+    done(responseId) {
+      return send({ type: 'done', responseId })
     },
     clear() {
       send({ type: 'clear' })
