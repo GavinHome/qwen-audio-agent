@@ -1,5 +1,7 @@
 # qwen-audio-agent
 
+[中文](README.md) | [English](README_EN.md)
+
 ## 让 Agent 开口说话
 
 **自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
@@ -120,6 +122,8 @@ qwenaudio webui
 
 桌面版是常驻桌面的语音悬浮球，连接同一套 Gateway。桌面 UI 已包含在 `.app`
 中，重新构建即可更新外观；Gateway 只提供 API、实时语音和后台 Agent 能力。
+悬浮球启动后默认开启收音；只有麦克风准备成功后才会接入语音，权限被拒绝或初始化
+失败时会自动保持关闭。
 先按上面的步骤启动 Gateway，再从发布页下载 `.dmg`，打开后将
 **Qwen Audio Agent** 拖入“应用程序”。
 
