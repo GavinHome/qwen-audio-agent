@@ -235,5 +235,9 @@ Linux 和 Windows 可通过 `qwenaudio tui --audio-mode full` 或设置
 回声消除，只支持直接说话打断；推荐佩戴耳机，避免扬声器回声触发误识别或误打断。
 macOS 始终使用 CoreAudio AEC 全双工，不受该选项影响。
 
+如果 PortAudio 全双工持续报告输入溢出、输出欠载或设备错误，请退出 TUI 并改用
+`qwenaudio tui --audio-mode half`。不同 Linux/Windows 声卡和蓝牙耳机对同时使用
+不同采样率的输入、输出流支持程度不同，半双工是兼容性兜底。
+
 任务状态、通知重试、记忆容量与保留时间等运行参数同样使用内置默认值。只有明确
 进行容量规划或故障诊断时才建议覆盖。

@@ -29,6 +29,27 @@ function normalizeAudioMode(value) {
   return mode
 }
 
+function nextArgumentValue(argv, index, option) {
+  const value = argv[index + 1]
+  if (!value || value.startsWith('-')) {
+    throw new Error(`${option} 缺少参数`)
+  }
+  return value
+}
+
+function normalizeGatewayUrl(value) {
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`无效的 Gateway URL：${value}`)
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('Gateway URL 只支持 http 或 https')
+  }
+  return url.origin
+}
+
 export function parseArguments(argv, env = process.env) {
   const options = {
     url: env.QWEN_AUDIO_AGENT_URL || 'http://127.0.0.1:3101',
@@ -37,18 +58,22 @@ export function parseArguments(argv, env = process.env) {
     takeover: false,
   }
   for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === '--url' && argv[index + 1]) options.url = argv[++index]
-    else if (argv[index] === '--session' && argv[index + 1]) {
-      options.sessionId = argv[++index]
+    const argument = argv[index]
+    if (argument === '--url') {
+      options.url = nextArgumentValue(argv, index++, '--url')
+    } else if (argument === '--session') {
+      options.sessionId = nextArgumentValue(argv, index++, '--session')
     } else if (argv[index] === '--help' || argv[index] === '-h') {
       options.help = true
-    } else if (argv[index] === '--takeover') {
+    } else if (argument === '--takeover') {
       options.takeover = true
-    } else if (argv[index] === '--audio-mode' && argv[index + 1]) {
-      options.audioMode = argv[++index]
-    }
+    } else if (argument === '--audio-mode') {
+      options.audioMode = nextArgumentValue(argv, index++, '--audio-mode')
+    } else throw new Error(`未知参数：${argument}`)
   }
-  options.url = options.url.replace(/\/+$/, '')
+  options.url = normalizeGatewayUrl(options.url)
+  options.sessionId = String(options.sessionId || '').trim()
+  if (!options.sessionId) throw new Error('--session 不能为空')
   options.audioMode = normalizeAudioMode(options.audioMode)
   return options
 }
@@ -153,6 +178,12 @@ export function helpText(mode = audioModeForPlatform()) {
     '  h  显示帮助',
     '  q  退出',
   ].join('\n')
+}
+
+export function fullDuplexFallbackHint(mode) {
+  if (mode.audioBackend !== 'portaudio' || !mode.fullDuplex) return ''
+  return 'PortAudio 全双工出现异常；请重新运行 '
+    + 'qwenaudio tui --audio-mode half 使用半双工。'
 }
 
 function requestLabel(task) {
@@ -535,12 +566,13 @@ export function createPlayback({
 }
 
 export async function runTui(options = parseArguments(process.argv.slice(2))) {
+  const audioMode = audioModeForPlatform(process.platform, options.audioMode)
   if (options.help) {
     process.stdout.write(
       'qwen-audio-agent Voice TUI\n\n'
       + '用法：qwenaudio tui [--url URL] [--session ID] '
       + '[--audio-mode half|full] [--takeover]\n\n'
-      + `${helpText()}\n`,
+      + `${helpText(audioMode)}\n`,
     )
     return
   }
@@ -618,27 +650,44 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     }
   }
 
-  const audioMode = audioModeForPlatform(process.platform, options.audioMode)
   const startVoiceIO = audioMode.audioBackend === 'coreaudio'
     ? startMacVoiceIO
     : startPortAudioVoiceIO
 
+  const fallbackHint = fullDuplexFallbackHint(audioMode)
+  let fallbackHintPrinted = false
+  const printFallbackHint = () => {
+    if (!fallbackHint || fallbackHintPrinted) return
+    fallbackHintPrinted = true
+    print(style(`[建议] ${fallbackHint}`, 'yellow'))
+  }
+  const reportAudioError = message => {
+    print(`${style('[音频]', 'red')} ${message}`)
+    printFallbackHint()
+  }
+
   let bridgeExited = false
-  audioBridge = await startVoiceIO({
-    captureSampleRate: inputSampleRate,
-    onAudio: sendMicrophoneAudio,
-    onError: message => print(`${style('[音频]', 'red')} ${message}`),
-    onExit: ({ code, signal }) => {
-      bridgeExited = true
-      if (!closed) {
-        print(style(
-          `[音频设备已停止：${code ?? signal ?? 'unknown'}]`,
-          'red',
-        ))
-        close()
-      }
-    },
-  })
+  try {
+    audioBridge = await startVoiceIO({
+      captureSampleRate: inputSampleRate,
+      onAudio: sendMicrophoneAudio,
+      onError: reportAudioError,
+      onExit: ({ code, signal }) => {
+        bridgeExited = true
+        if (!closed) {
+          print(style(
+            `[音频设备已停止：${code ?? signal ?? 'unknown'}]`,
+            'red',
+          ))
+          printFallbackHint()
+          close()
+        }
+      },
+    })
+  } catch (error) {
+    if (!fallbackHint) throw error
+    throw new Error(`${error.message}\n建议：${fallbackHint}`, { cause: error })
+  }
   if (closed) {
     audioBridge.close()
     return

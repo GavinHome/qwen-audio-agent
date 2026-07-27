@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Line-delimited JSON bridge for the minimal TUI's half-duplex audio mode."""
+"""Line-delimited JSON bridge for the minimal TUI's PortAudio modes."""
 
 import argparse
 import base64

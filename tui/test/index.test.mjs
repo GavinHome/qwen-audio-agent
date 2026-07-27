@@ -8,6 +8,7 @@ import {
   createPlayback,
   createTerminalTranscriptRenderer,
   createTranscriptDisplay,
+  fullDuplexFallbackHint,
   helpText,
   parseArguments,
   performManualInterrupt,
@@ -49,6 +50,22 @@ test('parses a custom gateway, session and audio mode', () => {
   assert.throws(
     () => parseArguments(['--audio-mode', 'invalid'], {}),
     /不支持的音频模式/,
+  )
+  assert.throws(
+    () => parseArguments(['--audio-mode'], {}),
+    /--audio-mode 缺少参数/,
+  )
+  assert.throws(
+    () => parseArguments(['--unknown'], {}),
+    /未知参数：--unknown/,
+  )
+  assert.throws(
+    () => parseArguments(['--session', ''], {}),
+    /--session 缺少参数/,
+  )
+  assert.equal(
+    parseArguments(['--url', 'https://voice.example.com/path'], {}).url,
+    'https://voice.example.com',
   )
 })
 
@@ -143,6 +160,9 @@ test('uses macOS AEC and selectable PortAudio duplex modes elsewhere', () => {
   assert.match(helpText(linux), /回复播放完毕后可继续说话/)
   assert.match(helpText(linux), /按 x 可手动打断/)
   assert.doesNotMatch(helpText(linux), /输入文字|text\.message/)
+  assert.equal(fullDuplexFallbackHint(mac), '')
+  assert.equal(fullDuplexFallbackHint(linux), '')
+  assert.match(fullDuplexFallbackHint(linuxFull), /--audio-mode half/)
 })
 
 test('drops queued microphone frames whenever half-duplex capture is gated', () => {
