@@ -161,14 +161,76 @@ function ensureManagedWorkspace(directory, templatePath) {
   return directory
 }
 
-function ensurePrivateTemplate(templatePath, targetPath) {
+function codeBuddyModelName(env, fallback) {
+  const configured = String(
+    env.CODEBUDDY_MODEL
+    || env.QWEN_AUDIO_AGENT_BACKEND_MODEL
+    || fallback,
+  ).trim() || fallback
+  const separator = configured.indexOf('/')
+  return separator >= 0 ? configured.slice(separator + 1) : configured
+}
+
+function codeBuddyTemplateContent(templatePath, model) {
+  const template = JSON.parse(readFileSync(templatePath, 'utf8'))
+  const defaultModel = String(template.models?.[0]?.id || '').trim()
+  if (!defaultModel) {
+    throw new Error(`CodeBuddy 模型模板缺少默认模型：${templatePath}`)
+  }
+  template.models = template.models.map(entry => (
+    entry.id === defaultModel
+      ? {
+          ...entry,
+          id: model,
+          ...(entry.name ? {
+            name: model === defaultModel ? entry.name : model,
+          } : {}),
+        }
+      : entry
+  ))
+  if (Array.isArray(template.availableModels)) {
+    template.availableModels = template.availableModels.map(id => (
+      id === defaultModel ? model : id
+    ))
+  }
+  return `${JSON.stringify(template, null, 2)}\n`
+}
+
+function ensureCodeBuddyTemplate(templatePath, targetPath, env) {
   mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 })
+  const template = JSON.parse(readFileSync(templatePath, 'utf8'))
+  const fallback = String(template.models?.[0]?.id || '').trim()
+  const model = codeBuddyModelName(env, fallback)
+  const desired = codeBuddyTemplateContent(templatePath, model)
   try {
-    copyFileSync(templatePath, targetPath, constants.COPYFILE_EXCL)
-    chmodSync(targetPath, 0o600)
+    writeFileSync(targetPath, desired, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
   } catch (error) {
     if (error.code !== 'EEXIST') throw error
+    const current = readFileSync(targetPath, 'utf8')
+    let generated = false
+    try {
+      const currentModel = String(
+        JSON.parse(current).models?.[0]?.id || '',
+      ).trim()
+      generated = Boolean(currentModel) && current === codeBuddyTemplateContent(
+        templatePath,
+        currentModel,
+      )
+    } catch {
+      // Preserve malformed or manually edited user configuration.
+    }
+    if (generated && current !== desired) {
+      writeFileSync(targetPath, desired, {
+        encoding: 'utf8',
+        mode: 0o600,
+      })
+    }
   }
+  chmodSync(targetPath, 0o600)
   return targetPath
 }
 
@@ -287,9 +349,10 @@ export function loadRuntimeEnvironment({
         codeBuddyWorkspace,
         resolve(root, 'config/codebuddy/workspace/AGENTS.md'),
       )
-      ensurePrivateTemplate(
+      ensureCodeBuddyTemplate(
         resolve(root, 'config/codebuddy/workspace/.codebuddy/models.json'),
         resolve(codeBuddyWorkspace, '.codebuddy/models.json'),
+        env,
       )
     }
     if (defaultCodexWorkspace) {

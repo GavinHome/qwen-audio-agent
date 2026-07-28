@@ -41,7 +41,8 @@ function fixture() {
   )
   mkdirSync(codeBuddyConfig, { recursive: true })
   writeFileSync(resolve(codeBuddyConfig, 'models.json'), JSON.stringify({
-    models: [{ id: 'qwen3.7-max' }],
+    models: [{ id: 'qwen3.7-max', name: 'Qwen 3.7 Max' }],
+    availableModels: ['qwen3.7-max'],
   }))
   return { base, root, homeDirectory }
 }
@@ -186,12 +187,76 @@ test('keeps managed backend data outside the installation directory', () => {
       resolve(result.codeBuddyWorkspace, '.codebuddy/models.json'),
       'utf8',
     )),
-    { models: [{ id: 'qwen3.7-max' }] },
+    {
+      models: [{ id: 'qwen3.7-max', name: 'Qwen 3.7 Max' }],
+      availableModels: ['qwen3.7-max'],
+    },
   )
   assert.match(
     readFileSync(resolve(result.openCodeWorkspace, 'AGENTS.md'), 'utf8'),
     /opencode/,
   )
+})
+
+test('keeps the generated CodeBuddy model aligned with backend settings', () => {
+  const target = fixture()
+  const env = {
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'alibaba-cn/qwen3.7-plus',
+  }
+  const first = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+    generateSecret: false,
+  })
+  const modelPath = resolve(
+    first.codeBuddyWorkspace,
+    '.codebuddy/models.json',
+  )
+  assert.deepEqual(JSON.parse(readFileSync(modelPath, 'utf8')), {
+    models: [{ id: 'qwen3.7-plus', name: 'qwen3.7-plus' }],
+    availableModels: ['qwen3.7-plus'],
+  })
+
+  loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: { CODEBUDDY_MODEL: 'qwen3.7-max' },
+    generateSecret: false,
+  })
+  assert.deepEqual(JSON.parse(readFileSync(modelPath, 'utf8')), {
+    models: [{ id: 'qwen3.7-max', name: 'Qwen 3.7 Max' }],
+    availableModels: ['qwen3.7-max'],
+  })
+})
+
+test('preserves a user-edited CodeBuddy model configuration', () => {
+  const target = fixture()
+  const env = {
+    CODEBUDDY_MODEL: 'qwen3.7-plus',
+  }
+  const first = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+    generateSecret: false,
+  })
+  const modelPath = resolve(
+    first.codeBuddyWorkspace,
+    '.codebuddy/models.json',
+  )
+  const customized = `${JSON.stringify({
+    models: [{ id: 'custom-model', url: 'https://example.com/v1' }],
+  }, null, 2)}\n`
+  writeFileSync(modelPath, customized)
+
+  loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: { CODEBUDDY_MODEL: 'qwen3.7-max' },
+    generateSecret: false,
+  })
+  assert.equal(readFileSync(modelPath, 'utf8'), customized)
 })
 
 test('desktop client setup does not require packaged backend templates', () => {

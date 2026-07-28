@@ -175,8 +175,10 @@ CODEBUDDY_MODEL=qwen3.7-max
 CODEBUDDY_MODEL_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 ```
 
-如修改 `CODEBUDDY_MODEL`，需同步在工作区 `.codebuddy/models.json` 中添加对应
-模型 ID。
+使用默认工作区时，`CODEBUDDY_MODEL` 或
+`QWEN_AUDIO_AGENT_BACKEND_MODEL` 的变化会自动同步到系统生成的
+`.codebuddy/models.json`。如果用户已经手动修改该文件，Gateway 会保留用户配置，
+此时需自行确保对应模型 ID 已加入 `models` 和 `availableModels`。
 
 ### Codex
 
@@ -211,10 +213,11 @@ Hermes、CodeBuddy 和 Codex 均由 Gateway 直接管理 ACP 子进程，只支�
 - `native`（默认）：权限由后台 Agent 自己判断和询问，Gateway 只负责原样转发。
 - `full`：启动时明确授予最高权限，后台可直接执行命令、读写文件，不再逐次确认。
 
-`full` 当前仅支持 `managed` 模式的 OpenCode 和 Qoder。Qoder CLI 会使用
-`--dangerously-skip-permissions`；OpenCode 会在受管进程的内联配置中为协调 Agent 和任务
-Agent 设置 `permission: "allow"`。`compatible` 模式连接的是外部进程，Gateway
-不会越权修改它。
+`full` 当前支持 `managed` 模式的 OpenCode、Qoder、Hermes、CodeBuddy 和
+Codex。Gateway 会自动批准这些 ACP 后台发起的权限请求；此外 Qoder 和 CodeBuddy
+CLI 会使用 `--dangerously-skip-permissions`，OpenCode 会在受管进程的内联配置中为
+协调 Agent 和任务 Agent 设置 `permission: "allow"`，Codex 会使用
+`agent-full-access` 模式。`compatible` 模式连接的是外部进程，Gateway 不会越权修改它。
 
 OpenClaw 的执行授权同时受 exec approvals、elevated 和执行 host 等配置约束，
 无法由一个统一开关安全、完整地表达；选择 `full` 时 Gateway 会明确拒绝启动，
