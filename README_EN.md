@@ -15,23 +15,21 @@ already use.**
 qwen-audio-agent is a realtime voice frontend for mainstream Agents. Talk as
 naturally as you would on a phone call, interrupt at any time, and use your
 voice to delegate long-running work such as search, file operations, and coding.
-Backend work never blocks the conversation; when it finishes, the result
-returns naturally to the current context.
+Backend work never blocks the conversation; when a task
+finishes, the result is announced naturally.
 
 ![qwen-audio-agent connecting to different Agents](docs/qwen-audio-agent-voice-agent-ecosystem.png)
 
 ## Core Features
 
-- Connect to the Agents you prefer: one voice entry point for different Agents,
-  with support continuing to expand
-- Full-duplex realtime voice, natural interruption, and continuous multi-turn
-  conversation
+- Full-duplex realtime voice interaction, natural interruption, and continuous
+  multi-turn conversation
+- One-click connection to the Agents you prefer, reusing their existing
+  models, tools, MCP servers, and Skills
 - Voice conversation and backend tasks run in parallel, with progress queries
   and cancellation available at any time
 - Task results return automatically to the current context for follow-up and
   revision
-- Reuse the backend Agent's existing models, tools, MCP servers, Skills,
-  permissions, and projects
 - WebUI, terminal TUI, and a macOS desktop orb
 - Local user profile and personal memory across sessions
 
@@ -64,8 +62,7 @@ module walkthrough.
 | Codex | In development | Coding tasks, tool calls, and project collaboration | ★★★★☆ |
 | Hermes | In development | Tool calls, task execution, and project collaboration | ★★★★☆ |
 
-“In development” means an independent feature branch exists but has not yet
-been merged into a release. Ratings reflect coordination-tool support:
+Ratings reflect coordination-tool support:
 integrations with coordination tools receive five stars, while those without
 them receive four. A rating does not indicate current availability. See the
 [configuration guide](docs/configuration.md) for detailed setup and capability
@@ -192,7 +189,7 @@ qwenaudio gateway uninstall
 
 ## Choose a Backend Agent
 
-Select the backend Agent with `AGENT_PROTOCOL`. OpenCode is the default:
+Select the backend Agent with `AGENT_PROTOCOL`:
 
 ```dotenv
 AGENT_PROTOCOL=opencode

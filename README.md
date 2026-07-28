@@ -52,7 +52,7 @@ qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通�
 | Codex | 开发中 | 代码任务、工具调用与项目协作 | ★★★★☆ |
 | Hermes | 开发中 | 工具调用、任务执行与项目协作 | ★★★★☆ |
 
-“开发中”表示已有独立功能分支，但尚未合并到发布版本。推荐指数按协调工具支持
+推荐指数按协调工具支持
 划分：实现协调工具为五星，尚未实现为四星；它不代表当前可用状态。详细配置和
 能力边界见[配置说明](docs/configuration.md)。
 
@@ -170,7 +170,7 @@ qwenaudio gateway uninstall
 
 ## 选择后台 Agent
 
-通过 `AGENT_PROTOCOL` 选择后台 Agent。默认使用 OpenCode：
+通过 `AGENT_PROTOCOL` 选择后台 Agent：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
