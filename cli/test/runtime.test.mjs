@@ -169,7 +169,7 @@ test('derives selected backend configuration', () => {
   })
 })
 
-test('derives Qoder without an HTTP backend and rejects the legacy compatible mode', () => {
+test('derives Qoder without an HTTP backend', () => {
   assert.deepEqual(resolveBackend({
     backend: 'qoder',
   }, {}), {
@@ -180,13 +180,6 @@ test('derives Qoder without an HTTP backend and rejects the legacy compatible mo
     agentId: '',
     baseUrl: null,
   })
-  assert.throws(
-    () => resolveBackend({
-      backend: 'qoder',
-      backendMode: 'compatible',
-    }, {}),
-    /旧 compatible/,
-  )
 })
 
 test('derives generic ACP without an HTTP backend', () => {

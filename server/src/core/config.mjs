@@ -125,23 +125,14 @@ export function resolveBackendModels(env = process.env) {
   }
 }
 
-const legacyBackendMode = (
-  String(process.env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed').toLowerCase()
-  === 'compatible'
-    ? 'compatible'
-    : 'managed'
-)
 const configuredAgentProtocol = String(
   process.env.AGENT_PROTOCOL || '',
 ).toLowerCase()
 const backendOwnership = (
-  legacyBackendMode === 'compatible'
-  || (
-    configuredAgentProtocol === 'openclaw'
-    && String(
-      process.env.OPENCLAW_ATTACH_EXISTING || '',
-    ).toLowerCase() === 'true'
-  )
+  configuredAgentProtocol === 'openclaw'
+  && String(
+    process.env.OPENCLAW_ATTACH_EXISTING || '',
+  ).toLowerCase() === 'true'
 ) ? 'external' : 'owned'
 const backendModels = resolveBackendModels()
 const backendPermissionMode = String(

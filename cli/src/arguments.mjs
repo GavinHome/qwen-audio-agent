@@ -14,7 +14,6 @@ const GATEWAY_ACTIONS = new Set([
   'status',
   'uninstall',
 ])
-const LEGACY_BACKEND_MODES = new Set(['managed', 'compatible'])
 const BACKEND_PERMISSION_MODES = new Set(['native', 'full'])
 const TUI_AUDIO_MODES = new Set(['half', 'full'])
 
@@ -67,9 +66,6 @@ export function parseArguments(argv, env = process.env) {
     attachOpenClaw: String(
       env.OPENCLAW_ATTACH_EXISTING || '',
     ).toLowerCase() === 'true',
-    legacyBackendMode: env.QWEN_AUDIO_AGENT_BACKEND_MODE
-      ? String(env.QWEN_AUDIO_AGENT_BACKEND_MODE).toLowerCase()
-      : '',
     backendPermissionMode: String(
       env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
     ).toLowerCase(),
@@ -90,13 +86,6 @@ export function parseArguments(argv, env = process.env) {
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend') {
       options.backend = nextValue(args, index++, '--backend').toLowerCase()
-      options.gatewayConfigurationSpecified = true
-    } else if (argument === '--backend-mode') {
-      options.legacyBackendMode = nextValue(
-        args,
-        index++,
-        '--backend-mode',
-      ).toLowerCase()
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--attach-openclaw') {
       options.attachOpenClaw = true
@@ -131,15 +120,6 @@ export function parseArguments(argv, env = process.env) {
   if (options.backend && !definition) {
     throw new Error(
       `不支持的后台：${options.backend}（可选 ${backendNames().join('、')}）`,
-    )
-  }
-  if (
-    options.legacyBackendMode
-    && !LEGACY_BACKEND_MODES.has(options.legacyBackendMode)
-  ) {
-    throw new Error(
-      `不支持的旧后台模式：${options.legacyBackendMode}`
-      + '（可选 managed、compatible）',
     )
   }
   if (!BACKEND_PERMISSION_MODES.has(options.backendPermissionMode)) {
@@ -183,19 +163,8 @@ export function parseArguments(argv, env = process.env) {
     throw new Error('--attach-openclaw 只适用于 OpenClaw')
   }
   if (
-    options.legacyBackendMode === 'compatible'
-    && !['openclaw', 'opencode'].includes(options.backend)
-  ) {
-    throw new Error(
-      `${definition?.label || options.backend} 不支持旧 compatible 参数`,
-    )
-  }
-  if (
     options.backendPermissionMode === 'full'
-    && (
-      options.attachOpenClaw
-      || options.legacyBackendMode === 'compatible'
-    )
+    && options.attachOpenClaw
   ) {
     throw new Error('最高权限模式只支持由 Gateway 启动的后台 Agent')
   }

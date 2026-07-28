@@ -23,25 +23,10 @@ export function resolveManagedBackend(env = process.env) {
     )
   }
   const driver = backendRuntimeDriver(protocol)
-  const legacyMode = String(
-    env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
-  ).toLowerCase()
   const resolvedPermissionMode = permissionMode(env)
-  if (!['managed', 'compatible'].includes(legacyMode)) {
-    throw new Error(`不支持的旧后台模式：${legacyMode}`)
-  }
-  if (
-    legacyMode === 'compatible'
-    && !['openclaw', 'opencode'].includes(protocol)
-  ) {
-    throw new Error(`${protocol} 不支持旧 compatible 参数`)
-  }
   const attachOpenClaw = (
     protocol === 'openclaw'
-    && (
-      String(env.OPENCLAW_ATTACH_EXISTING || '').toLowerCase() === 'true'
-      || legacyMode === 'compatible'
-    )
+    && String(env.OPENCLAW_ATTACH_EXISTING || '').toLowerCase() === 'true'
   )
   if (
     String(env.OPENCLAW_ATTACH_EXISTING || '').toLowerCase() === 'true'
@@ -49,10 +34,7 @@ export function resolveManagedBackend(env = process.env) {
   ) {
     throw new Error('OPENCLAW_ATTACH_EXISTING 只适用于 OpenClaw')
   }
-  const ownership = (
-    attachOpenClaw
-    || (protocol === 'opencode' && legacyMode === 'compatible')
-  ) ? 'external' : 'owned'
+  const ownership = attachOpenClaw ? 'external' : 'owned'
   if (resolvedPermissionMode === 'full' && ownership !== 'owned') {
     throw new Error('最高权限模式只支持由 Gateway 启动的后台 Agent')
   }

@@ -38,34 +38,14 @@ export function resolveBackend(options = {}, env = process.env) {
   if (!definition) throw new Error(
     `不支持的后台 Agent：${protocol}（可选 ${backendNames().join('、')}）`,
   )
-  const legacyMode = String(
-    options.legacyBackendMode
-    || options.backendMode
-    || env.QWEN_AUDIO_AGENT_BACKEND_MODE
-    || 'managed',
-  ).toLowerCase()
-  if (!['managed', 'compatible'].includes(legacyMode)) {
-    throw new Error(`不支持的旧后台模式：${legacyMode}`)
-  }
-  if (
-    legacyMode === 'compatible'
-    && !['openclaw', 'opencode'].includes(protocol)
-  ) {
-    throw new Error(`${definition.label} 不支持旧 compatible 参数`)
-  }
   const attachOpenClaw = (
     options.attachOpenClaw === true
     || String(env.OPENCLAW_ATTACH_EXISTING || '').toLowerCase() === 'true'
-    || (protocol === 'openclaw' && legacyMode === 'compatible')
   )
   if (attachOpenClaw && protocol !== 'openclaw') {
     throw new Error('连接已有 OpenClaw Gateway 只适用于 OpenClaw')
   }
-  // compatible is retained only as an input shim for older installations.
-  const ownership = (
-    attachOpenClaw
-    || (protocol === 'opencode' && legacyMode === 'compatible')
-  ) ? 'external' : 'owned'
+  const ownership = attachOpenClaw ? 'external' : 'owned'
   const permissionMode = String(
     options.backendPermissionMode
     || env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
@@ -203,11 +183,6 @@ function backendEnvironment(env, backend) {
     ...(backend.attachOpenClaw
       ? { OPENCLAW_ATTACH_EXISTING: 'true' }
       : {}),
-    ...(
-      backend.ownership === 'external' && !backend.attachOpenClaw
-        ? { QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible' }
-        : {}
-    ),
     QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: backend.permissionMode,
     ...(backend.agentId
       ? { QWEN_AUDIO_AGENT_BACKEND_AGENT: backend.agentId }

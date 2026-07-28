@@ -34,11 +34,6 @@ function applyGatewayOptions(env, options) {
   } else {
     delete env.OPENCLAW_ATTACH_EXISTING
   }
-  if (options.legacyBackendMode) {
-    env.QWEN_AUDIO_AGENT_BACKEND_MODE = options.legacyBackendMode
-  } else {
-    delete env.QWEN_AUDIO_AGENT_BACKEND_MODE
-  }
   env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE = options.backendPermissionMode
   if (options.backendAgent) {
     env.QWEN_AUDIO_AGENT_BACKEND_AGENT = options.backendAgent

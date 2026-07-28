@@ -19,23 +19,6 @@ function childProcess() {
   return child
 }
 
-test('legacy compatible input never starts a backend process', async () => {
-  let spawned = false
-  const runtime = await startManagedBackend({
-    root: '/repo',
-    env: {
-      AGENT_PROTOCOL: 'opencode',
-      QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-      OPENCODE_BASE_URL: 'http://127.0.0.1:4096',
-    },
-    spawnImpl: () => {
-      spawned = true
-    },
-  })
-  assert.equal(runtime.ownsProcess, false)
-  assert.equal(spawned, false)
-})
-
 test('attaching an existing OpenClaw Gateway does not start another one', async () => {
   let spawned = false
   const env = {
@@ -121,13 +104,6 @@ test('Qoder is managed inside the Gateway without a separate server', async () =
     },
   })
   assert.equal(runtime.ownsProcess, false)
-  assert.throws(
-    () => resolveManagedBackend({
-      AGENT_PROTOCOL: 'qoder',
-      QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-    }),
-    /旧 compatible/,
-  )
 })
 
 test('generic ACP is managed as a Gateway child without a separate server', async () => {
@@ -150,10 +126,6 @@ test('generic ACP is managed as a Gateway child without a separate server', asyn
     },
   })
   assert.equal(runtime.ownsProcess, false)
-  assert.throws(() => resolveManagedBackend({
-    AGENT_PROTOCOL: 'acp',
-    QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-  }), /旧 compatible/)
 })
 
 test('additional ACP backends run inside the Gateway without an HTTP server', async () => {
@@ -174,10 +146,6 @@ test('additional ACP backends run inside the Gateway without an HTTP server', as
       },
     })
     assert.equal(runtime.ownsProcess, false)
-    assert.throws(() => resolveManagedBackend({
-      AGENT_PROTOCOL: protocol,
-      QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-    }), /旧 compatible/)
   }
 })
 
@@ -208,8 +176,8 @@ test('full permission mode configures managed OpenCode without discarding inline
 
 test('full permission mode rejects backends that cannot support it safely', () => {
   assert.throws(() => resolveManagedBackend({
-    AGENT_PROTOCOL: 'opencode',
-    QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
+    AGENT_PROTOCOL: 'openclaw',
+    OPENCLAW_ATTACH_EXISTING: 'true',
     QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: 'full',
   }), /只支持由 Gateway 启动/)
   assert.throws(() => resolveManagedBackend({

@@ -14,7 +14,6 @@ test('requires an explicit backend for running the Gateway', () => {
   assert.equal(options.url, 'http://127.0.0.1:3101')
   assert.equal(options.backend, 'openclaw')
   assert.equal(options.attachOpenClaw, false)
-  assert.equal(options.legacyBackendMode, '')
   assert.equal(options.backendPermissionMode, 'native')
   assert.equal(options.backendUrl, 'http://127.0.0.1:18789')
 })
@@ -65,14 +64,6 @@ test('accepts Qoder as a Gateway-owned backend without a URL', () => {
   assert.equal(options.backend, 'qoder')
   assert.equal(options.attachOpenClaw, false)
   assert.equal(options.backendUrl, '')
-  assert.throws(
-    () => parseArguments([
-      'gateway',
-      '--backend', 'qoder',
-      '--backend-mode', 'compatible',
-    ], {}),
-    /旧 compatible/,
-  )
 })
 
 test('accepts a generic ACP backend without an HTTP URL', () => {
@@ -80,13 +71,6 @@ test('accepts a generic ACP backend without an HTTP URL', () => {
   assert.equal(options.backend, 'acp')
   assert.equal(options.attachOpenClaw, false)
   assert.equal(options.backendUrl, '')
-  assert.throws(() => parseArguments([
-    'gateway',
-    '--backend',
-    'acp',
-    '--backend-mode',
-    'compatible',
-  ], {}), /旧 compatible/)
 })
 
 test('accepts named local ACP backends without an HTTP URL', () => {
@@ -94,14 +78,15 @@ test('accepts named local ACP backends without an HTTP URL', () => {
     const options = parseArguments(['gateway', '--backend', backend], {})
     assert.equal(options.backend, backend)
     assert.equal(options.backendUrl, '')
-    assert.throws(() => parseArguments([
-      'gateway',
-      '--backend',
-      backend,
-      '--backend-mode',
-      'compatible',
-    ], {}), /旧 compatible/)
   }
+})
+
+test('rejects the removed backend mode option', () => {
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend', 'openclaw',
+    '--backend-mode', 'compatible',
+  ], {}), /未知参数：--backend-mode/)
 })
 
 test('parses supported backend permission modes', () => {
@@ -118,8 +103,8 @@ test('parses supported backend permission modes', () => {
   ], {}), /OpenClaw/)
   assert.throws(() => parseArguments([
     'gateway',
-    '--backend', 'opencode',
-    '--backend-mode', 'compatible',
+    '--backend', 'openclaw',
+    '--attach-openclaw',
     '--backend-permission-mode', 'full',
   ], {}), /只支持由 Gateway 启动/)
 })
