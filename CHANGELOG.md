@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- 修复 Gateway 在任务结果已经开始播报后重启，仍可能重复播报同一条旧消息的问题；
+  前端回传 `playback.started` 后即确认通知已送达。
+- 修复发布检查仍要求静态 npm 徽章，导致动态徽章触发 CI 失败的问题。
+
 ## 0.9.0
 
 - 新增 Hermes、CodeBuddy 和 Codex 后台支持，并将 OpenCode、OpenClaw、Qoder
