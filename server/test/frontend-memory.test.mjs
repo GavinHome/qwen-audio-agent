@@ -94,7 +94,9 @@ test('persists memory atomically with private permissions', t => {
   const second = new FrontendMemoryStore({ filePath })
 
   assert.equal(second.list('user-one')[0].content, '用户偏好中文')
-  assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  }
   assert.equal(JSON.parse(readFileSync(filePath, 'utf8')).version, 1)
 })
 

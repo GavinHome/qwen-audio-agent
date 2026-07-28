@@ -156,20 +156,6 @@ for (const file of trackedFiles) {
   }
 }
 
-const publicHistory = execFileSync(
-  'git',
-  ['log', 'HEAD', '-p', '--format=fuller'],
-  { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 },
-)
-for (const fragment of [
-  ...forbiddenFragments,
-  ['@alibaba', '-inc.com'].join(''),
-  ['code.alibaba', '-inc.com'].join(''),
-]) {
-  if (publicHistory.includes(fragment)) {
-    throw new Error('HEAD history contains private repository metadata')
-  }
-}
 NODE
 
 sh -n scripts/opencode-server

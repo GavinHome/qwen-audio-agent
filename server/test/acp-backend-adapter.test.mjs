@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
 import test from 'node:test'
 import {
   AcpBackendAdapter,
@@ -336,7 +337,7 @@ test('uses one ACP profile family while preserving backend differences', () => {
     modelUrl: 'https://example.com/compatible-mode/v1',
     permissionMode: 'full',
   })
-  assert.equal(codex.command, '/repo/scripts/codex-acp')
+  assert.equal(codex.command, resolve(root, 'scripts/codex-acp'))
   assert.equal(codex.env.INITIAL_AGENT_MODE, 'agent-full-access')
   const codexConfig = JSON.parse(codex.env.CODEX_CONFIG)
   assert.equal(codexConfig.model, 'qwen3.7-max')

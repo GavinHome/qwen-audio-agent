@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { resolve } from 'node:path'
 import test from 'node:test'
 import {
   applyBackendPermissionMode,
@@ -58,7 +59,7 @@ test('managed mode owns one backend and moves away from occupied ports', async (
   runtime.killImpl = (pid, signal) => signals.push([pid, signal])
   assert.equal(env.OPENCLAW_BASE_URL, 'http://127.0.0.1:45678')
   assert.equal(env.OPENCLAW_PORT, '45678')
-  assert.equal(calls[0][0], '/repo/scripts/openclaw-gateway')
+  assert.equal(calls[0][0], resolve('/repo', 'scripts/openclaw-gateway'))
   assert.equal(calls[0][2].env.QWEN_AUDIO_AGENT_ENV_LOADED, '1')
   runtime.close()
   assert.deepEqual(signals, [[-4242, 'SIGTERM']])

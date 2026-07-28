@@ -14,9 +14,10 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 test('uses the user data directory for the default OpenCode workspace', () => {
+  const directory = resolve('/home/user/.config/qwaudio')
   assert.equal(
-    resolveOpenCodeWorkspace({}, '/home/user/.config/qwaudio'),
-    '/home/user/.config/qwaudio/workspaces/opencode',
+    resolveOpenCodeWorkspace({}, directory),
+    resolve(directory, 'workspaces/opencode'),
   )
 })
 
@@ -31,25 +32,26 @@ test('uses only the explicit OPENCODE_WORKSPACE setting', () => {
 })
 
 test('uses the user data directory for the default Qoder workspace', () => {
+  const directory = resolve('/home/user/.config/qwaudio')
   assert.equal(
-    resolveQoderWorkspace({}, '/home/user/.config/qwaudio'),
-    '/home/user/.config/qwaudio/workspaces/qoder',
+    resolveQoderWorkspace({}, directory),
+    resolve(directory, 'workspaces/qoder'),
   )
 })
 
 test('uses the user data directory for additional ACP backend workspaces', () => {
-  const directory = '/home/user/.config/qwaudio'
+  const directory = resolve('/home/user/.config/qwaudio')
   assert.equal(
     resolveHermesWorkspace({}, directory),
-    '/home/user/.config/qwaudio/workspaces/hermes',
+    resolve(directory, 'workspaces/hermes'),
   )
   assert.equal(
     resolveCodeBuddyWorkspace({}, directory),
-    '/home/user/.config/qwaudio/workspaces/codebuddy',
+    resolve(directory, 'workspaces/codebuddy'),
   )
   assert.equal(
     resolveCodexWorkspace({}, directory),
-    '/home/user/.config/qwaudio/workspaces/codex',
+    resolve(directory, 'workspaces/codex'),
   )
 })
 

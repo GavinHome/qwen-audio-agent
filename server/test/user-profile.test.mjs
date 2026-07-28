@@ -40,7 +40,9 @@ test('maintains a safe editable profile section without overwriting manual conte
   assert.equal(profile.list().length, 2)
   assert.equal(profile.list()[0].editable, false)
   assert.equal(profile.list()[1].editable, true)
-  assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  }
 
   assert.equal(profile.forget({ query: '老大' }), 1)
   const content = readFileSync(filePath, 'utf8')
