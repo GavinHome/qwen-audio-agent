@@ -4,7 +4,6 @@ const definitions = new Map([
     label: 'OpenCode',
     baseUrlEnvironment: 'OPENCODE_BASE_URL',
     defaultBaseUrl: 'http://127.0.0.1:4096',
-    supportsCompatible: true,
     supportsFullPermission: true,
   }],
   ['openclaw', {
@@ -12,37 +11,32 @@ const definitions = new Map([
     label: 'OpenClaw',
     baseUrlEnvironment: 'OPENCLAW_BASE_URL',
     defaultBaseUrl: 'http://127.0.0.1:18789',
-    supportsCompatible: true,
+    supportsExternalGateway: true,
     supportsFullPermission: false,
   }],
   ['qoder', {
     id: 'qoder',
     label: 'Qoder',
-    supportsCompatible: false,
     supportsFullPermission: true,
   }],
   ['hermes', {
     id: 'hermes',
     label: 'Hermes',
-    supportsCompatible: false,
     supportsFullPermission: true,
   }],
   ['codebuddy', {
     id: 'codebuddy',
     label: 'CodeBuddy',
-    supportsCompatible: false,
     supportsFullPermission: true,
   }],
   ['codex', {
     id: 'codex',
     label: 'Codex',
-    supportsCompatible: false,
     supportsFullPermission: true,
   }],
   ['acp', {
     id: 'acp',
     label: 'ACP Agent',
-    supportsCompatible: false,
     supportsFullPermission: false,
   }],
 ])

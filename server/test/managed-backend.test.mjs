@@ -19,7 +19,7 @@ function childProcess() {
   return child
 }
 
-test('compatible mode never starts a backend process', async () => {
+test('legacy compatible input never starts a backend process', async () => {
   let spawned = false
   const runtime = await startManagedBackend({
     root: '/repo',
@@ -36,10 +36,33 @@ test('compatible mode never starts a backend process', async () => {
   assert.equal(spawned, false)
 })
 
-test('managed mode owns one backend and moves away from occupied ports', async () => {
+test('attaching an existing OpenClaw Gateway does not start another one', async () => {
+  let spawned = false
   const env = {
     AGENT_PROTOCOL: 'openclaw',
-    QWEN_AUDIO_AGENT_BACKEND_MODE: 'managed',
+    OPENCLAW_ATTACH_EXISTING: 'true',
+    OPENCLAW_BASE_URL: 'http://127.0.0.1:18789',
+  }
+  assert.deepEqual(resolveManagedBackend(env), {
+    protocol: 'openclaw',
+    ownership: 'external',
+    permissionMode: 'native',
+    baseUrl: 'http://127.0.0.1:18789',
+  })
+  const runtime = await startManagedBackend({
+    root: '/repo',
+    env,
+    spawnImpl: () => {
+      spawned = true
+    },
+  })
+  assert.equal(runtime.ownsProcess, false)
+  assert.equal(spawned, false)
+})
+
+test('Gateway-owned backend moves away from occupied ports', async () => {
+  const env = {
+    AGENT_PROTOCOL: 'openclaw',
     OPENCLAW_BASE_URL: 'http://127.0.0.1:18789',
   }
   const calls = []
@@ -75,7 +98,7 @@ test('normalizes the selected backend', () => {
     OPENCODE_BASE_URL: 'http://localhost:4096/path',
   }), {
     protocol: 'opencode',
-    mode: 'managed',
+    ownership: 'owned',
     permissionMode: 'native',
     baseUrl: 'http://localhost:4096',
   })
@@ -86,7 +109,7 @@ test('Qoder is managed inside the Gateway without a separate server', async () =
     AGENT_PROTOCOL: 'qoder',
   }), {
     protocol: 'qoder',
-    mode: 'managed',
+    ownership: 'owned',
     permissionMode: 'native',
     baseUrl: null,
   })
@@ -103,7 +126,7 @@ test('Qoder is managed inside the Gateway without a separate server', async () =
       AGENT_PROTOCOL: 'qoder',
       QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
     }),
-    /只支持 managed/,
+    /旧 compatible/,
   )
 })
 
@@ -112,7 +135,7 @@ test('generic ACP is managed as a Gateway child without a separate server', asyn
     AGENT_PROTOCOL: 'acp',
   }), {
     protocol: 'acp',
-    mode: 'managed',
+    ownership: 'owned',
     permissionMode: 'native',
     baseUrl: null,
   })
@@ -130,7 +153,7 @@ test('generic ACP is managed as a Gateway child without a separate server', asyn
   assert.throws(() => resolveManagedBackend({
     AGENT_PROTOCOL: 'acp',
     QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-  }), /只支持 managed/)
+  }), /旧 compatible/)
 })
 
 test('additional ACP backends run inside the Gateway without an HTTP server', async () => {
@@ -139,7 +162,7 @@ test('additional ACP backends run inside the Gateway without an HTTP server', as
       AGENT_PROTOCOL: protocol,
     }), {
       protocol,
-      mode: 'managed',
+      ownership: 'owned',
       permissionMode: 'native',
       baseUrl: null,
     })
@@ -154,7 +177,7 @@ test('additional ACP backends run inside the Gateway without an HTTP server', as
     assert.throws(() => resolveManagedBackend({
       AGENT_PROTOCOL: protocol,
       QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
-    }), /只支持 managed/)
+    }), /旧 compatible/)
   }
 })
 
@@ -188,7 +211,7 @@ test('full permission mode rejects backends that cannot support it safely', () =
     AGENT_PROTOCOL: 'opencode',
     QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
     QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: 'full',
-  }), /只支持由 Gateway 管理/)
+  }), /只支持由 Gateway 启动/)
   assert.throws(() => resolveManagedBackend({
     AGENT_PROTOCOL: 'openclaw',
     QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: 'full',

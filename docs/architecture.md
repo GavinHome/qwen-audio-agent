@@ -298,10 +298,11 @@ own labels and interaction patterns.
 
 The Gateway is the only core product service. The shared adapter owns one ACP
 stdio child and stops it with the Gateway. OpenCode and Qoder run directly as
-ACP agents; managed OpenCode may additionally expose its native local Session
-UI. OpenClaw uses a small ACP bridge; in managed mode the Gateway also owns its
-OpenClaw Gateway, while compatible mode attaches the bridge to an
-already-running Gateway. Qoder does not currently offer compatible mode.
+ACP agents; OpenCode may additionally expose its native local Session UI.
+OpenClaw uses a small ACP bridge. By default its adapter also starts and owns
+the OpenClaw Gateway; `OPENCLAW_ATTACH_EXISTING=true` attaches the bridge to an
+already-running Gateway instead. This lifecycle choice belongs to the OpenClaw
+adapter and is not a cross-backend operating mode.
 
 Desktop, TUI and WebUI are replaceable Gateway clients. They must never spawn,
 restart or stop the Gateway or a backend. Closing a UI therefore cannot affect

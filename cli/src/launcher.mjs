@@ -29,7 +29,16 @@ async function runMinimal(options) {
 
 function applyGatewayOptions(env, options) {
   env.AGENT_PROTOCOL = options.backend
-  env.QWEN_AUDIO_AGENT_BACKEND_MODE = options.backendMode
+  if (options.attachOpenClaw) {
+    env.OPENCLAW_ATTACH_EXISTING = 'true'
+  } else {
+    delete env.OPENCLAW_ATTACH_EXISTING
+  }
+  if (options.legacyBackendMode) {
+    env.QWEN_AUDIO_AGENT_BACKEND_MODE = options.legacyBackendMode
+  } else {
+    delete env.QWEN_AUDIO_AGENT_BACKEND_MODE
+  }
   env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE = options.backendPermissionMode
   if (options.backendAgent) {
     env.QWEN_AUDIO_AGENT_BACKEND_AGENT = options.backendAgent

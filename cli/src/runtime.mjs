@@ -38,15 +38,34 @@ export function resolveBackend(options = {}, env = process.env) {
   if (!definition) throw new Error(
     `不支持的后台 Agent：${protocol}（可选 ${backendNames().join('、')}）`,
   )
-  const mode = String(
-    options.backendMode || env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
+  const legacyMode = String(
+    options.legacyBackendMode
+    || options.backendMode
+    || env.QWEN_AUDIO_AGENT_BACKEND_MODE
+    || 'managed',
   ).toLowerCase()
-  if (!['managed', 'compatible'].includes(mode)) {
-    throw new Error(`不支持的后台模式：${mode}`)
+  if (!['managed', 'compatible'].includes(legacyMode)) {
+    throw new Error(`不支持的旧后台模式：${legacyMode}`)
   }
-  if (!definition.supportsCompatible && mode !== 'managed') {
-    throw new Error(`${definition.label} 后台当前只支持 managed 模式`)
+  if (
+    legacyMode === 'compatible'
+    && !['openclaw', 'opencode'].includes(protocol)
+  ) {
+    throw new Error(`${definition.label} 不支持旧 compatible 参数`)
   }
+  const attachOpenClaw = (
+    options.attachOpenClaw === true
+    || String(env.OPENCLAW_ATTACH_EXISTING || '').toLowerCase() === 'true'
+    || (protocol === 'openclaw' && legacyMode === 'compatible')
+  )
+  if (attachOpenClaw && protocol !== 'openclaw') {
+    throw new Error('连接已有 OpenClaw Gateway 只适用于 OpenClaw')
+  }
+  // compatible is retained only as an input shim for older installations.
+  const ownership = (
+    attachOpenClaw
+    || (protocol === 'opencode' && legacyMode === 'compatible')
+  ) ? 'external' : 'owned'
   const permissionMode = String(
     options.backendPermissionMode
     || env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
@@ -55,8 +74,8 @@ export function resolveBackend(options = {}, env = process.env) {
   if (!['native', 'full'].includes(permissionMode)) {
     throw new Error(`不支持的后台权限模式：${permissionMode}`)
   }
-  if (permissionMode === 'full' && mode !== 'managed') {
-    throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
+  if (permissionMode === 'full' && ownership !== 'owned') {
+    throw new Error('最高权限模式只支持由 Gateway 启动的后台 Agent')
   }
   if (permissionMode === 'full' && !definition.supportsFullPermission) {
     throw new Error(`${definition.label} 不支持 Gateway 统一最高权限模式`)
@@ -66,7 +85,8 @@ export function resolveBackend(options = {}, env = process.env) {
     : ''
   return {
     protocol,
-    mode,
+    ownership,
+    attachOpenClaw,
     permissionMode,
     agentId: String(
       options.backendAgent || env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
@@ -80,7 +100,8 @@ export function resolveBackend(options = {}, env = process.env) {
 export function assertGatewayCompatibility(health, backend) {
   const actualProtocol = health?.backend?.kind || health?.backend?.protocol
   const actualBaseUrl = health?.backend?.baseUrl
-  const actualMode = health?.backend?.mode
+  const actualOwnership = health?.backend?.ownership
+    || (health?.backend?.mode === 'compatible' ? 'external' : 'owned')
   const actualPermissionMode = health?.backend?.permissionMode || 'native'
   if (
     !actualProtocol
@@ -96,7 +117,7 @@ export function assertGatewayCompatibility(health, backend) {
     actualProtocol !== backend.protocol
     || (
       backendDefinition(backend.protocol).baseUrlEnvironment
-      && backend.mode !== 'managed'
+      && backend.ownership === 'external'
       && normalizedOrigin(actualBaseUrl) !== backend.baseUrl
     )
   ) {
@@ -105,10 +126,14 @@ export function assertGatewayCompatibility(health, backend) {
       + `与当前配置 ${backend.protocol} (${backend.baseUrl}) 不一致`,
     )
   }
-  if (actualMode && backend.mode && actualMode !== backend.mode) {
+  if (
+    actualOwnership
+    && backend.ownership
+    && actualOwnership !== backend.ownership
+  ) {
     throw new Error(
-      `现有 Gateway 使用 ${actualMode} 模式，`
-      + `与当前配置 ${backend.mode} 模式不一致`,
+      `现有 Gateway 的后台进程归属为 ${actualOwnership}，`
+      + `与当前配置 ${backend.ownership} 不一致`,
     )
   }
   if (actualPermissionMode !== backend.permissionMode) {
@@ -175,7 +200,14 @@ function backendEnvironment(env, backend) {
   const next = {
     ...env,
     AGENT_PROTOCOL: backend.protocol,
-    QWEN_AUDIO_AGENT_BACKEND_MODE: backend.mode,
+    ...(backend.attachOpenClaw
+      ? { OPENCLAW_ATTACH_EXISTING: 'true' }
+      : {}),
+    ...(
+      backend.ownership === 'external' && !backend.attachOpenClaw
+        ? { QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible' }
+        : {}
+    ),
     QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: backend.permissionMode,
     ...(backend.agentId
       ? { QWEN_AUDIO_AGENT_BACKEND_AGENT: backend.agentId }
@@ -318,9 +350,9 @@ export async function ensureRuntime(options, {
       )
     }
 
-    // A managed Gateway may move its private backend to a free local port.
-    // Existing Gateways must still match the requested protocol and mode.
-    if (existingGateway || backend.mode === 'compatible') {
+    // An owned Gateway may move its private backend to a free local port.
+    // Existing Gateways must still match the requested protocol and ownership.
+    if (existingGateway || backend.ownership === 'external') {
       assertGatewayCompatibility(health, backend)
     } else {
       const actualProtocol = health?.backend?.kind || health?.backend?.protocol
@@ -342,9 +374,9 @@ export async function ensureRuntime(options, {
 
     if (health.backend?.ok !== true && options.waitForBackend !== false) {
       throw new Error(
-        backend.mode === 'compatible'
-          ? `兼容模式不会启动后台 Agent，请先启动并检查 ${backend.baseUrl}`
-          : `Gateway 管理的后台 Agent 未就绪：${health.backend?.baseUrl || backend.baseUrl}`,
+        backend.ownership === 'external'
+          ? `未连接到已有 OpenClaw Gateway，请先启动并检查 ${backend.baseUrl}`
+          : `Gateway 启动的后台 Agent 未就绪：${health.backend?.baseUrl || backend.baseUrl}`,
       )
     }
 

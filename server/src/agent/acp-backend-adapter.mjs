@@ -48,7 +48,7 @@ export class AcpBackendAdapter {
   constructor({
     protocol = 'opencode',
     root = process.cwd(),
-    mode = 'managed',
+    ownership = 'owned',
     permissionMode = 'native',
     model = '',
     timeoutMs = 300_000,
@@ -69,7 +69,7 @@ export class AcpBackendAdapter {
   } = {}) {
     this.protocol = protocol
     this.root = root
-    this.mode = mode === 'compatible' ? 'compatible' : 'managed'
+    this.ownership = ownership === 'external' ? 'external' : 'owned'
     this.permissionMode = permissionMode === 'full' ? 'full' : 'native'
     this.model = clean(model)
     this.timeoutMs = timeoutMs
@@ -126,7 +126,7 @@ export class AcpBackendAdapter {
       uiPath: null,
       model: this.model || null,
       directory: this.directory,
-      mode: this.mode,
+      ownership: this.ownership,
       permissionMode: this.permissionMode,
       transport: 'acp',
       backendAgent: this.coordinatorAgent || 'qwen-audio-agent-backend',
@@ -152,7 +152,7 @@ export class AcpBackendAdapter {
         return {
           ok: false,
           protocol: this.protocol,
-          mode: this.mode,
+          ownership: this.ownership,
           transport: 'acp',
           error: this.profile.readinessMessage,
         }
@@ -161,7 +161,7 @@ export class AcpBackendAdapter {
       return {
         ok: true,
         protocol: this.protocol,
-        mode: this.mode,
+        ownership: this.ownership,
         transport: 'acp',
         agentInfo: initialized.agentInfo || null,
         capabilities: initialized.agentCapabilities || {},
@@ -170,7 +170,7 @@ export class AcpBackendAdapter {
       return {
         ok: false,
         protocol: this.protocol,
-        mode: this.mode,
+        ownership: this.ownership,
         transport: 'acp',
         error: `${error.message}${
           clean(this.client.stderr) ? `：${clean(this.client.stderr)}` : ''

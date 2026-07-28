@@ -26,7 +26,7 @@ function health(overrides = {}) {
     voiceConfigured: true,
     backend: {
       kind: 'opencode',
-      mode: 'managed',
+      ownership: 'owned',
       baseUrl: 'http://127.0.0.1:4096',
       ok: true,
       ...overrides,
@@ -37,7 +37,6 @@ function health(overrides = {}) {
 const options = {
   url: 'http://127.0.0.1:3101',
   backend: 'opencode',
-  backendMode: 'managed',
   backendUrl: 'http://127.0.0.1:4096',
 }
 
@@ -53,7 +52,7 @@ function dependencies(overrides = {}) {
   }
 }
 
-test('reuses one compatible healthy Gateway without starting processes', async () => {
+test('reuses one healthy Gateway without starting processes', async () => {
   const calls = []
   const runtime = await ensureRuntime(options, {
     ...dependencies(),
@@ -131,7 +130,7 @@ test('never starts a backend beside an existing Gateway', async () => {
         json: async () => health({ ok: false }),
       }),
     }),
-    /Gateway 管理的后台 Agent 未就绪/,
+    /Gateway 启动的后台 Agent 未就绪/,
   )
 })
 
@@ -157,25 +156,26 @@ test('requires an explicit backend selection', () => {
 test('derives selected backend configuration', () => {
   assert.deepEqual(resolveBackend({
     backend: 'openclaw',
-    backendMode: 'compatible',
+    attachOpenClaw: true,
     backendAgent: 'build',
     backendUrl: 'http://localhost:18789/path',
   }, {}), {
     protocol: 'openclaw',
-    mode: 'compatible',
+    ownership: 'external',
+    attachOpenClaw: true,
     permissionMode: 'native',
     agentId: 'build',
     baseUrl: 'http://localhost:18789',
   })
 })
 
-test('derives Qoder without an HTTP backend and rejects compatible mode', () => {
+test('derives Qoder without an HTTP backend and rejects the legacy compatible mode', () => {
   assert.deepEqual(resolveBackend({
     backend: 'qoder',
-    backendMode: 'managed',
   }, {}), {
     protocol: 'qoder',
-    mode: 'managed',
+    ownership: 'owned',
+    attachOpenClaw: false,
     permissionMode: 'native',
     agentId: '',
     baseUrl: null,
@@ -185,17 +185,17 @@ test('derives Qoder without an HTTP backend and rejects compatible mode', () => 
       backend: 'qoder',
       backendMode: 'compatible',
     }, {}),
-    /只支持 managed/,
+    /旧 compatible/,
   )
 })
 
 test('derives generic ACP without an HTTP backend', () => {
   assert.deepEqual(resolveBackend({
     backend: 'acp',
-    backendMode: 'managed',
   }, {}), {
     protocol: 'acp',
-    mode: 'managed',
+    ownership: 'owned',
+    attachOpenClaw: false,
     permissionMode: 'native',
     agentId: '',
     baseUrl: null,
@@ -206,10 +206,10 @@ test('derives named local ACP backends without an HTTP URL', () => {
   for (const backend of ['hermes', 'codebuddy', 'codex']) {
     assert.deepEqual(resolveBackend({
       backend,
-      backendMode: 'managed',
     }, {}), {
       protocol: backend,
-      mode: 'managed',
+      ownership: 'owned',
+      attachOpenClaw: false,
       permissionMode: 'native',
       agentId: '',
       baseUrl: null,
@@ -233,13 +233,13 @@ test('reports a Qoder versus OpenCode mismatch instead of incomplete identity', 
       backend: {
         ok: true,
         kind: 'qoder',
-        mode: 'managed',
+        ownership: 'owned',
         permissionMode: 'native',
         baseUrl: null,
       },
     }, {
       protocol: 'opencode',
-      mode: 'managed',
+      ownership: 'owned',
       permissionMode: 'native',
       baseUrl: 'http://127.0.0.1:4096',
     }),

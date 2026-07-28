@@ -5,14 +5,14 @@ export function origin(value) {
 export function localManagedBackend({
   id,
   env,
-  mode,
+  ownership,
   permissionMode,
   baseUrlEnvironment,
   defaultBaseUrl,
 }) {
   return {
     protocol: id,
-    mode,
+    ownership,
     permissionMode,
     baseUrl: origin(env[baseUrlEnvironment] || defaultBaseUrl),
   }
@@ -20,16 +20,16 @@ export function localManagedBackend({
 
 export function managedOnlyBackend({
   id,
-  mode,
+  ownership,
   permissionMode,
   label,
 }) {
-  if (mode !== 'managed') {
-    throw new Error(`${label} 后台当前只支持 managed 模式`)
+  if (ownership !== 'owned') {
+    throw new Error(`${label} 后台必须由 Gateway 启动`)
   }
   return {
     protocol: id,
-    mode,
+    ownership,
     permissionMode,
     baseUrl: null,
   }

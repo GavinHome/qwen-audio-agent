@@ -8,7 +8,7 @@ export { AgentError }
 export class AgentClient {
   constructor({
     protocol = config.agentProtocol,
-    mode = config.backendMode,
+    ownership = config.backendOwnership,
     permissionMode = config.backendPermissionMode,
     baseUrl = config.openCodeBaseUrl,
     model,
@@ -88,7 +88,7 @@ export class AgentClient {
     this.adapter = new AcpBackendAdapter({
       protocol,
       root: config.root,
-      mode,
+      ownership,
       permissionMode,
       timeoutMs,
       ...options,

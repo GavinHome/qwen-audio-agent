@@ -23,11 +23,11 @@ export const openCodeRuntimeDriver = {
   managedScript: 'opencode-server',
   managedNpmScript: 'opencode',
 
-  resolve({ env, mode, permissionMode }) {
+  resolve({ env, ownership, permissionMode }) {
     return localManagedBackend({
       id: this.id,
       env,
-      mode,
+      ownership,
       permissionMode,
       baseUrlEnvironment: 'OPENCODE_BASE_URL',
       defaultBaseUrl: 'http://127.0.0.1:4096',

@@ -30,7 +30,7 @@ DASHSCOPE_API_KEY=your-key
 AGENT_PROTOCOL=openclaw
 ```
 
-增强模式默认使用 `qwen3.7-max` 作为后台模型。需要修改时只写一个公共配置：
+Gateway 启动的后台 Agent 默认使用 `qwen3.7-max`。需要修改时只写一个公共配置：
 
 ```dotenv
 QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max
@@ -81,12 +81,11 @@ OPENCLAW_BASE_URL=http://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=
 ```
 
-OpenCode：Gateway 通过 `opencode acp` 与它交互；managed 模式还会
-管理用于打开原生 Session 界面的本地服务，用户不需要另行启动：
+OpenCode：Gateway 通过 `opencode acp` 与它交互，并管理用于打开原生 Session
+界面的本地服务，用户不需要另行启动：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
-QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 ```
 
@@ -94,7 +93,6 @@ Qoder 使用本机 `qodercli --acp`，没有 HTTP 后台地址：
 
 ```dotenv
 AGENT_PROTOCOL=qoder
-QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 QODER_MODEL=auto
 ```
@@ -112,8 +110,7 @@ QODERCLI_PATH=
 QODER_CONFIG_DIR=
 ```
 
-Gateway 管理 Qoder ACP 子进程，因此当前只支持 `managed`，不能使用
-`compatible`，也不接受 `--backend-url`。
+Gateway 管理 Qoder ACP 子进程；Qoder 不接受 `--backend-url`。
 
 其他支持 ACP stdio 的 Agent 可使用通用入口：
 
@@ -126,7 +123,7 @@ ACP_MODEL=auto
 ACP_WORKSPACE=
 ```
 
-通用入口由 Gateway 直接管理 ACP 子进程，只支持 `managed`。`ACP_ARGS` 推荐写成
+通用入口由 Gateway 直接管理 ACP 子进程。`ACP_ARGS` 推荐写成
 JSON 字符串数组，以便参数中包含空格时仍能准确解析。它使用标准 ACP Session 和
 Gateway 提供的 Session MCP 工具，不假设某个 Agent 私有的启动、权限或 UI 能力。
 
@@ -137,7 +134,6 @@ Hermes Agent（[nousresearch/hermes-agent](https://github.com/nousresearch/herme
 
 ```dotenv
 AGENT_PROTOCOL=hermes
-QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 ```
 
@@ -162,7 +158,6 @@ CodeBuddy Code（腾讯 `@tencent-ai/codebuddy-code`）使用
 
 ```dotenv
 AGENT_PROTOCOL=codebuddy
-QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 ```
 
@@ -189,7 +184,6 @@ Codex（[openai/codex](https://github.com/openai/codex)）通过 ACP 项目维�
 
 ```dotenv
 AGENT_PROTOCOL=codex
-QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 ```
 
@@ -204,8 +198,8 @@ CODEX_MODEL=qwen3.7-max
 CODEX_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-Hermes、CodeBuddy 和 Codex 均由 Gateway 直接管理 ACP 子进程，只支持
-`managed`，不接受 `--backend-url`。
+Hermes、CodeBuddy 和 Codex 均由 Gateway 直接管理 ACP 子进程，不接受
+`--backend-url`。
 
 ## 后台权限模式
 
@@ -214,30 +208,29 @@ Hermes、CodeBuddy 和 Codex 均由 Gateway 直接管理 ACP 子进程，只支�
 - `native`（默认）：权限由后台 Agent 自己判断和询问，Gateway 只负责原样转发。
 - `full`：启动时明确授予最高权限，后台可直接执行命令、读写文件，不再逐次确认。
 
-`full` 当前支持 `managed` 模式的 OpenCode、Qoder、Hermes、CodeBuddy 和
+`full` 当前支持 OpenCode、Qoder、Hermes、CodeBuddy 和
 Codex。Gateway 会自动批准这些 ACP 后台发起的权限请求；此外 Qoder 和 CodeBuddy
 CLI 会使用 `--dangerously-skip-permissions`，OpenCode 会在受管进程的内联配置中为
 协调 Agent 和任务 Agent 设置 `permission: "allow"`，Codex 会使用
-`agent-full-access` 模式。`compatible` 模式连接的是外部进程，Gateway 不会越权修改它。
+`agent-full-access` 模式。
 
 OpenClaw 的执行授权同时受 exec approvals、elevated 和执行 host 等配置约束，
 无法由一个统一开关安全、完整地表达；选择 `full` 时 Gateway 会明确拒绝启动，
 需要按 OpenClaw 自身方式单独配置。最高权限会放大误操作风险，只应在可信项目和
 可信提示词环境中启用。
 
-连接用户现有的 OpenClaw Gateway 时使用兼容模式。qwen-audio-agent 不会修改或
-重启该 Gateway，而是通过 `openclaw acp` 桥接。OpenCode 的 ACP 进程直接复用
-OpenCode 原生配置和 Session 存储；兼容模式中的现有服务只用于原生界面：
+连接用户现有的 OpenClaw Gateway 时开启 `OPENCLAW_ATTACH_EXISTING`。
+qwen-audio-agent 不会修改或重启该 Gateway，而是通过 `openclaw acp` 桥接：
 
 ```dotenv
-QWEN_AUDIO_AGENT_BACKEND_MODE=compatible
+OPENCLAW_ATTACH_EXISTING=true
 # 可选；省略时自动发现默认 Agent
 QWEN_AUDIO_AGENT_BACKEND_AGENT=
 ```
 
 ```bash
 qwenaudio gateway --backend openclaw \
-  --backend-mode compatible \
+  --attach-openclaw \
   --backend-url http://127.0.0.1:18789
 ```
 
@@ -274,11 +267,11 @@ QWEN_AUDIO_AGENT_ALLOWED_ORIGINS=https://voice.example.com
 
 ## Gateway 运行方式
 
-Gateway 默认使用增强模式并启动带专用后台 Agent 的运行环境。若目标端口已被其他
-进程占用，会选择空闲的本地端口，不会接管或关闭用户进程。兼容模式不管理后台
-HTTP 服务：OpenClaw 会连接现有 Gateway；OpenCode 仍在本机启动 ACP 进程并复用
-原生配置与 Session 存储，配置的现有服务只用于打开原生界面。OpenClaw Gateway
-地址不可用时会直接报错；OpenCode 原生界面不可用不影响 ACP 任务执行。
+Gateway 默认启动并管理所选 Agent 的 ACP 进程。若 OpenCode 或 OpenClaw 的本地
+服务端口已被其他进程占用，会选择空闲端口，不会接管或关闭用户进程。只有明确设置
+`OPENCLAW_ATTACH_EXISTING=true`（或 CLI 使用 `--attach-openclaw`）时，OpenClaw
+Adapter 才会连接现有 Gateway；该地址不可用时会直接报错。OpenCode 的 ACP 进程
+始终复用其原生配置和 Session 存储，原生界面不可用不影响 ACP 任务执行。
 
 `qwenaudio`、`qwenaudio gateway` 和 `qwenaudio gateway run` 都在前台运行。
 需要后台常驻时使用：
@@ -357,6 +350,7 @@ QWEN_AUDIO_AGENT_OPENCODE_ISOLATE_USER_CONFIG=true
 | `QODER_WORKSPACE` | 用户配置目录下的 `workspaces/qoder` |
 | `QWEN_AUDIO_AGENT_BACKEND_MODEL` | `qwen3.7-max` |
 | `OPENCODE_MODEL` / `OPENCLAW_MODEL` | 由对应 Adapter 从公共模型推导 |
+| `OPENCLAW_ATTACH_EXISTING` | `false`；由 Adapter 启动 OpenClaw Gateway |
 | `QODER_MODEL` | `auto` |
 | `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` | `native` |
 | `QWEN_AUDIO_REALTIME_MODEL` | `qwen-audio-3.0-realtime-plus` |

@@ -125,12 +125,24 @@ export function resolveBackendModels(env = process.env) {
   }
 }
 
-const backendMode = (
+const legacyBackendMode = (
   String(process.env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed').toLowerCase()
   === 'compatible'
     ? 'compatible'
     : 'managed'
 )
+const configuredAgentProtocol = String(
+  process.env.AGENT_PROTOCOL || '',
+).toLowerCase()
+const backendOwnership = (
+  legacyBackendMode === 'compatible'
+  || (
+    configuredAgentProtocol === 'openclaw'
+    && String(
+      process.env.OPENCLAW_ATTACH_EXISTING || '',
+    ).toLowerCase() === 'true'
+  )
+) ? 'external' : 'owned'
 const backendModels = resolveBackendModels()
 const backendPermissionMode = String(
   process.env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
@@ -140,9 +152,7 @@ if (!['native', 'full'].includes(backendPermissionMode)) {
     `不支持的后台权限模式：${backendPermissionMode}（可选 native、full）`,
   )
 }
-const requestedAgentProtocol = String(
-  process.env.AGENT_PROTOCOL || '',
-).toLowerCase()
+const requestedAgentProtocol = configuredAgentProtocol
 if (requestedAgentProtocol && !backendDefinition(requestedAgentProtocol)) {
   throw new Error(
     `不支持的后台 Agent：${requestedAgentProtocol}`
@@ -190,7 +200,7 @@ export const config = {
   ).toLowerCase() === 'browser' ? 'browser' : 'personal',
   personalOwnerId: process.env.QWEN_AUDIO_AGENT_PERSONAL_OWNER_ID || 'user_personal',
   agentProtocol: requestedAgentProtocol,
-  backendMode,
+  backendOwnership,
   backendPermissionMode,
   agentTimeoutMs: numberSetting(process.env.AGENT_TIMEOUT_MS, 300000, { min: 10000 }),
   openClawBaseUrl: (
@@ -214,7 +224,7 @@ export const config = {
       process.env.OPENCLAW_COORDINATOR_AGENT,
       'voice-coordinator',
     )
-    || (backendMode === 'managed' ? 'qwen-audio-agent-backend' : '')
+    || (backendOwnership === 'owned' ? 'qwen-audio-agent-backend' : '')
   ),
   openCodeBaseUrl: (
     process.env.OPENCODE_BASE_URL
@@ -265,20 +275,20 @@ export const config = {
   acpCoordinatorAgent: String(process.env.ACP_COORDINATOR_AGENT || '').trim(),
   openCodeModel: (
     process.env.OPENCODE_MODEL
-    || (backendMode === 'managed' ? backendModels.openCode : '')
+    || (backendOwnership === 'owned' ? backendModels.openCode : '')
   ),
   openClawModel: (
     process.env.OPENCLAW_MODEL
-    || (backendMode === 'managed' ? backendModels.openClaw : '')
+    || (backendOwnership === 'owned' ? backendModels.openClaw : '')
   ),
-  backendModel: backendMode === 'managed' ? backendModels.common : '',
+  backendModel: backendOwnership === 'owned' ? backendModels.common : '',
   openCodeCoordinatorAgent: (
     sharedBackendAgent
     || legacyBackendAgent(
       process.env.OPENCODE_COORDINATOR_AGENT,
       'qwen-audio-agent-coordinator',
     )
-    || (backendMode === 'managed' ? 'qwen-audio-agent-backend' : '')
+    || (backendOwnership === 'owned' ? 'qwen-audio-agent-backend' : '')
   ),
   announceIntoContext: (
     String(process.env.QWEN_AUDIO_AGENT_ANNOUNCE_INTO_CONTEXT || 'true').toLowerCase()

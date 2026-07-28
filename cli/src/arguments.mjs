@@ -14,7 +14,7 @@ const GATEWAY_ACTIONS = new Set([
   'status',
   'uninstall',
 ])
-const BACKEND_MODES = new Set(['managed', 'compatible'])
+const LEGACY_BACKEND_MODES = new Set(['managed', 'compatible'])
 const BACKEND_PERMISSION_MODES = new Set(['native', 'full'])
 const TUI_AUDIO_MODES = new Set(['half', 'full'])
 
@@ -64,9 +64,12 @@ export function parseArguments(argv, env = process.env) {
       env.QWEN_AUDIO_AGENT_TUI_AUDIO_MODE || 'half',
     ).toLowerCase(),
     backend: String(env.AGENT_PROTOCOL || '').toLowerCase(),
-    backendMode: String(
-      env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
-    ).toLowerCase(),
+    attachOpenClaw: String(
+      env.OPENCLAW_ATTACH_EXISTING || '',
+    ).toLowerCase() === 'true',
+    legacyBackendMode: env.QWEN_AUDIO_AGENT_BACKEND_MODE
+      ? String(env.QWEN_AUDIO_AGENT_BACKEND_MODE).toLowerCase()
+      : '',
     backendPermissionMode: String(
       env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
     ).toLowerCase(),
@@ -89,11 +92,14 @@ export function parseArguments(argv, env = process.env) {
       options.backend = nextValue(args, index++, '--backend').toLowerCase()
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-mode') {
-      options.backendMode = nextValue(
+      options.legacyBackendMode = nextValue(
         args,
         index++,
         '--backend-mode',
       ).toLowerCase()
+      options.gatewayConfigurationSpecified = true
+    } else if (argument === '--attach-openclaw') {
+      options.attachOpenClaw = true
       options.gatewayConfigurationSpecified = true
     } else if (argument === '--backend-agent') {
       options.backendAgent = nextValue(args, index++, '--backend-agent').trim()
@@ -127,9 +133,13 @@ export function parseArguments(argv, env = process.env) {
       `不支持的后台：${options.backend}（可选 ${backendNames().join('、')}）`,
     )
   }
-  if (!BACKEND_MODES.has(options.backendMode)) {
+  if (
+    options.legacyBackendMode
+    && !LEGACY_BACKEND_MODES.has(options.legacyBackendMode)
+  ) {
     throw new Error(
-      `不支持的后台模式：${options.backendMode}（可选 managed、compatible）`,
+      `不支持的旧后台模式：${options.legacyBackendMode}`
+      + '（可选 managed、compatible）',
     )
   }
   if (!BACKEND_PERMISSION_MODES.has(options.backendPermissionMode)) {
@@ -169,18 +179,25 @@ export function parseArguments(argv, env = process.env) {
   options.backendUrl = definition?.baseUrlEnvironment
     ? cleanOrigin(options.backendUrl || configuredBackendUrl, '后台地址')
     : ''
+  if (options.attachOpenClaw && options.backend !== 'openclaw') {
+    throw new Error('--attach-openclaw 只适用于 OpenClaw')
+  }
   if (
-    definition
-    && !definition.supportsCompatible
-    && options.backendMode !== 'managed'
+    options.legacyBackendMode === 'compatible'
+    && !['openclaw', 'opencode'].includes(options.backend)
   ) {
-    throw new Error(`${definition.label} 后台当前只支持 managed 模式`)
+    throw new Error(
+      `${definition?.label || options.backend} 不支持旧 compatible 参数`,
+    )
   }
   if (
     options.backendPermissionMode === 'full'
-    && options.backendMode !== 'managed'
+    && (
+      options.attachOpenClaw
+      || options.legacyBackendMode === 'compatible'
+    )
   ) {
-    throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
+    throw new Error('最高权限模式只支持由 Gateway 启动的后台 Agent')
   }
   if (
     definition
@@ -226,10 +243,10 @@ export function helpText() {
     'Gateway 选项：',
     '  --url URL              Gateway 地址（默认 http://127.0.0.1:3101）',
     '  --backend NAME         必填：openclaw、opencode、qoder、hermes、codebuddy、codex 或 acp（也可在 config.env 设置 AGENT_PROTOCOL）',
-    '  --backend-mode MODE    managed（默认）或 compatible',
+    '  --attach-openclaw      连接用户已启动的 OpenClaw Gateway',
     '  --backend-permission-mode MODE  native（默认）或 full（最高权限）',
     '  --backend-url URL      后台 Server 地址',
-    '  --backend-agent ID     compatible 模式使用的 Agent',
+    '  --backend-agent ID     指定协调 Agent',
     '',
     '界面选项：',
     '  --session ID           复用指定语音会话',

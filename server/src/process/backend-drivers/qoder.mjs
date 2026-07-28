@@ -4,10 +4,10 @@ export const qoderRuntimeDriver = {
   id: 'qoder',
   separateManagedProcess: false,
 
-  resolve({ mode, permissionMode }) {
+  resolve({ ownership, permissionMode }) {
     return managedOnlyBackend({
       id: this.id,
-      mode,
+      ownership,
       permissionMode,
       label: 'Qoder',
     })

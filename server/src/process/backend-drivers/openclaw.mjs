@@ -9,7 +9,7 @@ export const openClawRuntimeDriver = {
   managedScript: 'openclaw-gateway',
   managedNpmScript: 'openclaw',
 
-  resolve({ env, mode, permissionMode }) {
+  resolve({ env, ownership, permissionMode }) {
     if (permissionMode === 'full') {
       throw new Error(
         'OpenClaw 的最高权限需要单独配置 exec approvals、elevated 和 host，'
@@ -19,7 +19,7 @@ export const openClawRuntimeDriver = {
     return localManagedBackend({
       id: this.id,
       env,
-      mode,
+      ownership,
       permissionMode,
       baseUrlEnvironment: 'OPENCLAW_BASE_URL',
       defaultBaseUrl: 'http://127.0.0.1:18789',
