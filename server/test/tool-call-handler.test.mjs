@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TaskManager } from '../src/task/task-manager.mjs'
 import { ToolCallHandler } from '../src/voice/tools/tool-call-handler.mjs'
+import { SessionPermissionPolicy } from '../src/voice/session-permission-policy.mjs'
 import { TurnTranscripts } from '../src/voice/tools/turn-transcripts.mjs'
 
 function harness({
@@ -11,6 +12,7 @@ function harness({
   onMemoryChanged = () => {},
   coordinatorAvailable = async () => true,
   respondPermission,
+  permissionPolicy,
 } = {}) {
   const outputs = []
   const transcripts = new TurnTranscripts({ waitMs: 5 })
@@ -31,6 +33,7 @@ function harness({
     memoryStore,
     onMemoryChanged,
     respondPermission,
+    permissionPolicy,
     getConversationContext: () => [
       { role: 'user', content: '之前在改首页' },
     ],
@@ -42,6 +45,7 @@ async function permissionHarness({
   answer,
   authorizationId = 'auth-one',
   respondPermission,
+  permissionPolicy,
 }) {
   const manager = new TaskManager()
   let release
@@ -63,7 +67,7 @@ async function permissionHarness({
     },
   })
   await new Promise(resolve => setImmediate(resolve))
-  const kit = harness({ manager, respondPermission })
+  const kit = harness({ manager, respondPermission, permissionPolicy })
   kit.transcripts.record('turn-one', answer)
   return {
     ...kit,
@@ -351,8 +355,10 @@ test('queues a hidden high-priority coordinator query for delegated work', async
 test('relays a realtime semantic permission decision with verbatim evidence', async () => {
   const calls = []
   const answer = '你按刚才说的处理就成'
+  const permissionPolicy = new SessionPermissionPolicy()
   const kit = await permissionHarness({
     answer,
+    permissionPolicy,
     respondPermission: async (id, decision, options) => {
       calls.push({ id, decision, options })
       return {
@@ -378,10 +384,90 @@ test('relays a realtime semantic permission decision with verbatim evidence', as
     options: { ownerId: 'owner' },
   }])
   assert.equal(kit.outputs.at(-1)[1].status, 'approved')
-  assert.deepEqual(kit.outputs.at(-1)[3], {
-    createResponse: false,
-  })
+  assert.match(
+    kit.outputs.at(-1)[3].response.instructions,
+    /已允许，后台继续执行/,
+  )
+  assert.equal(permissionPolicy.shouldAutoAllow('owner', 'voice'), true)
   await kit.finish()
+})
+
+test('confirms a rejected realtime permission exactly once', async () => {
+  const answer = '不允许'
+  const permissionPolicy = new SessionPermissionPolicy()
+  permissionPolicy.applyDecision('owner', 'voice', 'always')
+  const kit = await permissionHarness({
+    answer,
+    permissionPolicy,
+    respondPermission: async id => ({
+      id,
+      workId: 'work-one',
+      status: 'rejected',
+    }),
+  })
+  await kit.handler.handle({
+    call_id: 'permission-semantic-reject',
+    name: 'respond_agent_permission',
+    arguments: JSON.stringify({
+      authorization_id: 'auth-one',
+      decision: 'reject',
+      evidence: answer,
+    }),
+  })
+
+  assert.equal(kit.outputs.at(-1)[1].status, 'rejected')
+  assert.match(
+    kit.outputs.at(-1)[3].response.instructions,
+    /已拒绝/,
+  )
+  assert.equal(permissionPolicy.mode('owner', 'voice'), 'ask')
+  await kit.finish()
+})
+
+test('auto-allows later permissions in the Gateway without publishing them', async () => {
+  const permissionPolicy = new SessionPermissionPolicy()
+  permissionPolicy.applyDecision('owner', 'voice', 'always')
+  const approvals = []
+  const kit = harness({
+    permissionPolicy,
+    respondPermission: async (id, decision, options) => {
+      approvals.push({ id, decision, options })
+      return { id, status: 'approved' }
+    },
+    coordinator: {
+      run: async (_input, { onEvent }) => {
+        onEvent({
+          type: 'backend.permission.requested',
+          permission: {
+            id: 'auth-auto',
+            status: 'pending',
+            summary: 'List directory',
+          },
+        })
+        return { content: '完成', metadata: {} }
+      },
+    },
+  })
+  const events = []
+  kit.manager.subscribe(event => events.push(event))
+  kit.transcripts.record('turn-one', '检查项目')
+
+  await kit.handler.handle({
+    call_id: 'auto-permission-work',
+    name: 'spawn_thinking',
+    arguments: '{"objective":"检查项目"}',
+  })
+  await kit.manager.wait(kit.outputs[0][1].work_id)
+
+  assert.deepEqual(approvals, [{
+    id: 'auth-auto',
+    decision: 'always',
+    options: { ownerId: 'owner' },
+  }])
+  assert.equal(
+    events.some(event => event.type === 'task.permission.requested'),
+    false,
+  )
 })
 
 test('rejects permission evidence that was not spoken in the current turn', async () => {

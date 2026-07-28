@@ -136,6 +136,28 @@ test('publishes a bounded pending permission on the active work', async () => {
   await manager.wait(task.id)
 })
 
+test('drops stale permissions restored on terminal work', () => {
+  const manager = new TaskManager({
+    store: {
+      load: () => [{
+        id: 'work-complete',
+        status: 'completed',
+        objective: '检查目录',
+        ownerId: 'owner',
+        sessionId: 'voice',
+        authorization: {
+          id: 'auth-stale',
+          status: 'pending',
+          summary: 'List directory',
+        },
+      }],
+      save: () => {},
+    },
+  })
+
+  assert.equal(manager.get('work-complete').authorization, null)
+})
+
 test('keeps delegated work active while releasing its coordinator lane', async () => {
   const manager = new TaskManager()
   let finish

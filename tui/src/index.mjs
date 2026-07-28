@@ -122,6 +122,10 @@ export function microphoneControlEvent(muted) {
     : { type: GatewayClientEvent.INPUT_UNMUTE, takeover: false }
 }
 
+export function permissionStatusText(task) {
+  return task?.authorization?.summary || '后台正在请求执行权限'
+}
+
 function cookieFrom(response) {
   const raw = response.headers.getSetCookie?.()[0]
     || response.headers.get('set-cookie')
@@ -398,7 +402,7 @@ export function createTranscriptDisplay({
       if (event.role === 'user' && event.type === 'transcript.discard') {
         const turnId = String(event.turnId || '')
         userDeltas.delete(turnId)
-        onUserDiscard(turnId)
+        onUserDiscard(turnId, event)
         if (turnId) {
           completeUserTurn(turnId)
           flushTurn(turnId)
@@ -734,6 +738,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
   let audioBridge = null
   let playback = null
   let keypressHandler = null
+  const pendingPermissionTasks = new Set()
   let close = () => {}
   let resolveClosed
   const closedPromise = new Promise(resolvePromise => {
@@ -751,7 +756,15 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       transcriptRenderer.finish(userPrefix, content)
       turnStatusDisplay.begin(event?.turnId)
     },
-    onUserDiscard: () => transcriptRenderer.discardPreview(),
+    onUserDiscard: (_turnId, event) => {
+      transcriptRenderer.discardPreview()
+      if (
+        event?.reason === 'turn_invalid'
+        && pendingPermissionTasks.size > 0
+      ) {
+        print(style('[没有听清授权回答，请再说一次]', 'yellow'))
+      }
+    },
     onAssistantDelta: content => transcriptRenderer.stream(assistantPrefix, content),
     onAssistant: (content, event) => {
       transcriptRenderer.finish(assistantPrefix, content)
@@ -909,7 +922,13 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(microphoneControlEvent(true)))
       }
-      print(style('[麦克风已静音]', 'dim'))
+      print(style(
+        '[麦克风已静音，语音输入不会被识别；按 m 恢复]',
+        'yellow',
+      ))
+      if (pendingPermissionTasks.size > 0) {
+        print(style('[正在等待授权，恢复麦克风后再回答]', 'yellow'))
+      }
     } else {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(microphoneControlEvent(false)))
@@ -1018,12 +1037,25 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       )
     }
     if (event.type === 'task.permission.requested') {
+      if (event.task?.id) pendingPermissionTasks.add(event.task.id)
       turnStatusDisplay.status(
         event,
-        `${style('[需要确认]', 'yellow')} ${
-          event.task.authorization?.summary || '后台正在请求执行权限'
-        }（请确认是否允许，或直接拒绝）`,
+        `${style('[需要确认]', 'yellow')} ${permissionStatusText(event.task)}`,
       )
+      if (muted) {
+        print(style(
+          '[正在等待授权，但麦克风已静音；按 m 恢复后再回答]',
+          'yellow',
+        ))
+      }
+    }
+    if (
+      event.type === 'task.permission.resolved'
+      || event.type === 'task.completed'
+      || event.type === 'task.failed'
+      || event.type === 'task.cancelled'
+    ) {
+      if (event.task?.id) pendingPermissionTasks.delete(event.task.id)
     }
     if (event.type === 'task.failed') {
       turnStatusDisplay.status(

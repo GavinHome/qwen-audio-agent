@@ -43,6 +43,7 @@ export class ToolCallHandler {
     getConversationContext = () => [],
     onMemoryChanged = () => {},
     respondPermission,
+    permissionPolicy,
   }) {
     this.taskManager = taskManager
     this.ownerId = ownerId
@@ -58,6 +59,8 @@ export class ToolCallHandler {
     this.getConversationContext = getConversationContext
     this.onMemoryChanged = onMemoryChanged
     this.respondPermission = respondPermission
+    this.permissionPolicy = permissionPolicy
+    this.gatewayApprovedPermissions = new Set()
     this.processedCalls = new Set()
     this.turnTasks = new Map()
   }
@@ -95,6 +98,47 @@ export class ToolCallHandler {
     )
   }
 
+  forwardCoordinatorEvent(event, onEvent) {
+    const permission = event?.permission
+    if (
+      event?.type === 'backend.permission.resolved'
+      && permission?.id
+      && this.gatewayApprovedPermissions.delete(permission.id)
+    ) return
+    if (
+      event?.type !== 'backend.permission.requested'
+      || !permission?.id
+      || !this.respondPermission
+      || !this.permissionPolicy?.shouldAutoAllow(
+        this.ownerId,
+        this.sessionId,
+      )
+    ) {
+      onEvent(event)
+      return
+    }
+    this.gatewayApprovedPermissions.add(permission.id)
+    let approval
+    try {
+      approval = this.respondPermission(
+        permission.id,
+        'always',
+        { ownerId: this.ownerId },
+      )
+    } catch {
+      this.gatewayApprovedPermissions.delete(permission.id)
+      onEvent(event)
+      return
+    }
+    Promise.resolve(approval)
+      .then(() => this.gatewayApprovedPermissions.delete(permission.id))
+      .catch(() => {
+        if (this.gatewayApprovedPermissions.delete(permission.id)) {
+          onEvent(event)
+        }
+      })
+  }
+
   createWork({ turnId, originalRequest, objective, submissionKey }) {
     let workId = ''
     const task = this.taskManager.create({
@@ -118,7 +162,7 @@ export class ToolCallHandler {
         turnId,
         coordinationRunId: workId,
         signal,
-        onEvent,
+        onEvent: event => this.forwardCoordinatorEvent(event, onEvent),
       }),
       canceler: async ({ previousStatus, abort }) => {
         if (previousStatus === 'delegated') {
@@ -426,6 +470,15 @@ export class ToolCallHandler {
       )
       return
     }
+    const previousPermissionMode = this.permissionPolicy?.mode(
+      this.ownerId,
+      this.sessionId,
+    )
+    this.permissionPolicy?.applyDecision(
+      this.ownerId,
+      this.sessionId,
+      decision,
+    )
     try {
       const permission = await this.respondPermission(
         authorizationId,
@@ -436,9 +489,28 @@ export class ToolCallHandler {
         status: permission.status,
         authorization_id: permission.id,
       }, turnId, permission.workId, {
-        createResponse: false,
+        response: {
+          instructions: decision === 'always'
+            ? [
+                '权限已经成功生效。',
+                '只用一句简短自然口语确认“已允许，后台继续执行”。',
+                '不要重述操作，不要再次询问，不要调用工具。',
+              ].join(' ')
+            : [
+                '权限已经成功拒绝。',
+                '只用一句简短自然口语确认“已拒绝，后台不会执行这项操作”。',
+                '不要重述操作，不要再次询问，不要调用工具。',
+              ].join(' '),
+        },
       })
     } catch (error) {
+      if (previousPermissionMode) {
+        this.permissionPolicy?.setMode(
+          this.ownerId,
+          this.sessionId,
+          previousPermissionMode,
+        )
+      }
       await this.sendOutput(
         callId,
         failure(

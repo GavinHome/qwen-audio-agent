@@ -621,6 +621,7 @@ test('does not start a permission response resolved during context injection', a
   frontend.ready = true
   const sent = []
   frontend.send = event => sent.push(event)
+  let pending = true
   let releaseItem
   frontend.createConversationItem = () => new Promise(resolve => {
     releaseItem = resolve
@@ -631,9 +632,12 @@ test('does not start a permission response resolved during context injection', a
     summary: 'Edit snake.py',
   }, {
     authorizationId: 'permission-race',
+  }, {
+    shouldSpeak: () => pending,
   })
   await new Promise(resolve => setImmediate(resolve))
 
+  pending = false
   frontend.cancelResponses((context, origin) => (
     origin === 'permission'
     && context.authorizationId === 'permission-race'
@@ -641,7 +645,8 @@ test('does not start a permission response resolved during context injection', a
   releaseItem({})
   const outcome = await speaking
 
-  assert.equal(outcome.cancelled, true)
+  assert.equal(outcome.skipped, true)
+  assert.equal(outcome.phase, 'deduplicated')
   assert.equal(
     sent.some(message => message.type === 'response.create'),
     false,

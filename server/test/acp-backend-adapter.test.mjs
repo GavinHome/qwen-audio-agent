@@ -369,7 +369,7 @@ test('ACP permissions expose permanent allow and reject semantics', async () => 
     ownerId: 'owner-one',
   })
   assert.deepEqual(await pending, {
-    outcome: { outcome: 'selected', optionId: 'always' },
+    outcome: { outcome: 'selected', optionId: 'once' },
   })
   assert.ok(events.some(event => (
     event.type === 'backend.permission.resolved'
@@ -380,6 +380,27 @@ test('ACP permissions expose permanent allow and reject semantics', async () => 
     }),
     events.find(event => event.type === 'backend.permission.resolved').permission,
   )
+  const repeated = adapter.handlePermission({
+    sessionId: 'coordinator-session',
+    toolCall: {
+      toolCallId: 'tool-two',
+      name: 'write',
+      rawInput: { path: '/tmp/file' },
+    },
+    options,
+  }, {
+    session: client.sessions.get('coordinator-session'),
+  })
+  const repeatedRequest = events.filter(event => (
+    event.type === 'backend.permission.requested'
+  )).at(-1)
+  assert.notEqual(repeatedRequest.permission.id, requested.permission.id)
+  await adapter.respondPermission(repeatedRequest.permission.id, 'reject', {
+    ownerId: 'owner-one',
+  })
+  assert.deepEqual(await repeated, {
+    outcome: { outcome: 'selected', optionId: 'reject' },
+  })
   await adapter.close()
 })
 
@@ -393,6 +414,7 @@ test('permission cleanup is isolated to the ACP prompt that requested it', async
     { optionId: 'always', kind: 'allow_always' },
     { optionId: 'reject', kind: 'reject_once' },
   ]
+  const coordinatorEvents = []
   const coordinator = adapter.handlePermission({
     toolCall: { name: 'read', rawInput: { path: '/coordinator' } },
     options,
@@ -402,6 +424,7 @@ test('permission cleanup is isolated to the ACP prompt that requested it', async
       ownerId: 'owner-one',
       coordinationRunId: 'work-one',
       permissionScopeId: 'coordinator-prompt',
+      onEvent: event => coordinatorEvents.push(event),
     },
   })
   const project = adapter.handlePermission({
@@ -422,6 +445,11 @@ test('permission cleanup is isolated to the ACP prompt that requested it', async
   assert.deepEqual(await coordinator, {
     outcome: { outcome: 'cancelled' },
   })
+  assert.equal(
+    coordinatorEvents.at(-1).type,
+    'backend.permission.resolved',
+  )
+  assert.equal(coordinatorEvents.at(-1).permission.status, 'cancelled')
   assert.equal(adapter.pendingPermissions.has(projectPermission.id), true)
   await adapter.respondPermission(projectPermission.id, 'always', {
     ownerId: 'owner-one',

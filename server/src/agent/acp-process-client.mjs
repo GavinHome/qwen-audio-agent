@@ -172,10 +172,16 @@ export class AcpProcessClient {
     if (!this.onPermission) {
       return { outcome: { outcome: 'cancelled' } }
     }
-    return this.onPermission(params, {
-      signal,
-      session: this.sessions.get(String(params.sessionId)),
-    })
+    const active = this.activePrompts.get(String(params.sessionId))
+    active?.pauseTimeout?.()
+    try {
+      return await this.onPermission(params, {
+        signal,
+        session: this.sessions.get(String(params.sessionId)),
+      })
+    } finally {
+      active?.resumeTimeout?.()
+    }
   }
 
   handleUpdate(notification) {
@@ -329,9 +335,39 @@ export class AcpProcessClient {
         { status: 409, protocol: 'acp' },
       )
     }
-    const active = { text: [], onUpdate }
+    const timeoutController = new AbortController()
+    let timeoutTimer = null
+    let permissionDepth = 0
+    const armTimeout = () => {
+      clearTimeout(timeoutTimer)
+      timeoutTimer = null
+      if (!timeoutMs || timeoutController.signal.aborted) return
+      timeoutTimer = setTimeout(() => {
+        timeoutController.abort(new DOMException(
+          'The operation was aborted due to timeout',
+          'TimeoutError',
+        ))
+      }, timeoutMs)
+      timeoutTimer.unref?.()
+    }
+    const active = {
+      text: [],
+      onUpdate,
+      pauseTimeout: () => {
+        permissionDepth += 1
+        clearTimeout(timeoutTimer)
+        timeoutTimer = null
+      },
+      resumeTimeout: () => {
+        permissionDepth = Math.max(0, permissionDepth - 1)
+        if (!permissionDepth) armTimeout()
+      },
+    }
     this.activePrompts.set(id, active)
-    const combined = this.requestSignal(signal, timeoutMs)
+    const combined = signal
+      ? AbortSignal.any([signal, timeoutController.signal])
+      : timeoutController.signal
+    armTimeout()
     const cancel = () => {
       this.notify(acp.methods.agent.session.cancel, {
         sessionId: id,
@@ -354,6 +390,7 @@ export class AcpProcessClient {
       }
       return { content, response }
     } finally {
+      clearTimeout(timeoutTimer)
       combined?.removeEventListener('abort', cancel)
       if (this.activePrompts.get(id) === active) {
         this.activePrompts.delete(id)

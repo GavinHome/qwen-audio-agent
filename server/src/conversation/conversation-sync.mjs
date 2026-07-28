@@ -12,6 +12,31 @@ function speechKey(value) {
     .replace(/[\p{P}\p{S}\s]+/gu, '')
 }
 
+function speechNgrams(value, size = 2) {
+  const grams = new Set()
+  for (let index = 0; index <= value.length - size; index += 1) {
+    grams.add(value.slice(index, index + size))
+  }
+  return grams
+}
+
+function equivalentSpeech(left, right) {
+  if (left === right) return true
+  if (left.length < 8 || right.length < 8) return false
+  const leftGrams = speechNgrams(left)
+  const rightGrams = speechNgrams(right)
+  const shorterSize = Math.min(leftGrams.size, rightGrams.size)
+  if (!shorterSize) return false
+  let shared = 0
+  for (const gram of leftGrams) {
+    if (rightGrams.has(gram)) shared += 1
+  }
+  // Delegated acknowledgements often add details around the same short action
+  // preview. One third of the shorter message is enough to recognize that
+  // paraphrase without suppressing a genuinely different update.
+  return shared / shorterSize >= 1 / 3
+}
+
 export class ConversationSync {
   constructor({
     maxMessages = 100,
@@ -126,7 +151,7 @@ export class ConversationSync {
     return this.list({ ownerId, sessionId }).some(message => (
       message.role === 'assistant'
       && message.turnId === turnId
-      && speechKey(message.content) === target
+      && equivalentSpeech(speechKey(message.content), target)
     ))
   }
 

@@ -12,6 +12,7 @@ import { UserProfile } from '../conversation/user-profile.mjs'
 import { enforceSameOrigin } from '../core/request-security.mjs'
 import { attachRealtimeGateway } from '../voice/realtime-gateway.mjs'
 import { describeActiveRealtime } from '../voice/realtime-provider.mjs'
+import { SessionPermissionPolicy } from '../voice/session-permission-policy.mjs'
 import { taskManager, taskStore } from '../task/task-manager.mjs'
 import { webDistributionPath } from '../core/install-paths.mjs'
 
@@ -53,6 +54,10 @@ const frontendMemory = new ProfiledMemoryStore({
     : null,
 })
 const app = express()
+const permissionPolicy = new SessionPermissionPolicy({
+  ttlMs: config.conversationSessionTtlMs,
+  maxSessions: config.maxConversationSessions,
+})
 
 app.disable('x-powered-by')
 app.use(enforceSameOrigin)
@@ -178,6 +183,20 @@ app.post('/api/permissions/:id', async (req, res, next) => {
   if (!['always', 'reject'].includes(decision)) {
     return res.status(400).json({ error: 'decision must be always or reject' })
   }
+  const permissionTask = taskManager.list({
+    ownerId: req.identity.ownerId,
+    active: true,
+  }).find(task => task.authorization?.id === req.params.id)
+  const previousPermissionMode = permissionTask
+    ? permissionPolicy.mode(req.identity.ownerId, permissionTask.sessionId)
+    : null
+  if (permissionTask) {
+    permissionPolicy.applyDecision(
+      req.identity.ownerId,
+      permissionTask.sessionId,
+      decision,
+    )
+  }
   try {
     const permission = await agent.respondPermission(
       req.params.id,
@@ -186,6 +205,13 @@ app.post('/api/permissions/:id', async (req, res, next) => {
     )
     return res.json(permission)
   } catch (error) {
+    if (permissionTask && previousPermissionMode) {
+      permissionPolicy.setMode(
+        req.identity.ownerId,
+        permissionTask.sessionId,
+        previousPermissionMode,
+      )
+    }
     if (error?.status === 404) {
       return res.status(404).json({ error: error.message })
     }
@@ -223,6 +249,7 @@ realtimeGateway = attachRealtimeGateway(server, {
   respondPermission: (id, decision, options) => (
     agent.respondPermission(id, decision, options)
   ),
+  permissionPolicy,
 })
 server.listen(config.port, config.host, () => {
   console.log(`qwen-audio-agent running at http://${config.host}:${config.port}`)

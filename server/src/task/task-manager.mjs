@@ -113,7 +113,9 @@ export class TaskManager {
         delegation: canRecoverDelegation || !wasActive
           ? saved.delegation || null
           : null,
-        authorization: wasActive ? null : saved.authorization || null,
+        authorization: wasActive || TERMINAL.has(saved.status)
+          ? null
+          : saved.authorization || null,
         notificationStatus: (
           (wasActive && !canRecoverDelegation)
           || saved.notificationStatus === 'delivering'

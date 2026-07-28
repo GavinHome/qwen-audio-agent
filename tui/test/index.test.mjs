@@ -14,6 +14,7 @@ import {
   helpText,
   microphoneControlEvent,
   parseArguments,
+  permissionStatusText,
   performManualInterrupt,
   readTuiHealth,
   websocketUrl,
@@ -27,6 +28,19 @@ test('m key controls microphone input without disabling voice output', () => {
     type: 'input.unmute',
     takeover: false,
   })
+})
+
+test('shows a permission operation without duplicating the spoken question', () => {
+  assert.equal(
+    permissionStatusText({
+      authorization: { summary: 'Edit snake.py' },
+    }),
+    'Edit snake.py',
+  )
+  assert.doesNotMatch(
+    permissionStatusText({ authorization: {} }),
+    /允许|拒绝/,
+  )
 })
 
 test('keeps a streamed tail when a final transcript is unexpectedly shorter', () => {
@@ -649,6 +663,27 @@ test('releases a buffered response when the user transcript is discarded', () =>
   })
 
   assert.deepEqual(output, ['assistant:我听到了。'])
+})
+
+test('passes the discard reason to the TUI feedback handler', () => {
+  const discarded = []
+  const display = createTranscriptDisplay({
+    onUserDiscard: (turnId, event) => {
+      discarded.push({ turnId, reason: event.reason })
+    },
+  })
+
+  display.handle({
+    type: 'transcript.discard',
+    role: 'user',
+    turnId: 'turn-1',
+    reason: 'turn_invalid',
+  })
+
+  assert.deepEqual(discarded, [{
+    turnId: 'turn-1',
+    reason: 'turn_invalid',
+  }])
 })
 
 test('clears a mutable ASR preview when its turn is discarded', () => {

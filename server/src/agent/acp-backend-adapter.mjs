@@ -92,7 +92,6 @@ export class AcpBackendAdapter {
     this.sessionToolServer = sessionToolServer || new AcpSessionToolServer()
     this.pendingPermissions = new Map()
     this.resolvedPermissions = new Map()
-    this.permissionRules = new Set()
     this.coordinatorSessions = new Map()
     this.coordinatorSessionPromises = new Map()
     this.sessionQueues = new Map()
@@ -274,18 +273,10 @@ export class AcpBackendAdapter {
     }
   }
 
-  permissionSignature(params) {
-    const tool = params?.toolCall || {}
-    return JSON.stringify([
-      clean(tool.name || tool.title),
-      tool.rawInput || null,
-    ])
-  }
-
   optionFor(params, decision) {
     const options = Array.isArray(params?.options) ? params.options : []
     const kinds = decision === 'always'
-      ? ['allow_always', 'allow_once']
+      ? ['allow_once', 'allow_always']
       : ['reject_always', 'reject_once']
     for (const kind of kinds) {
       const option = options.find(candidate => candidate.kind === kind)
@@ -295,7 +286,6 @@ export class AcpBackendAdapter {
   }
 
   async handlePermission(params, { signal, session } = {}) {
-    const signature = this.permissionSignature(params)
     const name = clean(params?.toolCall?.name || params?.toolCall?.title)
     const internal = ACP_SESSION_TOOL_NAMES.some(toolName => (
       name === toolName
@@ -305,7 +295,6 @@ export class AcpBackendAdapter {
     if (
       this.permissionMode === 'full'
       || internal
-      || this.permissionRules.has(signature)
     ) {
       const option = this.optionFor(params, 'always')
       return option
@@ -336,17 +325,29 @@ export class AcpBackendAdapter {
       sessionId: clean(session?.sessionId),
       permissionScopeId: clean(session?.permissionScopeId),
       params,
-      signature,
       pending,
       onEvent: session?.onEvent,
     }
     this.pendingPermissions.set(id, record)
     record.onEvent?.({ type: 'backend.permission.requested', permission })
     signal?.addEventListener('abort', () => {
-      if (!this.pendingPermissions.delete(id)) return
-      pending.resolve({ outcome: { outcome: 'cancelled' } })
+      this.cancelPermission(record)
     }, { once: true })
     return pending.promise
+  }
+
+  cancelPermission(record) {
+    if (!record || !this.pendingPermissions.delete(record.id)) return false
+    record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+    const permission = {
+      id: record.id,
+      workId: record.workId,
+      status: 'cancelled',
+      category: record.category,
+      summary: record.summary,
+    }
+    record.onEvent?.({ type: 'backend.permission.resolved', permission })
+    return true
   }
 
   async respondPermission(id, decision, { ownerId } = {}) {
@@ -366,7 +367,6 @@ export class AcpBackendAdapter {
       record.params,
       approved ? 'always' : 'reject',
     )
-    if (approved) this.permissionRules.add(record.signature)
     record.pending.resolve(option
       ? { outcome: { outcome: 'selected', optionId: option.optionId } }
       : { outcome: { outcome: 'cancelled' } })
@@ -393,10 +393,9 @@ export class AcpBackendAdapter {
   cancelPermissionsForScope(permissionScopeId) {
     const scope = clean(permissionScopeId)
     if (!scope) return
-    for (const [id, record] of this.pendingPermissions) {
+    for (const record of this.pendingPermissions.values()) {
       if (record.permissionScopeId !== scope) continue
-      this.pendingPermissions.delete(id)
-      record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+      this.cancelPermission(record)
     }
   }
 

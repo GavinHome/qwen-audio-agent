@@ -73,4 +73,30 @@ test('recognizes equivalent assistant speech only within the same voice turn', (
     turnId: 'turn-two',
     content: '正在修改贪吃蛇，让它更酷炫。',
   }), false)
+  assert.equal(sync.hasEquivalentAssistantSpeech({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    turnId: 'turn-one',
+    content: '正在修改登录页面的颜色。',
+  }), false)
+})
+
+test('recognizes a detailed delegated acknowledgement as the same action preview', () => {
+  const sync = new ConversationSync()
+  sync.record({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    id: 'progress-preview',
+    role: 'assistant',
+    content: '正在检查当前目录的项目进度。',
+    source: 'realtime-direct',
+    turnId: 'turn-progress',
+  })
+
+  assert.equal(sync.hasEquivalentAssistantSpeech({
+    ownerId: 'owner',
+    sessionId: 'voice',
+    turnId: 'turn-progress',
+    content: '好的老大，我已经开始检查你当前这个 qwen-audio-agent 项目的进度了，会看一下 git 分支、未提交改动和最近提交。',
+  }), true)
 })

@@ -65,6 +65,7 @@ export function attachRealtimeGateway(server, {
   coordinator,
   coordinatorAvailable = async () => true,
   respondPermission,
+  permissionPolicy,
 }) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
   const activeVoiceClients = new ActiveVoiceClients()
@@ -176,6 +177,11 @@ export function attachRealtimeGateway(server, {
         turnId: task.turnId,
         taskId: task.id,
         authorizationId: permission.id,
+      }, {
+        shouldSpeak: () => activeTaskContext().some(activeTask => (
+          activeTask.authorization?.id === permission.id
+          && activeTask.authorization.status === 'pending'
+        )),
       }).then(outcome => {
         if (outcome?.completed) return
         announcedPermissions.delete(permission.id)
@@ -288,6 +294,7 @@ export function attachRealtimeGateway(server, {
       coordinator,
       coordinatorAvailable,
       respondPermission,
+      permissionPolicy,
     })
     const currentTurn = () => ({
       turnId,
@@ -717,6 +724,7 @@ export function attachRealtimeGateway(server, {
             type: 'transcript.discard',
             role: 'user',
             turnId: stoppedTurn.turnId,
+            reason: 'turn_invalid',
           })
           send(ws, {
             type: 'voice.state',
