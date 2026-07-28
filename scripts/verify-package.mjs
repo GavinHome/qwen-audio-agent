@@ -21,6 +21,7 @@ const result = spawnSync(command, args, {
   cwd: root,
   env: process.env,
   encoding: 'utf8',
+  shell: !npmExecutable && process.platform === 'win32',
 })
 if (result.error) throw result.error
 if (result.status !== 0) {
