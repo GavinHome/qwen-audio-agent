@@ -10,6 +10,8 @@ qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通�
 随时打断，也可以直接用语音安排搜索、文件和代码等耗时任务。后台工作不会占住
 对话，完成后会自然回到当前语境并播报结果。
 
+![qwen-audio-agent 连接各种 Agent](docs/qwen-audio-agent-voice-agent-ecosystem.png)
+
 ## 核心特色
 
 - 连接你喜欢的各种 Agent：一个语音入口连接不同 Agent，并持续扩展支持范围

@@ -13,6 +13,8 @@ voice to delegate long-running work such as search, file operations, and coding.
 Backend work never blocks the conversation; when it finishes, the result
 returns naturally to the current context.
 
+![qwen-audio-agent connecting to different Agents](docs/qwen-audio-agent-voice-agent-ecosystem.png)
+
 ## Core Features
 
 - Connect to the Agents you prefer: one voice entry point for different Agents,
