@@ -29,10 +29,11 @@ for (const file of manifests) {
   }
 }
 for (const file of ['README.md', 'README_EN.md']) {
+  const npmBadge = `img.shields.io/npm/v/${rootManifest.name}`
   if (!readFileSync(file, 'utf8').includes(
-    `img.shields.io/badge/npm-v${expected}-orange`,
+    npmBadge,
   )) {
-    throw new Error(`${file} npm badge does not match ${expected}`)
+    throw new Error(`${file} does not use the dynamic npm package badge`)
   }
 }
 
