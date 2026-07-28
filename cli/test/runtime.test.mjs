@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { resolve } from 'node:path'
 import test from 'node:test'
 import {
   assertGatewayCompatibility,
@@ -40,9 +41,11 @@ const options = {
   backendUrl: 'http://127.0.0.1:4096',
 }
 
+const root = resolve('/repo')
+
 function dependencies(overrides = {}) {
   return {
-    root: '/repo',
+    root,
     env: { DASHSCOPE_API_KEY: 'key' },
     loadEnvironment: () => {},
     requireCredential: () => {},
@@ -98,7 +101,7 @@ test('starts only the Gateway and waits for its managed backend', async () => {
   })
   assert.equal(calls.length, 1)
   assert.equal(calls[0][0], process.execPath)
-  assert.deepEqual(calls[0][1], ['/repo/server/src/index.mjs'])
+  assert.deepEqual(calls[0][1], [resolve(root, 'server/src/index.mjs')])
   assert.equal(calls[0][2].env.OPENCODE_BASE_URL, 'http://127.0.0.1:4096')
   assert.equal(runtime.ownsProcesses, true)
 })

@@ -91,7 +91,13 @@ test('installs a systemd user service with restart protection', async () => {
   }
   try {
     const installed = await manageGatewayService('install', options)
-    assert.match(installed.servicePath, /xdg\/systemd\/user/)
+    assert.equal(
+      installed.servicePath,
+      resolve(
+        root,
+        'xdg/systemd/user/qwen-audio-agent-gateway.service',
+      ),
+    )
     const unit = readFileSync(installed.servicePath, 'utf8')
     assert.match(unit, /ExecStart="\/usr\/bin\/node"/)
     assert.match(unit, /"\/opt\/server\/index.mjs"/)

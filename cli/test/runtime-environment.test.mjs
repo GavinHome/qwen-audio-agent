@@ -47,6 +47,12 @@ function fixture() {
   return { base, root, homeDirectory }
 }
 
+function assertPrivateMode(filePath) {
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  }
+}
+
 test('loads environment, project and user config in documented priority order', () => {
   const target = fixture()
   const configDirectory = resolve(target.homeDirectory, '.config/qwaudio')
@@ -82,7 +88,7 @@ test('generates and reuses a private stable local identity secret', () => {
   })
   assert.equal(result.generatedSecret, true)
   assert.equal(first.QWEN_AUDIO_AGENT_AUTH_SECRET.length, 64)
-  assert.equal(statSync(result.statePath).mode & 0o777, 0o600)
+  assertPrivateMode(result.statePath)
 
   const second = {}
   loadRuntimeEnvironment({
@@ -96,9 +102,9 @@ test('generates and reuses a private stable local identity secret', () => {
   )
   assert.match(readFileSync(result.statePath, 'utf8'), /AUTH_SECRET=/)
   assert.match(readFileSync(result.configPath, 'utf8'), /DASHSCOPE_API_KEY=/)
-  assert.equal(statSync(result.configPath).mode & 0o777, 0o600)
+  assertPrivateMode(result.configPath)
   assert.match(readFileSync(result.userProfilePath, 'utf8'), /^# USER/m)
-  assert.equal(statSync(result.userProfilePath).mode & 0o777, 0o600)
+  assertPrivateMode(result.userProfilePath)
 })
 
 test('does not overwrite an existing user profile', () => {
@@ -117,15 +123,16 @@ test('does not overwrite an existing user profile', () => {
 
   assert.equal(result.userProfilePath, profilePath)
   assert.equal(readFileSync(profilePath, 'utf8'), '# USER\n\n- 称呼：老大\n')
-  assert.equal(statSync(profilePath).mode & 0o777, 0o600)
+  assertPrivateMode(profilePath)
 })
 
 test('supports an explicit cross-platform user config directory', () => {
+  const directory = resolve('/tmp/qwaudio-custom')
   assert.equal(
     userConfigDirectory({
-      QWAUDIO_CONFIG_DIR: '/tmp/qwaudio-custom',
+      QWAUDIO_CONFIG_DIR: directory,
     }, '/unused'),
-    '/tmp/qwaudio-custom',
+    directory,
   )
 })
 
@@ -320,8 +327,8 @@ test('migrates private runtime data into the user config directory', () => {
   )
   assert.equal(readFileSync(result.frontendMemoryPath, 'utf8'), '{\"memory\":true}')
   assert.equal(readFileSync(result.taskStatePath, 'utf8'), '{\"tasks\":true}')
-  assert.equal(statSync(result.frontendMemoryPath).mode & 0o777, 0o600)
-  assert.equal(statSync(result.taskStatePath).mode & 0o777, 0o600)
+  assertPrivateMode(result.frontendMemoryPath)
+  assertPrivateMode(result.taskStatePath)
   assert.equal(existsSync(legacyMemory), false)
   assert.equal(existsSync(legacyTasks), false)
   assert.deepEqual(result.migratedFiles, [

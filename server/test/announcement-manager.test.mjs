@@ -5,6 +5,16 @@ import {
   formatWorkResults,
 } from '../src/voice/announcement/announcement-manager.mjs'
 
+async function waitFor(condition, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for announcement state')
+    }
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+}
+
 test('formats only final work results for realtime presentation', () => {
   const text = formatWorkResults([{
     event: 'task.completed',
@@ -172,7 +182,7 @@ test('retries a generated result when playback acknowledgement times out', async
     acknowledgementTimeoutMs: 5,
   })
   manager.completed({ id: 'work-one', objective: '处理', result: '完成' })
-  await new Promise(resolve => setTimeout(resolve, 20))
+  await waitFor(() => attempts >= 2)
   assert.ok(attempts >= 2)
   manager.close()
 })
