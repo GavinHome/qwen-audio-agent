@@ -99,6 +99,20 @@ npm install -g qwen-audio-agent@latest
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
+## 获取 DashScope API Key
+
+1. 登录阿里云；如果尚未开通服务，请先按控制台提示开通阿里云百炼。
+2. 打开百炼控制台的 [API Key 页面](https://bailian.console.aliyun.com/?tab=model#/api-key)，
+   选择 **华北2（北京）**地域和默认业务空间，然后单击**创建 API Key**。
+3. 复制并妥善保存生成的 Key。请勿将 Key 提交到 Git 仓库、截图或公开分享。
+
+本项目的默认地址使用华北2（北京）的通用 DashScope 服务，请创建百炼**按量付费
+API Key**。Coding Plan 或 Token Plan 的专属 Key 需要配合其专属服务地址，不能直接
+用于默认配置。API 调用可能产生费用，具体以
+[阿里云百炼模型价格](https://help.aliyun.com/zh/model-studio/model-pricing)为准。
+更多账号权限、业务空间和密钥管理说明见
+[百炼官方文档](https://help.aliyun.com/zh/model-studio/get-api-key)。
+
 ## 快速开始
 
 1. 创建配置：

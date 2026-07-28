@@ -113,6 +113,26 @@ Upgrade to the latest code from GitHub:
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
+## Get a DashScope API Key
+
+1. Sign in to Alibaba Cloud. If Model Studio is not yet activated, follow the
+   console prompt to activate it.
+2. Open the Model Studio
+   [API Key page](https://bailian.console.aliyun.com/?tab=model#/api-key),
+   select the **China North 2 (Beijing)** region and the default workspace,
+   then click **Create API Key**.
+3. Copy the generated Key and store it securely. Never commit it to Git or
+   share it in screenshots or public messages.
+
+The default configuration connects to the general-purpose DashScope service in
+China North 2 (Beijing), so create a Model Studio **pay-as-you-go API Key**.
+Coding Plan and Token Plan Keys require their corresponding dedicated service
+endpoints and cannot be used with the default configuration. API calls may
+incur charges; see the
+[Model Studio model pricing](https://www.alibabacloud.com/help/en/model-studio/model-pricing).
+For account permissions, workspaces, and Key management, see the
+[official API Key guide](https://help.aliyun.com/en/model-studio/get-api-key).
+
 ## Quick Start
 
 1. Create your configuration:
