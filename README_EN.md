@@ -57,16 +57,17 @@ module walkthrough.
 | Backend Agent | Status | Main capabilities | Rating |
 | --- | --- | --- | --- |
 | OpenCode | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
-| OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★☆ |
+| OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★★ |
 | Qoder | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
 | Codex | In development | Coding tasks, tool calls, and project collaboration | ★★★★☆ |
 | Hermes | In development | Tool calls, task execution, and project collaboration | ★★★★☆ |
 
-Ratings reflect coordination-tool support:
-integrations with coordination tools receive five stars, while those without
-them receive four. A rating does not indicate current availability. See the
-[configuration guide](docs/configuration.md) for detailed setup and capability
-boundaries.
+Ratings reflect the current integration completeness, compatibility, and
+extent of real-world validation. Five stars identify recommended integrations
+that have been thoroughly tested; four stars identify integrations still in
+development or not yet validated to the same extent. Refer to the status column
+for current availability. See the [configuration guide](docs/configuration.md)
+for detailed setup and capability boundaries.
 
 ## Installation
 
