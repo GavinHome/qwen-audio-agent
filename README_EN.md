@@ -1,4 +1,4 @@
-# qwen-audio-agent
+# Qwen Audio Agent
 
 [中文](README.md) | [English](README_EN.md)
 
@@ -9,14 +9,14 @@
 
 ## Give Your Agent a Voice
 
-**Talk freely without waiting for tasks, and connect seamlessly to the Agent you
-already use.**
+**Talk freely without being blocked by tasks, and connect seamlessly to the
+Agent you already use.**
 
-qwen-audio-agent is a realtime voice frontend for mainstream Agents. Talk as
-naturally as you would on a phone call, interrupt at any time, and use your
-voice to delegate long-running work such as search, file operations, and coding.
-Backend work never blocks the conversation; when a task
-finishes, the result is announced naturally.
+qwen-audio-agent is a realtime voice frontend for mainstream Agents. You can
+keep talking as naturally as you would on a phone call, interrupt at any time,
+and use your voice to assign time-consuming work involving search, files, and
+code. Backend work never blocks the conversation; when a task finishes, the
+result is announced naturally.
 
 ## Core Features
 
@@ -31,7 +31,7 @@ finishes, the result is announced naturally.
 - WebUI, terminal TUI, and a macOS desktop orb
 - Local user profile and personal memory across sessions
 
-## Keep Talking While Work Continues
+## Keep Talking While Tasks Keep Running
 
 ![qwen-audio-agent architecture](docs/architecture-overview-en.png)
 
