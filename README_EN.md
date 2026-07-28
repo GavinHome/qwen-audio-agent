@@ -9,21 +9,23 @@
 
 ## Agent Presence
 
-No one says one thing and then stands there waiting for a minute.
+Real conversation should not leave you waiting after a single sentence.
 
-No one brings an entire conversation to a halt just because the other person
-needs to look something up.
+Nor should it grind to a halt just because the Agent is looking something up,
+calling a tool, or working on a task.
 
-Real conversation is continuous.
+Conversation should keep flowing.
 
-Agents should be too.
+An Agent should always be present.
 
 That is why we built **qwen-audio-agent**—a realtime voice runtime that keeps
 Agents talking, working, and present.
 
-Whether you are talking, thinking, or getting work done, your Agent stays in
-the conversation. It listens, responds, and naturally lets you know when the
-work is done: “It’s ready.”
+Whether chatting with you, thinking through a problem, or working on a task,
+your Agent remains in the conversation. It listens, responds, and when the
+task is complete, naturally tells you:
+
+“It’s ready.”
 
 ## Core Features
 
@@ -115,6 +117,9 @@ npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 ## Get a DashScope API Key
+
+Alibaba Cloud Model Studio offers free trial credits for Qwen Audio 3.0
+Realtime. Create an API Key to start using qwen-audio-agent for free.
 
 1. Sign in to Alibaba Cloud. If Model Studio is not yet activated, follow the
    prompt to activate it.

@@ -9,17 +9,19 @@
 
 ## Agent，始终在场
 
-没有人说完一句话，就沉默地等待一分钟。
+真正的交流，不该在说完一句话后，就陷入漫长的等待。
 
-也没有人会因为对方去查资料，就让整场对话停下来。
+也不该因为 Agent 正在查资料、调用工具或处理任务，整场对话就此暂停。
 
-真正的交流是连续的。
+交流应该是连续的。
 
-而 Agent，也应该如此。
+Agent 也应该始终在场。
 
 所以，我们做了 **qwen-audio-agent**——让 Agent 持续交流、持续工作、持续在场的实时语音运行时。
 
-无论是聊天、思考，还是处理任务，Agent 都始终在这场对话里。它会倾听，会回应，也会在任务完成时自然地告诉你：“已经好了。”
+无论是聊天、思考，还是处理任务，Agent 都始终在这场对话里。它会倾听，会回应，也会在任务完成时自然地告诉你：
+
+“已经好了。”
 
 ## 核心特色
 
@@ -100,6 +102,8 @@ npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 ## 获取 DashScope API Key
+
+阿里云百炼为 Qwen Audio 3.0 Realtime 提供免费体验额度，创建 API Key 后即可免费开始使用 qwen-audio-agent。
 
 1. 登录阿里云；如果尚未开通，请先按提示开通阿里云百炼。
 2. 打开百炼控制台的 [API Key 页面](https://bailian.console.aliyun.com/?tab=model#/api-key)，
