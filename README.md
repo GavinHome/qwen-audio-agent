@@ -2,23 +2,27 @@
 
 [中文](README.md) | [English](README_EN.md)
 
+[![CI](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/badge/npm-v0.7.0-orange)](https://www.npmjs.com/package/qwen-audio-agent)
+[![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 ## 让 Agent 开口说话
 
 **自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
 
 qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续交流、
 随时打断，也可以直接用语音安排搜索、文件和代码等耗时任务。后台工作不会占住
-对话，完成后会自然回到当前语境并播报结果。
+对话，任务完成后会自然播报结果。
 
 ![qwen-audio-agent 连接各种 Agent](docs/qwen-audio-agent-voice-agent-ecosystem.png)
 
 ## 核心特色
 
-- 连接你喜欢的各种 Agent：一个语音入口连接不同 Agent，并持续扩展支持范围
-- 全双工实时语音、自然打断和持续多轮对话
+- 全双工实时语音交互、自然打断和持续多轮对话
+- 一键连接你喜欢的各种 Agent，使用已有的模型、工具、MCP、Skill
 - 对话与后台任务并行，可随时查询进度或取消任务
 - 任务结果自动回到当前上下文，支持继续追问和修改
-- 连接后台 Agent 已有的模型、工具、MCP、Skill、权限与项目
 - 支持 WebUI、终端 TUI 和 macOS 桌面悬浮球
 - 支持本地用户档案与跨会话个人记忆
 
@@ -33,6 +37,8 @@ qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通�
 <summary>查看详细架构</summary>
 
 ![qwen-audio-agent 接入参考架构](docs/qwen-audio-agent-three-layer-architecture.png)
+
+更完整的设计与模块说明见[架构文档](docs/architecture.md)。
 
 </details>
 
@@ -52,13 +58,13 @@ qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通�
 
 ## 安装
 
-需要 Node.js 22.22.2、24.15.0 或更高兼容版本、npm 10+ 和 DashScope API Key。
+需要 Node.js 22.22.2+ 或 24.15.0+、npm 10+ 和 DashScope API Key。
 仓库提供 `.nvmrc` 和 `.node-version`；使用 nvm 时可直接运行 `nvm use`。
 
-从 npm registry 安装已发布版本：
+一键安装（直接从 GitHub 安装）：
 
 ```bash
-npm install -g qwen-audio-agent
+npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 从源码安装：
@@ -70,10 +76,10 @@ npm install
 npm run install:global
 ```
 
-升级到最新发布版本：
+升级到最新版本（重新执行安装命令即可）：
 
 ```bash
-npm install -g qwen-audio-agent@latest
+npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 ## 快速开始

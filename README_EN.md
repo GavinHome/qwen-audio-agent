@@ -2,6 +2,11 @@
 
 [中文](README.md) | [English](README_EN.md)
 
+[![CI](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/badge/npm-v0.7.0-orange)](https://www.npmjs.com/package/qwen-audio-agent)
+[![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 ## Give Your Agent a Voice
 
 **Talk freely without waiting for tasks, and connect seamlessly to the Agent you
@@ -44,6 +49,9 @@ assistant.
 
 ![qwen-audio-agent integration reference architecture](docs/qwen-audio-agent-three-layer-architecture-en.png)
 
+See the [architecture document](docs/architecture.md) for the full design and
+module walkthrough.
+
 </details>
 
 ## Agent Support
@@ -65,14 +73,14 @@ boundaries.
 
 ## Installation
 
-You need Node.js 22.22.2, 24.15.0, or a newer compatible version, npm 10+, and a
+You need Node.js 22.22.2+ or 24.15.0+, npm 10+, and a
 DashScope API Key. The repository includes `.nvmrc` and `.node-version`; if you
 use nvm, run `nvm use`.
 
-Install a published version from the npm registry:
+One-line install (directly from GitHub):
 
 ```bash
-npm install -g qwen-audio-agent
+npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 Install from source:
@@ -84,10 +92,10 @@ npm install
 npm run install:global
 ```
 
-Upgrade to the latest published version:
+Upgrade to the latest version (just re-run the install command):
 
 ```bash
-npm install -g qwen-audio-agent@latest
+npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 ```
 
 ## Quick Start
