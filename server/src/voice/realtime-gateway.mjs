@@ -1156,6 +1156,7 @@ export function attachRealtimeGateway(server, {
         clientContext = normalizeClientContext({
           timeZone: event.timeZone,
           locale: event.locale,
+          workingDirectory: event.workingDirectory,
         })
         frontend?.updateAgentContext({
           client: clientContext,

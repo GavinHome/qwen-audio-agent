@@ -85,6 +85,25 @@ export function websocketUrl(baseUrl, sessionId) {
   return url.toString()
 }
 
+export function connectMessage({
+  voiceEnabled,
+  takeover = false,
+  workingDirectory = process.cwd(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  locale = Intl.DateTimeFormat().resolvedOptions().locale,
+} = {}) {
+  return {
+    type: 'connect',
+    voiceEnabled: voiceEnabled !== false,
+    clientType: 'cli',
+    clientLabel: 'CLI',
+    takeover: takeover === true,
+    workingDirectory,
+    timeZone,
+    locale,
+  }
+}
+
 function cookieFrom(response) {
   const raw = response.headers.getSetCookie?.()[0]
     || response.headers.get('set-cookie')
@@ -1022,15 +1041,10 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     nextSocket.on('open', () => {
       if (socket !== nextSocket || closed) return
       reconnectDelay = 500
-      nextSocket.send(JSON.stringify({
-        type: 'connect',
+      nextSocket.send(JSON.stringify(connectMessage({
         voiceEnabled: !muted,
-        clientType: 'cli',
-        clientLabel: 'CLI',
         takeover: options.takeover === true,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        locale: Intl.DateTimeFormat().resolvedOptions().locale,
-      }))
+      })))
       syncActiveTasks().catch(error => {
         print(style(`[任务状态] ${error.message}`, 'yellow'))
       })

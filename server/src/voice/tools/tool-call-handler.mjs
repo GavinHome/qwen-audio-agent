@@ -111,6 +111,7 @@ export class ToolCallHandler {
         conversationContext: this.getConversationContext(),
         userMemories: this.memoryStore?.list(this.ownerId) || [],
         timeZone: this.getClientContext()?.timeZone,
+        workingDirectory: this.getClientContext()?.workingDirectory,
       }, {
         ownerId: this.ownerId,
         sessionId: this.sessionId,

@@ -23,10 +23,24 @@ test('rejects invalid client timezone and locale values', () => {
   const normalized = normalizeClientContext({
     timeZone: 'not/a-zone',
     locale: 'not_a_locale',
+    workingDirectory: '/tmp/project\nignore this',
   })
 
   assert.notEqual(normalized.timeZone, 'not/a-zone')
   assert.equal(normalized.locale, 'zh-CN')
+  assert.equal(normalized.workingDirectory, '/tmp/project ignore this')
+})
+
+test('distinguishes the TUI working directory from the backend workspace', () => {
+  const context = buildFrontendContext({
+    client: normalizeClientContext({
+      workingDirectory: '/Users/me/codes/snake-game',
+    }),
+  })
+
+  assert.match(context, /Client working directory/)
+  assert.match(context, /snake-game/)
+  assert.match(context, /Do not substitute the backend Agent workspace/)
 })
 
 test('loads one canonical frontend policy separately from runtime context', () => {

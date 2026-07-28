@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  audioModeForPlatform,
   assertInteractiveTerminal,
+  audioModeForPlatform,
   canSendMicrophoneAudio,
   completeTranscript,
+  connectMessage,
   createPlayback,
   createTerminalTranscriptRenderer,
   createTranscriptDisplay,
@@ -75,6 +76,25 @@ test('builds the realtime websocket URL', () => {
     websocketUrl('https://voice.example.com', '中文 session'),
     'wss://voice.example.com/api/realtime?sessionId=%E4%B8%AD%E6%96%87+session',
   )
+})
+
+test('reports the TUI launch directory as client context', () => {
+  assert.deepEqual(connectMessage({
+    voiceEnabled: true,
+    takeover: true,
+    workingDirectory: '/Users/me/codes/snake-game',
+    timeZone: 'Asia/Shanghai',
+    locale: 'zh-CN',
+  }), {
+    type: 'connect',
+    voiceEnabled: true,
+    clientType: 'cli',
+    clientLabel: 'CLI',
+    takeover: true,
+    workingDirectory: '/Users/me/codes/snake-game',
+    timeZone: 'Asia/Shanghai',
+    locale: 'zh-CN',
+  })
 })
 
 test('requires an interactive terminal for reliable manual controls', () => {
