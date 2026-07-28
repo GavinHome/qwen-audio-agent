@@ -579,6 +579,7 @@ export default function App() {
     sessionId,
     enabled: voiceEnabled,
     outputMuted: false,
+    inputOnlyMute: desktopOrbMode,
     clientType: desktopOrbMode ? 'desktop' : 'web',
     clientLabel: desktopOrbMode ? '桌面端' : 'WebUI',
     takeover: takeoverRequested,

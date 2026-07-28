@@ -87,6 +87,8 @@ export function websocketUrl(baseUrl, sessionId) {
 
 export function connectMessage({
   voiceEnabled,
+  inputEnabled,
+  outputEnabled,
   takeover = false,
   workingDirectory = process.cwd(),
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -95,6 +97,12 @@ export function connectMessage({
   return {
     type: 'connect',
     voiceEnabled: voiceEnabled !== false,
+    ...(inputEnabled === undefined
+      ? {}
+      : { inputEnabled: inputEnabled === true }),
+    ...(outputEnabled === undefined
+      ? {}
+      : { outputEnabled: outputEnabled === true }),
     clientType: 'cli',
     clientLabel: 'CLI',
     takeover: takeover === true,
@@ -102,6 +110,12 @@ export function connectMessage({
     timeZone,
     locale,
   }
+}
+
+export function microphoneControlEvent(muted) {
+  return muted
+    ? { type: 'input.mute' }
+    : { type: 'input.unmute', takeover: false }
 }
 
 function cookieFrom(response) {
@@ -882,16 +896,16 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     muted = value
     if (muted) {
       setCaptureEnabled(false)
-      playback.clear()
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'mute' }))
+        socket.send(JSON.stringify(microphoneControlEvent(true)))
       }
-      print(style('[已静音]', 'dim'))
+      print(style('[麦克风已静音]', 'dim'))
     } else {
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'unmute', takeover: false }))
+        socket.send(JSON.stringify(microphoneControlEvent(false)))
       }
-      print(style('[正在申请语音控制权]', 'green'))
+      print(style('[麦克风已恢复]', 'green'))
+      startMicrophone()
     }
   }
 
@@ -917,7 +931,6 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       if (event.state === 'active') {
         ownsVoice = true
         everOwnedVoice = true
-        muted = false
         startMicrophone()
       } else if (event.state === 'busy') {
         ownsVoice = false
@@ -1042,7 +1055,9 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       if (socket !== nextSocket || closed) return
       reconnectDelay = 500
       nextSocket.send(JSON.stringify(connectMessage({
-        voiceEnabled: !muted,
+        voiceEnabled: true,
+        inputEnabled: !muted,
+        outputEnabled: true,
         takeover: options.takeover === true,
       })))
       syncActiveTasks().catch(error => {

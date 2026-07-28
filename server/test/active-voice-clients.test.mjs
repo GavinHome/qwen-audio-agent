@@ -71,3 +71,16 @@ test('muted clients neither capture nor receive voice output', () => {
     participatesInVoiceArbitration: false,
   })
 })
+
+test('input-muted desktop clients keep voice output and ownership', () => {
+  assert.deepEqual(clientVoiceCapabilities({
+    voiceEnabled: true,
+    inputEnabled: false,
+    outputEnabled: true,
+    textOnly: false,
+  }), {
+    inputEnabled: false,
+    outputEnabled: true,
+    participatesInVoiceArbitration: true,
+  })
+})

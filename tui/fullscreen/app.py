@@ -546,6 +546,8 @@ def build_app(args):
                     chat.write(f"[yellow]音频不可用({e2}),仅文字模式[/yellow]")
 
             send_json({"type": "connect", "voiceEnabled": True,
+                       "inputEnabled": not bool(self.engine and self.engine.muted),
+                       "outputEnabled": True,
                        "clientType": "cli", "clientLabel": "CLI",
                        "takeover": args.takeover,
                        "timeZone": "Asia/Shanghai", "locale": "zh-CN"})
@@ -719,7 +721,8 @@ def build_app(args):
                 return
             self.engine.muted = not self.engine.muted
             self._send_json({
-                "type": "mute" if self.engine.muted else "unmute"
+                "type": "input.mute" if self.engine.muted else "input.unmute",
+                **({} if self.engine.muted else {"takeover": False}),
             })
             self.query_one("#chat", RichLog).write(
                 "[grey62]· 麦克风已静音[/grey62]" if self.engine.muted

@@ -2,10 +2,41 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   acceptsVoiceState,
+  microphoneControlEvent,
   shouldAdvertiseVoice,
   shouldClaimReleasedVoice,
   visualVoiceState,
 } from '../src/useRealtimeVoice.js'
+
+test('desktop microphone controls mute only input', () => {
+  assert.deepEqual(microphoneControlEvent({
+    enabled: false,
+    inputOnlyMute: true,
+  }), {
+    type: 'input.mute',
+  })
+  assert.deepEqual(microphoneControlEvent({
+    enabled: true,
+    inputOnlyMute: true,
+    takeover: true,
+  }), {
+    type: 'input.unmute',
+    takeover: true,
+  })
+})
+
+test('regular voice controls retain full mute behavior', () => {
+  assert.deepEqual(microphoneControlEvent({ enabled: false }), {
+    type: 'mute',
+  })
+  assert.deepEqual(microphoneControlEvent({
+    enabled: true,
+    takeover: false,
+  }), {
+    type: 'unmute',
+    takeover: false,
+  })
+})
 
 test('ignores a stale direct-model state from an older voice turn', () => {
   assert.equal(acceptsVoiceState({

@@ -12,11 +12,22 @@ import {
   createTurnStatusDisplay,
   fullDuplexFallbackHint,
   helpText,
+  microphoneControlEvent,
   parseArguments,
   performManualInterrupt,
   readTuiHealth,
   websocketUrl,
 } from '../src/index.mjs'
+
+test('m key controls microphone input without disabling voice output', () => {
+  assert.deepEqual(microphoneControlEvent(true), {
+    type: 'input.mute',
+  })
+  assert.deepEqual(microphoneControlEvent(false), {
+    type: 'input.unmute',
+    takeover: false,
+  })
+})
 
 test('keeps a streamed tail when a final transcript is unexpectedly shorter', () => {
   assert.equal(
@@ -92,6 +103,29 @@ test('reports the TUI launch directory as client context', () => {
     clientLabel: 'CLI',
     takeover: true,
     workingDirectory: '/Users/me/codes/snake-game',
+    timeZone: 'Asia/Shanghai',
+    locale: 'zh-CN',
+  })
+})
+
+test('advertises a muted TUI as output-capable on reconnect', () => {
+  assert.deepEqual(connectMessage({
+    voiceEnabled: true,
+    inputEnabled: false,
+    outputEnabled: true,
+    takeover: false,
+    workingDirectory: '/workspace',
+    timeZone: 'Asia/Shanghai',
+    locale: 'zh-CN',
+  }), {
+    type: 'connect',
+    voiceEnabled: true,
+    inputEnabled: false,
+    outputEnabled: true,
+    clientType: 'cli',
+    clientLabel: 'CLI',
+    takeover: false,
+    workingDirectory: '/workspace',
     timeZone: 'Asia/Shanghai',
     locale: 'zh-CN',
   })

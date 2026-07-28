@@ -39,13 +39,20 @@ export class ActiveVoiceClients {
 
 export function clientVoiceCapabilities({
   voiceEnabled = false,
+  inputEnabled,
+  outputEnabled,
   textOnly = false,
 } = {}) {
-  const outputEnabled = voiceEnabled === true
-  const participatesInVoiceArbitration = outputEnabled && textOnly !== true
+  const canOutput = outputEnabled === undefined
+    ? voiceEnabled === true
+    : outputEnabled === true
+  const canInput = inputEnabled === undefined
+    ? canOutput && textOnly !== true
+    : inputEnabled === true && textOnly !== true
+  const participatesInVoiceArbitration = canOutput && textOnly !== true
   return {
-    inputEnabled: participatesInVoiceArbitration,
-    outputEnabled,
+    inputEnabled: canInput,
+    outputEnabled: canOutput,
     participatesInVoiceArbitration,
   }
 }
