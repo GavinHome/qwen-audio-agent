@@ -189,6 +189,16 @@ AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
+使用其他支持 ACP stdio 的 Agent：
+
+```dotenv
+AGENT_PROTOCOL=acp
+ACP_COMMAND=your-agent
+ACP_ARGS=["--acp"]
+```
+
+通用 ACP 入口不需要修改 Gateway 代码。命令、参数、显示名称、模型和工作目录可分别通过 `ACP_COMMAND`、`ACP_ARGS`、`ACP_LABEL`、`ACP_MODEL` 和 `ACP_WORKSPACE` 配置。
+
 后台权限默认使用 `native`，由后台 Agent 在需要时询问。只有在可信项目中，并且
 明确接受自动执行命令和修改文件时，才应启用：
 

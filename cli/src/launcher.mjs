@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadRuntimeEnvironment } from '../../shared/runtime-environment.mjs'
+import { backendDefinition } from '../../shared/backend-catalog.mjs'
 import { helpText, parseArguments } from './arguments.mjs'
 import {
   ensureRuntime,
@@ -35,10 +36,9 @@ function applyGatewayOptions(env, options) {
   } else {
     delete env.QWEN_AUDIO_AGENT_BACKEND_AGENT
   }
-  if (options.backend === 'openclaw') {
-    env.OPENCLAW_BASE_URL = options.backendUrl
-  } else if (options.backend === 'opencode') {
-    env.OPENCODE_BASE_URL = options.backendUrl
+  const definition = backendDefinition(options.backend)
+  if (definition?.baseUrlEnvironment) {
+    env[definition.baseUrlEnvironment] = options.backendUrl
   }
 }
 

@@ -1,12 +1,9 @@
 import { spawn } from 'node:child_process'
 import { createConnection, createServer } from 'node:net'
 import { resolve } from 'node:path'
+import { backendRuntimeDriver } from './backend-drivers/registry.mjs'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
-
-function origin(value) {
-  return new URL(value).origin
-}
 
 function permissionMode(env) {
   const mode = String(
@@ -20,9 +17,7 @@ function permissionMode(env) {
 
 export function resolveManagedBackend(env = process.env) {
   const protocol = String(env.AGENT_PROTOCOL || 'opencode').toLowerCase()
-  if (!['opencode', 'openclaw', 'qoder'].includes(protocol)) {
-    throw new Error(`不支持的后台 Agent：${protocol}`)
-  }
+  const driver = backendRuntimeDriver(protocol)
   const mode = String(
     env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
   ).toLowerCase()
@@ -33,46 +28,11 @@ export function resolveManagedBackend(env = process.env) {
   if (resolvedPermissionMode === 'full' && mode !== 'managed') {
     throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
   }
-  if (resolvedPermissionMode === 'full' && protocol === 'openclaw') {
-    throw new Error(
-      'OpenClaw 的最高权限需要单独配置 exec approvals、elevated 和 host，'
-      + '不能由 Gateway 的统一权限开关安全启用',
-    )
-  }
-  if (protocol === 'qoder') {
-    if (mode !== 'managed') {
-      throw new Error('Qoder 后台当前只支持 managed 模式')
-    }
-    return {
-      protocol,
-      mode,
-      permissionMode: resolvedPermissionMode,
-      baseUrl: null,
-    }
-  }
-  const configured = protocol === 'openclaw'
-    ? env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789'
-    : env.OPENCODE_BASE_URL || 'http://127.0.0.1:4096'
-  return {
-    protocol,
+  return driver.resolve({
+    env,
     mode,
     permissionMode: resolvedPermissionMode,
-    baseUrl: origin(configured),
-  }
-}
-
-function inlineOpenCodeConfig(value) {
-  if (!String(value || '').trim()) return {}
-  let parsed
-  try {
-    parsed = JSON.parse(value)
-  } catch {
-    throw new Error('OPENCODE_CONFIG_CONTENT 不是有效的 JSON')
-  }
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('OPENCODE_CONFIG_CONTENT 必须是 JSON 对象')
-  }
-  return parsed
+  })
 }
 
 export function applyBackendPermissionMode(env, backend) {
@@ -80,37 +40,9 @@ export function applyBackendPermissionMode(env, backend) {
   if (backend.mode !== 'managed') {
     throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
   }
-  if (backend.protocol === 'openclaw') {
-    throw new Error('OpenClaw 不支持 Gateway 统一最高权限模式')
-  }
-  if (backend.protocol !== 'opencode') return env
-
-  const config = inlineOpenCodeConfig(env.OPENCODE_CONFIG_CONTENT)
-  const agents = {
-    ...(config.agent && typeof config.agent === 'object' ? config.agent : {}),
-  }
-  const names = new Set([
-    String(
-      env.QWEN_AUDIO_AGENT_BACKEND_AGENT
-      || env.OPENCODE_COORDINATOR_AGENT
-      || 'qwen-audio-agent-backend',
-    ).trim(),
-    String(env.OPENCODE_TASK_AGENT || 'build').trim(),
-  ])
-  for (const name of names) {
-    if (!name) continue
-    const existing = agents[name]
-    agents[name] = {
-      ...(existing && typeof existing === 'object' ? existing : {}),
-      permission: 'allow',
-    }
-  }
-  env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-    ...config,
-    permission: 'allow',
-    agent: agents,
-  })
-  return env
+  return backendRuntimeDriver(backend.protocol)
+    .applyPermissionMode?.(env, backend)
+    || env
 }
 
 export function isLocalBackend(baseUrl) {
@@ -153,17 +85,10 @@ export function allocateBackendAddress(baseUrl) {
 }
 
 function applyBackendAddress(env, backend) {
-  const target = new URL(backend.baseUrl)
-  if (backend.protocol === 'openclaw') {
-    env.OPENCLAW_BASE_URL = backend.baseUrl
-    env.OPENCLAW_PORT = target.port || (target.protocol === 'https:' ? '443' : '80')
-  } else {
-    env.OPENCODE_BASE_URL = backend.baseUrl
-    env.OPENCODE_PORT = target.port || (target.protocol === 'https:' ? '443' : '80')
-  }
+  backendRuntimeDriver(backend.protocol).applyAddress?.(env, backend)
 }
 
-function spawnSpec(root, platform, env) {
+function spawnSpec(root, platform, env, driver) {
   const childEnvironment = {
     ...env,
     QWEN_AUDIO_AGENT_ENV_LOADED: '1',
@@ -172,7 +97,7 @@ function spawnSpec(root, platform, env) {
   if (platform === 'win32') {
     return {
       command: 'npm.cmd',
-      args: ['run', 'backend'],
+      args: ['run', driver.managedNpmScript],
       options: {
         cwd: root,
         env: childEnvironment,
@@ -182,7 +107,7 @@ function spawnSpec(root, platform, env) {
     }
   }
   return {
-    command: resolve(root, 'scripts/backend'),
+    command: resolve(root, `scripts/${driver.managedScript}`),
     args: [],
     options: {
       cwd: root,
@@ -231,8 +156,9 @@ export async function startManagedBackend({
   findFreeAddress = allocateBackendAddress,
 } = {}) {
   const backend = resolveManagedBackend(env)
+  const driver = backendRuntimeDriver(backend.protocol)
   applyBackendPermissionMode(env, backend)
-  if (backend.protocol === 'qoder') {
+  if (!driver.separateManagedProcess) {
     return new ManagedBackendRuntime(null, { platform })
   }
   if (backend.mode === 'compatible') {
@@ -248,7 +174,7 @@ export async function startManagedBackend({
     backend.baseUrl = await findFreeAddress(backend.baseUrl)
   }
   applyBackendAddress(env, backend)
-  const spec = spawnSpec(root, platform, env)
+  const spec = spawnSpec(root, platform, env, driver)
   const child = spawnImpl(spec.command, spec.args, spec.options)
   child.once?.('error', error => {
     process.stderr.write(`后台 Agent 进程启动失败：${error.message}\n`)

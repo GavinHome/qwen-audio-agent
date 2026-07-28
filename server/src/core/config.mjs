@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { loadRuntimeEnvironment } from '../../../shared/runtime-environment.mjs'
+import { backendDefinition } from '../../../shared/backend-catalog.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../../..')
@@ -40,6 +41,33 @@ export function resolveOpenClawWorkspace(
   return env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE
     ? resolve(root, env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE)
     : resolve(configDirectory, 'workspaces/openclaw')
+}
+
+export function resolveAcpWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.ACP_WORKSPACE
+    ? resolve(root, env.ACP_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/acp')
+}
+
+export function resolveAcpArgs(value) {
+  const source = String(value || '').trim()
+  if (!source) return []
+  if (source.startsWith('[')) {
+    let parsed
+    try {
+      parsed = JSON.parse(source)
+    } catch {
+      throw new Error('ACP_ARGS 不是有效的 JSON 数组')
+    }
+    if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+      throw new Error('ACP_ARGS 必须是字符串组成的 JSON 数组')
+    }
+    return parsed
+  }
+  return source.split(/\s+/)
 }
 
 const DEFAULT_BACKEND_MODEL = 'qwen3.7-max'
@@ -125,7 +153,7 @@ export const config = {
     process.env.QWEN_AUDIO_AGENT_IDENTITY_MODE || 'personal'
   ).toLowerCase() === 'browser' ? 'browser' : 'personal',
   personalOwnerId: process.env.QWEN_AUDIO_AGENT_PERSONAL_OWNER_ID || 'user_personal',
-  agentProtocol: ['openclaw', 'qoder'].includes(requestedAgentProtocol)
+  agentProtocol: backendDefinition(requestedAgentProtocol)
     ? requestedAgentProtocol
     : 'opencode',
   backendMode,
@@ -167,6 +195,12 @@ export const config = {
     process.env.QODERCLI_PATH || process.env.QODER_CLI_PATH || '',
   ).trim(),
   qoderModel: String(process.env.QODER_MODEL || 'auto').trim() || 'auto',
+  acpCommand: String(process.env.ACP_COMMAND || '').trim(),
+  acpArgs: resolveAcpArgs(process.env.ACP_ARGS),
+  acpLabel: String(process.env.ACP_LABEL || 'ACP Agent').trim() || 'ACP Agent',
+  acpDirectory: resolveAcpWorkspace(),
+  acpModel: String(process.env.ACP_MODEL || 'auto').trim() || 'auto',
+  acpCoordinatorAgent: String(process.env.ACP_COORDINATOR_AGENT || '').trim(),
   openCodeModel: (
     process.env.OPENCODE_MODEL
     || (backendMode === 'managed' ? backendModels.openCode : '')

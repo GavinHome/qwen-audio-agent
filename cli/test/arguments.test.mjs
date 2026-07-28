@@ -69,6 +69,20 @@ test('accepts Qoder only as a managed backend without a URL', () => {
   )
 })
 
+test('accepts a generic ACP backend without an HTTP URL', () => {
+  const options = parseArguments(['gateway', '--backend', 'acp'], {})
+  assert.equal(options.backend, 'acp')
+  assert.equal(options.backendMode, 'managed')
+  assert.equal(options.backendUrl, '')
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend',
+    'acp',
+    '--backend-mode',
+    'compatible',
+  ], {}), /只支持 managed/)
+})
+
 test('parses supported backend permission modes', () => {
   const options = parseArguments([
     'gateway',

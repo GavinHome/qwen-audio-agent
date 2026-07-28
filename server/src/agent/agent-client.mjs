@@ -1,7 +1,7 @@
 import { config } from '../core/config.mjs'
 import { AgentError } from './backend-adapter.mjs'
 import { AcpBackendAdapter } from './acp-backend-adapter.mjs'
-import { OpenClawAcpDelegationAdapter } from './openclaw-adapter.mjs'
+import { backendDriver } from './backends/registry.mjs'
 
 export { AgentError }
 
@@ -11,9 +11,7 @@ export class AgentClient {
     mode = config.backendMode,
     permissionMode = config.backendPermissionMode,
     baseUrl = config.openCodeBaseUrl,
-    model = protocol === 'openclaw'
-      ? config.openClawModel
-      : config.openCodeModel,
+    model,
     timeoutMs = config.agentTimeoutMs,
     directory = config.openCodeDirectory,
     coordinatorAgent = config.openCodeCoordinatorAgent,
@@ -26,42 +24,57 @@ export class AgentClient {
     qoderDirectory = config.qoderDirectory,
     qoderConfigDirectory = config.qoderConfigDirectory,
     qoderCliPath = config.qoderCliPath,
+    acpCommand = config.acpCommand,
+    acpArgs = config.acpArgs,
+    acpLabel = config.acpLabel,
+    acpDirectory = config.acpDirectory,
+    acpModel = config.acpModel,
+    acpCoordinatorAgent = config.acpCoordinatorAgent,
     sessionStatePath = config.backendSessionStatePath,
     acpClient,
     acpClientFactory,
     sessionToolServer,
   } = {}) {
+    const driver = backendDriver(protocol)
+    const options = driver.resolveOptions({
+      baseUrl,
+      model,
+      openCodeModel: config.openCodeModel,
+      openClawModel: config.openClawModel,
+      directory,
+      coordinatorAgent,
+      openClawBaseUrl,
+      openClawToken,
+      openClawTokenFile,
+      openClawCoordinatorAgent,
+      openClawDirectory,
+      qoderModel,
+      qoderDirectory,
+      qoderConfigDirectory,
+      qoderCliPath,
+      acpCommand,
+      acpArgs,
+      acpLabel,
+      acpDirectory,
+      acpModel,
+      acpCoordinatorAgent,
+    })
+    const profile = driver.createProfile({
+      protocol,
+      root: config.root,
+      permissionMode,
+      ...options,
+    })
     this.adapter = new AcpBackendAdapter({
       protocol,
       root: config.root,
-      baseUrl: protocol === 'openclaw'
-        ? openClawBaseUrl
-        : protocol === 'qoder'
-          ? ''
-          : baseUrl,
-      model: protocol === 'qoder' ? qoderModel : model,
       mode,
       permissionMode,
       timeoutMs,
-      directory: protocol === 'qoder'
-        ? qoderDirectory
-        : protocol === 'openclaw'
-          ? openClawDirectory
-          : directory,
-      configDirectory: qoderConfigDirectory,
-      cliPath: qoderCliPath,
-      coordinatorAgent: protocol === 'openclaw'
-        ? openClawCoordinatorAgent
-        : coordinatorAgent,
-      token: openClawToken,
-      tokenFile: openClawTokenFile,
-      nativeDelegationAdapter: protocol === 'openclaw'
-        ? new OpenClawAcpDelegationAdapter({
-            baseUrl: openClawBaseUrl,
-            token: openClawToken,
-            tokenFile: openClawTokenFile,
-          })
-        : null,
+      ...options,
+      profile,
+      nativeDelegationAdapter:
+        driver.createNativeDelegationAdapter?.(options) || null,
       sessionStatePath,
       ...(acpClient ? { client: acpClient } : {}),
       ...(acpClientFactory ? { clientFactory: acpClientFactory } : {}),
@@ -134,8 +147,7 @@ export class AgentClient {
   }
 
   uiUrl(options = {}) {
-    return this.adapter.uiUrl?.(options.ownerId)
-      || Promise.resolve(this.adapter.describe().baseUrl)
+    return this.adapter.uiUrl?.(options.ownerId) || Promise.resolve(null)
   }
 
   close() {

@@ -114,6 +114,21 @@ QODER_CONFIG_DIR=
 Gateway 管理 Qoder ACP 子进程，因此当前只支持 `managed`，不能使用
 `compatible`，也不接受 `--backend-url`。
 
+其他支持 ACP stdio 的 Agent 可使用通用入口：
+
+```dotenv
+AGENT_PROTOCOL=acp
+ACP_COMMAND=your-agent
+ACP_ARGS=["--acp"]
+ACP_LABEL=Your Agent
+ACP_MODEL=auto
+ACP_WORKSPACE=
+```
+
+通用入口由 Gateway 直接管理 ACP 子进程，只支持 `managed`。`ACP_ARGS` 推荐写成
+JSON 字符串数组，以便参数中包含空格时仍能准确解析。它使用标准 ACP Session 和
+Gateway 提供的 Session MCP 工具，不假设某个 Agent 私有的启动、权限或 UI 能力。
+
 ## 后台权限模式
 
 `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` 可设为：

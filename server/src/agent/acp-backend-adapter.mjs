@@ -59,6 +59,7 @@ export class AcpBackendAdapter {
     token = '',
     tokenFile = '',
     coordinatorAgent = '',
+    profile,
     sessionStatePath = null,
     client,
     clientFactory = options => new AcpProcessClient(options),
@@ -75,7 +76,7 @@ export class AcpBackendAdapter {
     this.directory = directory
     this.baseUrl = clean(baseUrl) || null
     this.coordinatorAgent = clean(coordinatorAgent)
-    this.profile = acpBackendProfile({
+    this.profile = profile || acpBackendProfile({
       protocol,
       root,
       directory,
@@ -99,10 +100,6 @@ export class AcpBackendAdapter {
     this.delegatedWorkRuns = new Map()
     this.pendingCoordinatorFacts = new Map()
     this.nativeDelegationAdapter = nativeDelegationAdapter || null
-    // A managed OpenClaw Gateway and its ACP bridge use the same package.
-    // Starting both while the package runtime is still resolving can race and
-    // repeatedly tear down the bridge. Injected clients are already ready by
-    // definition and are used extensively by adapter tests.
     this.backendAvailable = client ? null : backendAvailable
     this.client = client || clientFactory({
       label: this.profile.label,
@@ -137,7 +134,7 @@ export class AcpBackendAdapter {
       capabilities: {
         delegation: true,
         permissions: true,
-        backendUi: this.protocol === 'opencode',
+        backendUi: Boolean(this.profile.backendUi),
         nativeSessionHistory: true,
         externalMcp: this.profile.externalMcp,
       },
@@ -147,7 +144,7 @@ export class AcpBackendAdapter {
   async health() {
     try {
       if (
-        this.protocol === 'openclaw'
+        this.profile.readinessMessage
         && this.baseUrl
         && this.backendAvailable
         && !await this.backendAvailable(this.baseUrl)
@@ -157,7 +154,7 @@ export class AcpBackendAdapter {
           protocol: this.protocol,
           mode: this.mode,
           transport: 'acp',
-          error: 'OpenClaw Gateway 正在启动',
+          error: this.profile.readinessMessage,
         }
       }
       const initialized = await this.client.start()
@@ -238,13 +235,7 @@ export class AcpBackendAdapter {
   }
 
   coordinatorMeta(ownerId) {
-    if (this.protocol !== 'openclaw' || !this.coordinatorAgent) return null
-    const owner = encodeURIComponent(
-      clean(ownerId) || 'personal',
-    ).toLowerCase()
-    return {
-      sessionKey: `agent:${this.coordinatorAgent}:qwen-audio-agent:${owner}:backend`,
-    }
+    return this.profile.coordinatorMeta?.(ownerId) || null
   }
 
   async configureSession(session, role) {
@@ -439,7 +430,7 @@ export class AcpBackendAdapter {
         || merged.rawInput?.task
         || merged.rawInput?.message,
         160,
-      ) || 'OpenClaw 项目任务',
+      ) || this.profile.defaultDelegationTitle || `${this.label} 项目任务`,
     })
   }
 
@@ -685,21 +676,13 @@ export class AcpBackendAdapter {
   }
 
   coordinatorInstructions(message) {
-    const sessionInstructions = this.profile.externalMcp
-      ? [
-          'The qwen_audio_agent MCP tools are the only interface for opening,',
-          'continuing, querying, and cancelling third-layer project Sessions.',
-          'session_start and session_send are asynchronous. After either returns',
-          'status=started, return the delegated response required by the request',
-          'envelope and stop this turn. Never poll it in the same turn.',
-        ].join(' ')
-      : [
-          'For a separate or previous project, use OpenClaw native session tools:',
-          'sessions_spawn to create work, sessions_list to locate prior Sessions,',
-          'sessions_send to continue one, and sessions_history for status.',
-          'These are third-layer tasks. After spawn/send is accepted, return the',
-          'delegated response required by the request envelope and stop this turn.',
-        ].join(' ')
+    const sessionInstructions = this.profile.sessionInstructions || [
+      'The qwen_audio_agent MCP tools are the only interface for opening,',
+      'continuing, querying, and cancelling third-layer project Sessions.',
+      'session_start and session_send are asynchronous. After either returns',
+      'status=started, return the delegated response required by the request',
+      'envelope and stop this turn. Never poll it in the same turn.',
+    ].join(' ')
     return [
       '<qwen_audio_agent_backend_instructions>',
       BACKEND_AGENT_INSTRUCTIONS,
@@ -989,7 +972,8 @@ export class AcpBackendAdapter {
       sessionId: clean(saved.sessionId),
       directory: clean(saved.directory || this.directory),
       title: bounded(saved.title || task.objective, 160)
-        || 'OpenClaw 项目任务',
+        || this.profile.defaultDelegationTitle
+        || `${this.label} 项目任务`,
     })
     signal?.addEventListener('abort', () => {
       delegation.controller.abort(
@@ -1066,9 +1050,8 @@ export class AcpBackendAdapter {
       && this.activeCoordinatorTurns.has(coordinator.sessionId)
     if (!busy) {
       try {
-        const instruction = this.profile.externalMcp
-          ? `请调用 qwen_audio_agent_session_cancel 取消 delegation_id=${record.id}。`
-          : `请用 OpenClaw 原生 Session 工具立即停止 sessionKey=${record.sessionId} 对应的第三层任务。`
+        const instruction = this.profile.cancelInstruction?.(record)
+          || `请调用 qwen_audio_agent_session_cancel 取消 delegation_id=${record.id}。`
         await this.coordinatorControl(workId, [
           '<qwen_audio_agent_control kind="cancel">',
           instruction,
@@ -1112,9 +1095,8 @@ export class AcpBackendAdapter {
         protocol: this.protocol,
       })
     }
-    const instruction = this.profile.externalMcp
-      ? `请调用 qwen_audio_agent_session_status 查询 delegation_id=${record.id}。`
-      : `请调用 OpenClaw 原生 sessions_history 查询 sessionKey=${record.sessionId} 的真实状态和阶段结果。`
+    const instruction = this.profile.statusInstruction?.(record)
+      || `请调用 qwen_audio_agent_session_status 查询 delegation_id=${record.id}。`
     const result = await this.coordinatorControl(workId, [
       '<qwen_audio_agent_control kind="status">',
       instruction,
@@ -1128,14 +1110,14 @@ export class AcpBackendAdapter {
   }
 
   async uiUrl(ownerId) {
-    if (this.protocol !== 'opencode' || !this.baseUrl) return this.baseUrl
+    if (!this.profile.uiUrl) return null
     const key = coordinatorKey(ownerId, this.protocol)
     const session = this.coordinatorSessions.get(key) || this.registry.get(key)
-    if (!session?.sessionId) return this.baseUrl
-    const serverKey = Buffer.from(this.baseUrl).toString('base64url')
-    return `${
-      this.baseUrl
-    }/server/${serverKey}/session/${encodeURIComponent(session.sessionId)}`
+    return this.profile.uiUrl({
+      baseUrl: this.baseUrl,
+      sessionId: session?.sessionId || null,
+      ownerId,
+    })
   }
 
   async close() {

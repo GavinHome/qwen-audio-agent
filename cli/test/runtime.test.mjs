@@ -182,6 +182,19 @@ test('derives Qoder without an HTTP backend and rejects compatible mode', () => 
   )
 })
 
+test('derives generic ACP without an HTTP backend', () => {
+  assert.deepEqual(resolveBackend({
+    backend: 'acp',
+    backendMode: 'managed',
+  }, {}), {
+    protocol: 'acp',
+    mode: 'managed',
+    permissionMode: 'native',
+    agentId: '',
+    baseUrl: null,
+  })
+})
+
 test('requires complete identity before reusing a Gateway', () => {
   assert.throws(
     () => assertGatewayCompatibility({ backend: { ok: true } }, {

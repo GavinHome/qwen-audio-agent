@@ -20,13 +20,14 @@ const USER_CONFIG_TEMPLATE = [
   'DASHSCOPE_API_KEY=',
   'QWEN_AUDIO_REALTIME_PROVIDER=dashscope',
   '',
-  '# 可选：AGENT_PROTOCOL=opencode、openclaw 或 qoder',
+  '# 可选：AGENT_PROTOCOL=opencode、openclaw、qoder 或 acp',
   '# AGENT_PROTOCOL=opencode',
   '# QWEN_AUDIO_AGENT_BACKEND_MODE=managed',
   '# 权限模式：native（后台自行询问）或 full（最高权限；仅 managed OpenCode/Qoder）',
   '# QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native',
   '# QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max',
   '# 兼容模式可选：QWEN_AUDIO_AGENT_BACKEND_AGENT=已有 Agent ID',
+  '# 通用 ACP：ACP_COMMAND=your-agent，ACP_ARGS=["--acp"]',
   '',
 ].join('\n')
 const USER_PROFILE_TEMPLATE = [

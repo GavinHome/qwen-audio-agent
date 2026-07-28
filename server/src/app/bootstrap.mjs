@@ -100,32 +100,20 @@ app.get('/api/health', async (req, res) => {
 })
 
 app.get('/api/backend/ui', async (req, res, next) => {
-  if (agent.protocol === 'qoder') {
-    return res.status(404).json({
-      error: 'Qoder 后台使用本地原生 Session，没有独立的后台 Web 地址',
-    })
+  if (!agent.describe().capabilities.backendUi) {
+    return res.status(404).json({ error: '当前后台 Agent 没有独立的 Web 地址' })
   }
-  if (agent.protocol === 'opencode') {
-    try {
-      return res.redirect(302, await agent.uiUrl({
-        ownerId: req.identity.ownerId,
-      }))
-    } catch (error) {
-      return next(error)
+  try {
+    const url = await agent.uiUrl({ ownerId: req.identity.ownerId })
+    if (!url) {
+      return res.status(404).json({
+        error: '当前后台 Agent 没有独立的 Web 地址',
+      })
     }
+    return res.redirect(302, url)
+  } catch (error) {
+    return next(error)
   }
-  const dashboard = new URL(config.openClawBaseUrl)
-  const gateway = new URL(config.openClawBaseUrl)
-  gateway.protocol = gateway.protocol === 'https:' ? 'wss:' : 'ws:'
-  gateway.pathname = '/'
-  gateway.search = ''
-  gateway.hash = ''
-  const settings = new URLSearchParams({ gatewayUrl: gateway.toString() })
-  if (config.openClawToken) settings.set('token', config.openClawToken)
-  dashboard.pathname = '/'
-  dashboard.search = ''
-  dashboard.hash = settings.toString()
-  res.redirect(302, dashboard.toString())
 })
 
 app.get('/api/tasks', (req, res) => {

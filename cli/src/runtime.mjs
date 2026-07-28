@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import {
+  backendDefinition,
+  backendNames,
+} from '../../shared/backend-catalog.mjs'
+import {
   loadRuntimeEnvironment,
   requireDashScopeCredential,
 } from '../../shared/runtime-environment.mjs'
@@ -26,17 +30,18 @@ export function resolveBackend(options = {}, env = process.env) {
   const protocol = String(
     options.backend || env.AGENT_PROTOCOL || 'opencode',
   ).toLowerCase()
-  if (!['opencode', 'openclaw', 'qoder'].includes(protocol)) {
-    throw new Error(`不支持的后台 Agent：${protocol}`)
-  }
+  const definition = backendDefinition(protocol)
+  if (!definition) throw new Error(
+    `不支持的后台 Agent：${protocol}（可选 ${backendNames().join('、')}）`,
+  )
   const mode = String(
     options.backendMode || env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
   ).toLowerCase()
   if (!['managed', 'compatible'].includes(mode)) {
     throw new Error(`不支持的后台模式：${mode}`)
   }
-  if (protocol === 'qoder' && mode !== 'managed') {
-    throw new Error('Qoder 后台当前只支持 managed 模式')
+  if (!definition.supportsCompatible && mode !== 'managed') {
+    throw new Error(`${definition.label} 后台当前只支持 managed 模式`)
   }
   const permissionMode = String(
     options.backendPermissionMode
@@ -49,14 +54,12 @@ export function resolveBackend(options = {}, env = process.env) {
   if (permissionMode === 'full' && mode !== 'managed') {
     throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
   }
-  if (permissionMode === 'full' && protocol === 'openclaw') {
-    throw new Error('OpenClaw 不支持 Gateway 统一最高权限模式')
+  if (permissionMode === 'full' && !definition.supportsFullPermission) {
+    throw new Error(`${definition.label} 不支持 Gateway 统一最高权限模式`)
   }
-  const configured = protocol === 'qoder'
-    ? ''
-    : protocol === 'openclaw'
-    ? env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789'
-    : env.OPENCODE_BASE_URL || 'http://127.0.0.1:4096'
+  const configured = definition.baseUrlEnvironment
+    ? env[definition.baseUrlEnvironment] || definition.defaultBaseUrl
+    : ''
   return {
     protocol,
     mode,
@@ -64,9 +67,9 @@ export function resolveBackend(options = {}, env = process.env) {
     agentId: String(
       options.backendAgent || env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
     ).trim(),
-    baseUrl: protocol === 'qoder'
-      ? null
-      : normalizedOrigin(options.backendUrl || configured),
+    baseUrl: definition.baseUrlEnvironment
+      ? normalizedOrigin(options.backendUrl || configured)
+      : null,
   }
 }
 
@@ -77,15 +80,18 @@ export function assertGatewayCompatibility(health, backend) {
   const actualPermissionMode = health?.backend?.permissionMode || 'native'
   if (
     !actualProtocol
-    || !['opencode', 'openclaw', 'qoder'].includes(actualProtocol)
-    || (actualProtocol !== 'qoder' && !actualBaseUrl)
+    || !backendDefinition(actualProtocol)
+    || (
+      backendDefinition(actualProtocol).baseUrlEnvironment
+      && !actualBaseUrl
+    )
   ) {
     throw new Error('现有 Gateway 未报告完整的后台 Agent 配置，无法安全复用')
   }
   if (
     actualProtocol !== backend.protocol
     || (
-      backend.protocol !== 'qoder'
+      backendDefinition(backend.protocol).baseUrlEnvironment
       && backend.mode !== 'managed'
       && normalizedOrigin(actualBaseUrl) !== backend.baseUrl
     )
@@ -171,15 +177,16 @@ function backendEnvironment(env, backend) {
       ? { QWEN_AUDIO_AGENT_BACKEND_AGENT: backend.agentId }
       : {}),
   }
-  if (backend.protocol === 'qoder') return next
+  const definition = backendDefinition(backend.protocol)
+  if (!definition?.baseUrlEnvironment) return next
   const target = new URL(backend.baseUrl)
-  if (backend.protocol === 'openclaw') {
-    next.OPENCLAW_BASE_URL = backend.baseUrl
-    next.OPENCLAW_PORT = target.port || (target.protocol === 'https:' ? '443' : '80')
-  } else {
-    next.OPENCODE_BASE_URL = backend.baseUrl
-    next.OPENCODE_PORT = target.port || (target.protocol === 'https:' ? '443' : '80')
-  }
+  next[definition.baseUrlEnvironment] = backend.baseUrl
+  const portEnvironment = definition.baseUrlEnvironment.replace(
+    /_BASE_URL$/,
+    '_PORT',
+  )
+  next[portEnvironment] = target.port
+    || (target.protocol === 'https:' ? '443' : '80')
   return next
 }
 

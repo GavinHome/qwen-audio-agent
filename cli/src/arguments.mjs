@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import {
+  backendDefinition,
+  backendNames,
+} from '../../shared/backend-catalog.mjs'
 
 const COMMANDS = new Set(['gateway', 'tui', 'webui', 'status', 'config'])
 const GATEWAY_ACTIONS = new Set([
@@ -10,7 +14,6 @@ const GATEWAY_ACTIONS = new Set([
   'status',
   'uninstall',
 ])
-const BACKENDS = new Set(['opencode', 'openclaw', 'qoder'])
 const BACKEND_MODES = new Set(['managed', 'compatible'])
 const BACKEND_PERMISSION_MODES = new Set(['native', 'full'])
 const TUI_AUDIO_MODES = new Set(['half', 'full'])
@@ -116,9 +119,10 @@ export function parseArguments(argv, env = process.env) {
     else throw new Error(`未知参数：${argument}`)
   }
 
-  if (!BACKENDS.has(options.backend)) {
+  const definition = backendDefinition(options.backend)
+  if (!definition) {
     throw new Error(
-      `不支持的后台：${options.backend}（可选 opencode、openclaw、qoder）`,
+      `不支持的后台：${options.backend}（可选 ${backendNames().join('、')}）`,
     )
   }
   if (!BACKEND_MODES.has(options.backendMode)) {
@@ -157,16 +161,14 @@ export function parseArguments(argv, env = process.env) {
   }
 
   options.url = cleanOrigin(options.url, ' Gateway URL')
-  const configuredBackendUrl = options.backend === 'qoder'
-    ? ''
-    : options.backend === 'openclaw'
-    ? env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789'
-    : env.OPENCODE_BASE_URL || 'http://127.0.0.1:4096'
-  options.backendUrl = options.backend === 'qoder'
-    ? ''
-    : cleanOrigin(options.backendUrl || configuredBackendUrl, '后台地址')
-  if (options.backend === 'qoder' && options.backendMode !== 'managed') {
-    throw new Error('Qoder 后台当前只支持 managed 模式')
+  const configuredBackendUrl = definition.baseUrlEnvironment
+    ? env[definition.baseUrlEnvironment] || definition.defaultBaseUrl
+    : ''
+  options.backendUrl = definition.baseUrlEnvironment
+    ? cleanOrigin(options.backendUrl || configuredBackendUrl, '后台地址')
+    : ''
+  if (!definition.supportsCompatible && options.backendMode !== 'managed') {
+    throw new Error(`${definition.label} 后台当前只支持 managed 模式`)
   }
   if (
     options.backendPermissionMode === 'full'
@@ -176,9 +178,11 @@ export function parseArguments(argv, env = process.env) {
   }
   if (
     options.backendPermissionMode === 'full'
-    && options.backend === 'openclaw'
+    && !definition.supportsFullPermission
   ) {
-    throw new Error('OpenClaw 不支持 Gateway 统一最高权限模式')
+    throw new Error(
+      `${definition.label} 不支持 Gateway 统一最高权限模式`,
+    )
   }
   options.sessionId = String(options.sessionId || '').trim()
   if (!options.sessionId) throw new Error('--session 不能为空')
@@ -204,7 +208,7 @@ export function helpText() {
     '',
     'Gateway 选项：',
     '  --url URL              Gateway 地址（默认 http://127.0.0.1:3101）',
-    '  --backend NAME         opencode（默认）、openclaw 或 qoder',
+    '  --backend NAME         opencode（默认）、openclaw、qoder 或 acp',
     '  --backend-mode MODE    managed（默认）或 compatible',
     '  --backend-permission-mode MODE  native（默认）或 full（最高权限）',
     '  --backend-url URL      后台 Server 地址',

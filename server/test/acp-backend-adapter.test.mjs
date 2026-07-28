@@ -288,6 +288,19 @@ test('uses one ACP profile family while preserving backend differences', () => {
     '/state/gateway-token',
     '--verbose',
   ])
+  const generic = acpBackendProfile({
+    protocol: 'acp',
+    root,
+    directory: '/work',
+    cliPath: 'example-agent',
+    args: ['--acp', '--profile', 'voice'],
+    label: 'Example Agent',
+    permissionMode: 'native',
+  })
+  assert.equal(generic.label, 'Example Agent')
+  assert.equal(generic.command, 'example-agent')
+  assert.deepEqual(generic.args, ['--acp', '--profile', 'voice'])
+  assert.equal(generic.externalMcp, true)
 })
 
 for (const action of ['start', 'send']) {

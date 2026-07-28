@@ -14,10 +14,12 @@ layers:
    requiring tools, current information, files, applications, code, or
    multi-step work.
 
-The backend may be OpenCode, OpenClaw, or Qoder. It may internally use tools,
-skills, agents, or other Sessions. Those are backend-private implementation
-details and do not create additional qwen-audio-agent layers. All three
-backends connect through one ACP client and one shared coordination adapter.
+The backend may be OpenCode, OpenClaw, Qoder, or another ACP-compatible Agent.
+It may internally use tools, skills, agents, or other Sessions. Those are
+backend-private implementation details and do not create additional
+qwen-audio-agent layers. All backends connect through one ACP client and one
+shared coordination adapter; backend-specific launch and capability behavior
+lives in registered drivers.
 
 ## 2. Nonblocking request flow
 

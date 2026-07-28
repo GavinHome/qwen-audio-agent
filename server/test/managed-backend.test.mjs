@@ -58,7 +58,7 @@ test('managed mode owns one backend and moves away from occupied ports', async (
   runtime.killImpl = (pid, signal) => signals.push([pid, signal])
   assert.equal(env.OPENCLAW_BASE_URL, 'http://127.0.0.1:45678')
   assert.equal(env.OPENCLAW_PORT, '45678')
-  assert.equal(calls[0][0], '/repo/scripts/backend')
+  assert.equal(calls[0][0], '/repo/scripts/openclaw-gateway')
   assert.equal(calls[0][2].env.QWEN_AUDIO_AGENT_ENV_LOADED, '1')
   runtime.close()
   assert.deepEqual(signals, [[-4242, 'SIGTERM']])
@@ -100,6 +100,32 @@ test('Qoder is managed inside the Gateway without a separate server', async () =
     }),
     /只支持 managed/,
   )
+})
+
+test('generic ACP is managed as a Gateway child without a separate server', async () => {
+  assert.deepEqual(resolveManagedBackend({
+    AGENT_PROTOCOL: 'acp',
+  }), {
+    protocol: 'acp',
+    mode: 'managed',
+    permissionMode: 'native',
+    baseUrl: null,
+  })
+  const runtime = await startManagedBackend({
+    root: '/repo',
+    env: {
+      AGENT_PROTOCOL: 'acp',
+      ACP_COMMAND: 'example-agent',
+    },
+    spawnImpl: () => {
+      throw new Error('generic ACP must not spawn a separate backend server')
+    },
+  })
+  assert.equal(runtime.ownsProcess, false)
+  assert.throws(() => resolveManagedBackend({
+    AGENT_PROTOCOL: 'acp',
+    QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
+  }), /只支持 managed/)
 })
 
 test('full permission mode configures managed OpenCode without discarding inline config', () => {

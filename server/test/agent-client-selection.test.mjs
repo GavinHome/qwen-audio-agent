@@ -74,13 +74,17 @@ test('opens the active OpenCode ACP coordinator Session directly', async () => {
   )
 })
 
-for (const protocol of ['openclaw', 'qoder']) {
+for (const protocol of ['openclaw', 'qoder', 'acp']) {
   test(`selects ${protocol} through the same ACP adapter`, () => {
     const client = new AgentClient({
       protocol,
       qoderDirectory: '/qoder',
       openClawDirectory: '/openclaw',
       openClawBaseUrl: 'http://openclaw.test:18789',
+      acpCommand: 'example-agent',
+      acpArgs: ['--acp'],
+      acpLabel: 'Example Agent',
+      acpDirectory: '/acp',
       sessionStatePath: null,
       acpClient: fakeAcpClient(),
       sessionToolServer: fakeToolServer(),

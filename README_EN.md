@@ -208,6 +208,16 @@ AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
+Use another Agent that supports ACP over stdio:
+
+```dotenv
+AGENT_PROTOCOL=acp
+ACP_COMMAND=your-agent
+ACP_ARGS=["--acp"]
+```
+
+The generic ACP entry point requires no Gateway code changes. Configure its command, arguments, display label, model, and workspace with `ACP_COMMAND`, `ACP_ARGS`, `ACP_LABEL`, `ACP_MODEL`, and `ACP_WORKSPACE`.
+
 Backend permissions default to `native`, so the backend Agent asks when
 permission is required. Enable the following option only in trusted projects
 and only if you explicitly accept automatic command execution and file
