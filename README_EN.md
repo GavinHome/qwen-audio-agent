@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/qwen-audio-agent)](https://www.npmjs.com/package/qwen-audio-agent)
-[![node](https://img.shields.io/npm/node/v/qwen-audio-agent)](https://nodejs.org/)
+[![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/github/license/QwenAudio/qwen-audio-agent)](LICENSE)
 
 ## Say it. Don't prompt it.
