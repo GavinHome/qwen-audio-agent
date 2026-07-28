@@ -1,7 +1,7 @@
 export default function DesktopFluidOrb({ style = 'fluid' }) {
   if (style === 'goo') {
     return (
-      <div className="stage">
+      <div className="stage goo-orb">
         <div className="stage-scale goo-scale">
           <div className="goo">
             <div className="fill"></div>
@@ -13,7 +13,7 @@ export default function DesktopFluidOrb({ style = 'fluid' }) {
   }
 
   return (
-    <div className="stage">
+    <div className="stage fluid-orb">
       <div className="stage-scale">
         <div className="fluid">
           <span className="blob b1"></span><span className="blob b2"></span>

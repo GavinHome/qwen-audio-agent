@@ -112,12 +112,34 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
 }
 
 .stage {
+  --orb-halo: #7f9be04d;
+  --orb-ring: #a7bdf071;
   position: relative;
   width: 112px;
   height: 112px;
   display: grid;
   place-items: center;
   overflow: visible;
+  isolation: isolate;
+}
+.fluid-orb::before,
+.fluid-orb::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border: 1px solid var(--orb-ring);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.fluid-orb::before {
+  inset: 3px;
+  opacity: .22;
+  box-shadow: 0 0 12px var(--orb-halo);
+}
+.fluid-orb::after {
+  inset: -4px;
+  z-index: -2;
+  opacity: .06;
 }
 .stage-scale {
   position: absolute;
@@ -147,6 +169,77 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   background:
     radial-gradient(ellipse 58% 42% at 33% 24%, #ffffff9c 0%, #ffffff30 30%, transparent 58%);
 }
+.desktop-orb-stage.input-muted:not(.speaking) .fluid-orb {
+  --orb-halo: #8588912e;
+  --orb-ring: #aaadb53d;
+}
+.desktop-orb-stage.occupied .fluid-orb {
+  --orb-halo: #73829335;
+  --orb-ring: #93a2b35c;
+}
+.desktop-orb-stage.occupied .fluid-orb::before {
+  border-style: dashed;
+  animation: desktop-orb-orbit 8s linear infinite;
+}
+.desktop-orb-stage.occupied .fluid {
+  filter: grayscale(.55) saturate(.55) brightness(.82);
+}
+.desktop-orb-stage.listening .fluid-orb {
+  --orb-halo: #47d0c85c;
+  --orb-ring: #8de5dfa3;
+}
+.desktop-orb-stage.listening .fluid-orb::before {
+  animation: desktop-orb-listening 1.12s ease-in-out infinite;
+}
+.desktop-orb-stage.listening .fluid {
+  animation: none;
+  transform: scale(calc(1.02 + var(--level) * .055));
+  transition: transform 60ms linear, filter .12s ease;
+  filter:
+    saturate(calc(1.32 + var(--level) * .32))
+    brightness(1.08);
+}
+.desktop-orb-stage.thinking .fluid-orb {
+  --orb-halo: #8f7bf05c;
+  --orb-ring: #b8abf4a3;
+}
+.desktop-orb-stage.thinking .fluid-orb::before {
+  border-color: #8f7bf040;
+  border-top-color: #c2b5ffca;
+  border-right-color: #7f9df082;
+  animation: desktop-orb-orbit 1.35s linear infinite;
+}
+.desktop-orb-stage.thinking .fluid {
+  animation-duration: 2.4s;
+  filter: saturate(1.4) brightness(1.1);
+}
+.desktop-orb-stage.thinking .fluid .b1 { animation-duration: 3s; }
+.desktop-orb-stage.thinking .fluid .b2 { animation-duration: 3.6s; }
+.desktop-orb-stage.thinking .fluid .b3 { animation-duration: 2.6s; }
+.desktop-orb-stage.thinking .fluid .b4 { animation-duration: 4s; }
+.desktop-orb-stage.speaking .fluid-orb {
+  --orb-halo: #9b86c05c;
+  --orb-ring: #c5b4e6a3;
+}
+.desktop-orb-stage.speaking .fluid-orb::before {
+  animation: desktop-orb-speaking 1.25s ease-out infinite;
+}
+.desktop-orb-stage.speaking .fluid-orb::after {
+  animation: desktop-orb-speaking 1.25s .38s ease-out infinite;
+}
+.desktop-orb-stage.speaking .fluid {
+  animation: desktop-fluid-speaking .52s ease-in-out infinite alternate;
+}
+.desktop-orb-stage.error .fluid-orb {
+  --orb-halo: #b96e7952;
+  --orb-ring: #dca0a992;
+}
+.desktop-orb-stage.error .fluid {
+  filter: grayscale(.35) sepia(.42) hue-rotate(305deg) saturate(.72) brightness(.76);
+}
+.desktop-orb-stage.error .fluid-orb::before {
+  animation: desktop-orb-error 1.55s ease-in-out infinite;
+}
 .goo {
   position: relative; width: 176px; height: 176px; overflow: hidden;
   background: #6b8def;
@@ -165,8 +258,8 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   background: radial-gradient(ellipse 60% 50% at 32% 26%, #ffffff4d 0%, transparent 55%);
   box-shadow: inset -8px -10px 26px #ffffff40, inset 8px 10px 22px #5a4fd026;
 }
-.desktop-orb-stage:has(.desktop-orb-controls button:first-child.active) .goo,
-.desktop-orb-stage:has(.desktop-orb-controls button:first-child.active) .goo .fill {
+.desktop-orb-stage.input-muted:not(.speaking) .goo,
+.desktop-orb-stage.input-muted:not(.speaking) .goo .fill {
   animation-play-state: paused;
 }
 
@@ -525,9 +618,41 @@ article.user .message-body .inline-code { background: #5e44c9; color: #f0eaff; }
 @keyframes speak {
   to { transform: scale(1.04); filter: saturate(1.25) brightness(1.12); }
 }
+@keyframes desktop-orb-listening {
+  0%, 100% {
+    opacity: .16;
+    transform: scale(1);
+    box-shadow: 0 0 9px var(--orb-halo);
+  }
+  50% {
+    opacity: .42;
+    transform: scale(calc(1.05 + var(--level) * .08));
+    box-shadow: 0 0 calc(13px + var(--level) * 15px) var(--orb-halo);
+  }
+}
+@keyframes desktop-orb-speaking {
+  0% { opacity: .3; transform: scale(.96); }
+  75%, 100% { opacity: 0; transform: scale(1.38); }
+}
+@keyframes desktop-orb-error {
+  50% {
+    opacity: .4;
+    transform: scale(1.055);
+    box-shadow: 0 0 14px var(--orb-halo);
+  }
+}
+@keyframes desktop-orb-orbit {
+  to { transform: rotate(360deg); }
+}
 @keyframes fluid-breathe {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.02); }
+}
+@keyframes desktop-fluid-speaking {
+  to {
+    transform: scale(1.035);
+    filter: saturate(1.18) brightness(1.06);
+  }
 }
 @keyframes drift1 {
   0%, 100% { transform: translate(-14%, -16%) scale(1); }
@@ -582,6 +707,12 @@ article.user .message-body .inline-code { background: #5e44c9; color: #f0eaff; }
   .orb,
   .orb::before,
   .orb::after,
+  .fluid-orb::before,
+  .fluid-orb::after,
+  .fluid,
+  .fluid .blob,
+  .goo,
+  .goo .fill,
   .conversation-turn,
   .agent-task,
   .task-spinner {

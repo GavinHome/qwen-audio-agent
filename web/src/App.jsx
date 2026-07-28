@@ -16,6 +16,7 @@ import {
 } from './message-order.js'
 import MessageContent from './MessageContent.jsx'
 import DesktopFluidOrb from './DesktopFluidOrb.jsx'
+import { desktopOrbClassName } from './orb-presentation.js'
 import { resultLabel } from './presentation.js'
 import {
   removeDeliveredTask,
@@ -686,7 +687,13 @@ export default function App() {
   if (desktopOrbMode) {
     return <main className="desktop-gallery-shell">
       <section
-        className={`desktop-orb-stage${orbDragging ? ' dragging' : ''}`}
+        ref={voice.levelElementRef}
+        className={desktopOrbClassName({
+          state: visualVoiceState,
+          enabled: voiceEnabled,
+          error: voice.visualError,
+          dragging: orbDragging,
+        })}
         aria-label={`qwen-audio · ${voice.visualError ? '连接异常' : labelFor(visualVoiceState)}`}
         title={
           voice.error
