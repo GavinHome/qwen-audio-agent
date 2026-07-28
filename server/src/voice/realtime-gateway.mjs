@@ -53,6 +53,16 @@ export function rejectUnsupportedRealtimeUpgrade(socket, pathname) {
   return true
 }
 
+export function confirmsTaskNotificationOnPlaybackStart(context) {
+  return Boolean(
+    context
+    && (
+      context.origin === 'announcement'
+      || context.consumesTaskNotification
+    ),
+  )
+}
+
 function clientDescriptor(event = {}) {
   const type = ['desktop', 'cli', 'web'].includes(event.clientType)
     ? event.clientType
@@ -496,6 +506,9 @@ export function attachRealtimeGateway(server, {
       })
       if (!context || context.playbackStarted) return
       context.playbackStarted = true
+      if (confirmsTaskNotificationOnPlaybackStart(context)) {
+        announcements.confirmMany(contextTaskIds(context))
+      }
       flushPendingTranscripts(id, context)
     }
 
@@ -552,12 +565,6 @@ export function attachRealtimeGateway(server, {
       playbackTurns.delete(id)
       if (context) {
         context.playbackEnded = true
-        if (
-          context.origin === 'announcement'
-          || context.consumesTaskNotification
-        ) {
-          announcements.confirmMany(contextTaskIds(context))
-        }
         finishResponseContextIfComplete(id, context)
         if (responseContexts.get(id) === context) {
           scheduleResponseContextCleanup(id, context)

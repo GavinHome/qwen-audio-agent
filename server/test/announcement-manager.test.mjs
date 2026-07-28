@@ -114,7 +114,7 @@ test('delivers bounded announcement batches in order and confirms each task once
   manager.close()
 })
 
-test('does not mark a generated result delivered until playback finishes', async () => {
+test('does not mark a generated result delivered until playback starts', async () => {
   const delivered = []
   const manager = new AnnouncementManager({
     getFrontend: () => ({

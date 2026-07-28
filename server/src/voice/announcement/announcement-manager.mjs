@@ -312,8 +312,8 @@ export class AnnouncementManager {
       if (outcome?.contextInjected) batch.contextInjected = true
       if (outcome?.completed) {
         // Realtime has generated the response, but the client may still have it
-        // queued behind earlier audio. Delivery is confirmed only by the
-        // client's playback.ended event.
+        // queued behind earlier audio. Delivery is confirmed only when the
+        // client reports that playback has actually started.
         batch.responseCompleted = true
         this.scheduleAcknowledgementTimeout()
       } else if (this.activeBatch) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  confirmsTaskNotificationOnPlaybackStart,
   rejectUnsupportedRealtimeUpgrade,
 } from '../src/voice/realtime-gateway.mjs'
 
@@ -32,4 +33,17 @@ test('leaves the realtime websocket upgrade for the gateway handler', () => {
     false,
   )
   assert.equal(destroyed, false)
+})
+
+test('confirms task notifications when client playback starts', () => {
+  assert.equal(confirmsTaskNotificationOnPlaybackStart({
+    origin: 'announcement',
+  }), true)
+  assert.equal(confirmsTaskNotificationOnPlaybackStart({
+    origin: 'model',
+    consumesTaskNotification: true,
+  }), true)
+  assert.equal(confirmsTaskNotificationOnPlaybackStart({
+    origin: 'model',
+  }), false)
 })
