@@ -7,13 +7,19 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-## 让 Agent 开口说话
+## 我们不是这样和人交流的。
 
-**自由对话，不被任务阻塞；无缝连接你已经在用的 Agent。**
+没有人说完一句话，然后站在那里等待一分钟。
 
-qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续交流、
-随时打断，也可以直接用语音安排搜索、文件和代码等耗时任务。后台工作不会占住
-对话，任务完成后会自然播报结果。
+没有人会因为对方去查资料，就停止整个聊天。
+
+真正的交流，是连续的。
+
+而 Agent，也应该如此。
+
+所以，我们做了 **qwen-audio-agent**。
+
+一个让 Agent 持续交流、持续工作、持续在场的实时语音运行时。
 
 ## 核心特色
 

@@ -7,16 +7,22 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-## Give Your Agent a Voice
+## Say it. Don't prompt it.
 
-**Talk freely without being blocked by tasks, and connect seamlessly to the
-Agent you already use.**
+No one says one thing, then stands there waiting for a minute.
 
-qwen-audio-agent is a realtime voice frontend for mainstream Agents. You can
-keep talking as naturally as you would on a phone call, interrupt at any time,
-and use your voice to assign time-consuming work involving search, files, and
-code. Backend work never blocks the conversation; when a task finishes, the
-result is announced naturally.
+No one stops an entire conversation because someone needs to look something
+up.
+
+Real conversation is continuous.
+
+Agents should be too.
+
+That is why we built **qwen-audio-agent**.
+
+A realtime voice runtime that keeps Agents talking, working, and present.
+
+*Real-time Voice Runtime for AI Agents*
 
 ## Core Features
 
