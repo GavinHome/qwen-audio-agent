@@ -374,6 +374,61 @@ test('ACP permissions expose permanent allow and reject semantics', async () => 
   assert.ok(events.some(event => (
     event.type === 'backend.permission.resolved'
   )))
+  assert.deepEqual(
+    await adapter.respondPermission(requested.permission.id, 'always', {
+      ownerId: 'owner-one',
+    }),
+    events.find(event => event.type === 'backend.permission.resolved').permission,
+  )
+  await adapter.close()
+})
+
+test('permission cleanup is isolated to the ACP prompt that requested it', async () => {
+  const adapter = new AcpBackendAdapter({
+    protocol: 'opencode',
+    client: fakeAcpClient(),
+    sessionToolServer: fakeToolServer(),
+  })
+  const options = [
+    { optionId: 'always', kind: 'allow_always' },
+    { optionId: 'reject', kind: 'reject_once' },
+  ]
+  const coordinator = adapter.handlePermission({
+    toolCall: { name: 'read', rawInput: { path: '/coordinator' } },
+    options,
+  }, {
+    session: {
+      sessionId: 'coordinator',
+      ownerId: 'owner-one',
+      coordinationRunId: 'work-one',
+      permissionScopeId: 'coordinator-prompt',
+    },
+  })
+  const project = adapter.handlePermission({
+    toolCall: { name: 'write', rawInput: { path: '/project' } },
+    options,
+  }, {
+    session: {
+      sessionId: 'project',
+      ownerId: 'owner-one',
+      coordinationRunId: 'work-one',
+      permissionScopeId: 'project-prompt',
+    },
+  })
+  const projectPermission = [...adapter.pendingPermissions.values()]
+    .find(record => record.sessionId === 'project')
+
+  adapter.cancelPermissionsForScope('coordinator-prompt')
+  assert.deepEqual(await coordinator, {
+    outcome: { outcome: 'cancelled' },
+  })
+  assert.equal(adapter.pendingPermissions.has(projectPermission.id), true)
+  await adapter.respondPermission(projectPermission.id, 'always', {
+    ownerId: 'owner-one',
+  })
+  assert.deepEqual(await project, {
+    outcome: { outcome: 'selected', optionId: 'always' },
+  })
   await adapter.close()
 })
 
@@ -516,6 +571,7 @@ test('selects supported ACP Session mode and model config options', async () => 
 
 test('OpenClaw maps native Session tool updates into the shared delegation lifecycle', async () => {
   const calls = []
+  const nativeCalls = []
   let promptCount = 0
   const client = {
     async start() {
@@ -590,6 +646,15 @@ test('OpenClaw maps native Session tool updates into the shared delegation lifec
     directory: '/coordinator',
     baseUrl: 'http://127.0.0.1:18789',
     client,
+    nativeDelegationAdapter: {
+      async wait(input) {
+        nativeCalls.push(['wait', input.runId, input.sessionId])
+        return { content: 'child completed successfully' }
+      },
+      async cancel(input) {
+        nativeCalls.push(['cancel', input.runId, input.sessionId])
+      },
+    },
   })
   const events = []
   const running = adapter.runCoordinator('delegate', {
@@ -597,20 +662,17 @@ test('OpenClaw maps native Session tool updates into the shared delegation lifec
     coordinationRunId: 'work-one',
     onEvent: event => events.push(event),
   })
-  while (!adapter.delegatedWorkRuns.has('work-one')) {
-    await new Promise(resolve => setImmediate(resolve))
-  }
-  adapter.delegatedWorkRuns
-    .get('work-one')
-    .delegation
-    .nativeCompletion
-    .resolve('child completed successfully')
   const result = await running
   assert.equal(
     JSON.parse(result.content).presentation.speech,
     'OpenClaw 第三层结果已整理',
   )
-  assert.ok(calls[1].includes('sessions_history'))
+  assert.deepEqual(nativeCalls, [[
+    'wait',
+    'run-one',
+    'agent:child:one',
+  ]])
+  assert.ok(calls[1].includes('child completed successfully'))
   assert.ok(events.some(event => event.type === 'backend.delegated'))
   assert.ok(events.some(
     event => event.type === 'backend.delegation.completed',
@@ -629,4 +691,55 @@ test('OpenClaw routes each owner to the configured coordinator Agent through ACP
   assert.deepEqual(adapter.coordinatorMeta('Owner One'), {
     sessionKey: 'agent:voice-coordinator:qwen-audio-agent:owner%20one:backend',
   })
+})
+
+test('OpenClaw reattaches a persisted native delegation after Gateway restart', async () => {
+  const events = []
+  const client = fakeAcpClient()
+  client.prompt = async (_sessionId, prompt) => ({
+    content: completed(
+      prompt.includes('recovered child result')
+        ? '恢复结果已整理'
+        : 'unexpected',
+    ),
+    response: { stopReason: 'end_turn' },
+  })
+  const adapter = new AcpBackendAdapter({
+    protocol: 'openclaw',
+    root: '/repo',
+    directory: '/coordinator',
+    baseUrl: 'http://127.0.0.1:18789',
+    client,
+    nativeDelegationAdapter: {
+      async wait({ runId, sessionId }) {
+        assert.equal(runId, 'run-recovered')
+        assert.equal(sessionId, 'agent:child:recovered')
+        return { content: 'recovered child result' }
+      },
+    },
+  })
+
+  const result = await adapter.recoverDelegatedWork({
+    id: 'work-one',
+    ownerId: 'owner-one',
+    objective: '恢复项目任务',
+    delegation: {
+      id: 'run-recovered',
+      sessionId: 'agent:child:recovered',
+      directory: '/project',
+      title: '恢复项目',
+    },
+  }, {
+    onEvent: event => events.push(event),
+  })
+
+  assert.equal(
+    JSON.parse(result.content).presentation.speech,
+    '恢复结果已整理',
+  )
+  assert.ok(events.some(event => event.type === 'backend.delegated'))
+  assert.ok(events.some(
+    event => event.type === 'backend.delegation.completed',
+  ))
+  await adapter.close()
 })

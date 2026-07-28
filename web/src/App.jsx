@@ -120,6 +120,59 @@ export default function App() {
   const orbDrag = useRef(null)
   const suppressOrbClick = useRef(false)
 
+  const respondToPermission = useCallback(async (taskId, permission, decision) => {
+    if (!permission?.id || permission.submitting) return
+    setAgentTasks(items => upsertTask(
+      items,
+      taskId,
+      task => ({
+        ...task,
+        authorization: {
+          ...task.authorization,
+          submitting: true,
+          error: null,
+        },
+      }),
+    ))
+    try {
+      const response = await fetch(
+        `api/permissions/${encodeURIComponent(permission.id)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        },
+      )
+      if (response.status === 404 || response.status === 409) {
+        setAgentTasks(items => upsertTask(
+          items,
+          taskId,
+          task => ({ ...task, authorization: null }),
+        ))
+        return
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || `请求失败（${response.status}）`)
+      }
+    } catch (error) {
+      setAgentTasks(items => upsertTask(
+        items,
+        taskId,
+        task => ({
+          ...task,
+          authorization: task.authorization
+            ? {
+                ...task.authorization,
+                submitting: false,
+                error: `没有提交成功：${error.message}`,
+              }
+            : null,
+        }),
+      ))
+    }
+  }, [])
+
   useLayoutEffect(() => {
     const container = messagesRef.current
     if (container && stickToBottom.current) {
@@ -714,28 +767,29 @@ export default function App() {
       {agentTask.authorization?.status === 'pending' && <>
         <button
           className="permission-allow"
-          onClick={() => {
-            fetch(`api/permissions/${encodeURIComponent(agentTask.authorization.id)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ decision: 'always' }),
-            }).catch(() => {})
-          }}
+          disabled={agentTask.authorization.submitting}
+          onClick={() => respondToPermission(
+            agentTask.id,
+            agentTask.authorization,
+            'always',
+          )}
         >
-          始终允许
+          {agentTask.authorization.submitting ? '正在提交' : '始终允许'}
         </button>
         <button
           className="permission-deny"
-          onClick={() => {
-            fetch(`api/permissions/${encodeURIComponent(agentTask.authorization.id)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ decision: 'reject' }),
-            }).catch(() => {})
-          }}
+          disabled={agentTask.authorization.submitting}
+          onClick={() => respondToPermission(
+            agentTask.id,
+            agentTask.authorization,
+            'reject',
+          )}
         >
           拒绝
         </button>
+        {agentTask.authorization.error && <small className="permission-error">
+          {agentTask.authorization.error}
+        </small>}
       </>}
       <time>{Math.max(0, Math.round(agentTask.elapsedMs / 1000))}s</time>
     </div>}

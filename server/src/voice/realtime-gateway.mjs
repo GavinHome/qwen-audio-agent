@@ -574,14 +574,34 @@ export function attachRealtimeGateway(server, {
       }
       if (task.sessionId !== sessionId) return
       if (task.kind === 'control') return
-      send(ws, { type: event.type, task })
+      send(ws, {
+        type: event.type,
+        task,
+        ...(event.permission ? { permission: event.permission } : {}),
+      })
       if (event.type === 'task.permission.requested') {
         refreshActiveTaskContext()
         announcePermission(task)
       }
       if (event.type === 'task.permission.resolved') {
-        if (task.authorization?.id) {
-          announcedPermissions.delete(task.authorization.id)
+        const authorizationId = event.permission?.id
+        if (authorizationId) {
+          announcedPermissions.delete(authorizationId)
+          frontend?.cancelResponses((context, origin) => (
+            origin === 'permission'
+            && context?.authorizationId === authorizationId
+          ))
+          for (const [responseId, context] of responseContexts) {
+            if (
+              context.origin === 'permission'
+              && context.authorizationId === authorizationId
+              && !context.suppressed
+            ) {
+              cancelQueuedPlayback(responseId, {
+                reason: 'permission_resolved',
+              })
+            }
+          }
         }
         refreshActiveTaskContext()
       }
@@ -780,6 +800,7 @@ export function attachRealtimeGateway(server, {
             || turnId,
           taskId: event.__voiceContext?.taskId || null,
           origin: event.__voiceOrigin || 'model',
+          authorizationId: event.__voiceContext?.authorizationId || null,
           turnGeneration: Number.isInteger(event.__voiceContext?.turnGeneration)
             ? event.__voiceContext.turnGeneration
             : automaticTurn?.turnGeneration

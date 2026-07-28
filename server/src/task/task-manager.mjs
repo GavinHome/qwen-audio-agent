@@ -81,6 +81,7 @@ export class TaskManager {
     this.maxTerminalTasksPerOwner = maxTerminalTasksPerOwner
     this.tasks = new Map()
     this.listeners = new Set()
+    this.recoveryCandidates = []
     this.restore()
   }
 
@@ -92,28 +93,47 @@ export class TaskManager {
   restore() {
     for (const saved of this.store?.load() || []) {
       const wasActive = ACTIVE.has(saved.status)
+      const canRecoverDelegation = (
+        ['delegated', 'finalizing'].includes(saved.status)
+        && saved.delegation?.id
+        && saved.delegation?.sessionId
+      )
       const task = {
         ...saved,
-        status: wasActive ? 'failed' : saved.status,
-        error: wasActive
+        status: canRecoverDelegation
+          ? 'queued'
+          : wasActive ? 'failed' : saved.status,
+        error: wasActive && !canRecoverDelegation
           ? 'qwen-audio-agent 重启时这项工作尚未完成，请重新提交。'
           : saved.error || null,
-        completedAt: wasActive ? Date.now() : saved.completedAt,
+        completedAt: wasActive && !canRecoverDelegation
+          ? Date.now()
+          : saved.completedAt,
         activity: Array.isArray(saved.activity) ? saved.activity : [],
-        delegation: wasActive ? null : saved.delegation || null,
+        delegation: canRecoverDelegation || !wasActive
+          ? saved.delegation || null
+          : null,
         authorization: wasActive ? null : saved.authorization || null,
         notificationStatus: (
-          wasActive || saved.notificationStatus === 'delivering'
+          (wasActive && !canRecoverDelegation)
+          || saved.notificationStatus === 'delivering'
         )
           ? 'pending'
-          : saved.notificationStatus || 'none',
+          : canRecoverDelegation ? 'none' : saved.notificationStatus || 'none',
         notificationClaimantId: null,
         notificationClaimedAt: null,
         resolve: null,
         promise: null,
         runner: null,
       }
-      task.promise = Promise.resolve(publicTask(task))
+      if (canRecoverDelegation) {
+        task.promise = new Promise(resolve => {
+          task.resolve = resolve
+        })
+        this.recoveryCandidates.push(task)
+      } else {
+        task.promise = Promise.resolve(publicTask(task))
+      }
       this.tasks.set(task.id, task)
     }
     this.prune()
@@ -124,7 +144,45 @@ export class TaskManager {
     delete saved.workId
     delete saved.workState
     saved.submissionKey = task.submissionKey || null
+    saved.delegation = task.delegation
+      ? {
+          ...task.delegation,
+          presentation: task.delegation.presentation
+            ? { ...task.delegation.presentation }
+            : null,
+        }
+      : null
     return saved
+  }
+
+  recoverDelegated({
+    canRecover,
+    runner,
+    canceler,
+  } = {}) {
+    const candidates = this.recoveryCandidates.splice(0)
+    for (const task of candidates) {
+      const snapshot = {
+        ...publicTask(task),
+        delegation: task.delegation ? { ...task.delegation } : null,
+      }
+      if (!canRecover?.(snapshot)) {
+        task.status = 'failed'
+        task.error = 'qwen-audio-agent 重启时这项项目任务失去连接，请重新提交。'
+        task.completedAt = Date.now()
+        task.notificationStatus = 'pending'
+        task.promise = Promise.resolve(publicTask(task))
+        task.resolve = null
+        this.emit('task.failed', task)
+        this.emit('task.notification.pending', task)
+        continue
+      }
+      task.runner = (_objective, context) => runner(snapshot, context)
+      task.canceler = typeof canceler === 'function'
+        ? context => canceler(snapshot, context)
+        : null
+      this.start(task)
+    }
   }
 
   persist() {
@@ -138,9 +196,14 @@ export class TaskManager {
     return () => this.listeners.delete(listener)
   }
 
-  emit(type, task, { persist = true } = {}) {
+  emit(type, task, { persist = true, ...details } = {}) {
     const snapshot = publicTask(task)
-    const event = { type, ownerId: task.ownerId, task: snapshot }
+    const event = {
+      type,
+      ownerId: task.ownerId,
+      task: snapshot,
+      ...details,
+    }
     for (const listener of this.listeners) {
       try {
         listener(event)
@@ -253,7 +316,9 @@ export class TaskManager {
         if (task.authorization?.id === event.permission.id) {
           task.authorization = null
         }
-        this.emit('task.permission.resolved', task)
+        this.emit('task.permission.resolved', task, {
+          permission: { ...event.permission },
+        })
         return
       }
       if (['cancelling', 'cancelled'].includes(task.status)) return

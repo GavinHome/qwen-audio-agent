@@ -1,6 +1,7 @@
 import { config } from '../core/config.mjs'
 import { AgentError } from './backend-adapter.mjs'
 import { AcpBackendAdapter } from './acp-backend-adapter.mjs'
+import { OpenClawAcpDelegationAdapter } from './openclaw-adapter.mjs'
 
 export { AgentError }
 
@@ -54,6 +55,13 @@ export class AgentClient {
         : coordinatorAgent,
       token: openClawToken,
       tokenFile: openClawTokenFile,
+      nativeDelegationAdapter: protocol === 'openclaw'
+        ? new OpenClawAcpDelegationAdapter({
+            baseUrl: openClawBaseUrl,
+            token: openClawToken,
+            tokenFile: openClawTokenFile,
+          })
+        : null,
       sessionStatePath,
       ...(acpClient ? { client: acpClient } : {}),
       ...(acpClientFactory ? { clientFactory: acpClientFactory } : {}),
@@ -110,6 +118,19 @@ export class AgentClient {
       })
     }
     return this.adapter.queryDelegatedWork(workId, question, options)
+  }
+
+  canRecoverDelegatedWork(task) {
+    return this.adapter.canRecoverDelegatedWork?.(task) === true
+  }
+
+  recoverDelegatedWork(task, options = {}) {
+    if (!this.adapter.recoverDelegatedWork) {
+      throw new AgentError('当前后台 Agent 不支持恢复第三层 Session', {
+        protocol: this.protocol,
+      })
+    }
+    return this.adapter.recoverDelegatedWork(task, options)
   }
 
   uiUrl(options = {}) {

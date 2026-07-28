@@ -519,6 +519,69 @@ test('cancelling a response before response.created releases its queue entry', a
   assert.equal(frontend.pendingResponses.length, 0)
 })
 
+test('cancels only the matching permission response', async () => {
+  const frontend = createQwenFrontend()
+  const permissionOutcome = Promise.withResolvers()
+  const agentOutcome = Promise.withResolvers()
+  frontend.pendingResponses.push(
+    {
+      origin: 'permission',
+      context: { authorizationId: 'auth-one' },
+      resolve: permissionOutcome.resolve,
+      settled: false,
+    },
+    {
+      origin: 'agent',
+      context: { taskId: 'work-one' },
+      resolve: agentOutcome.resolve,
+      settled: false,
+    },
+  )
+
+  frontend.cancelResponses((context, origin) => (
+    origin === 'permission' && context.authorizationId === 'auth-one'
+  ))
+
+  assert.deepEqual(await permissionOutcome.promise, {
+    cancelled: true,
+    phase: 'start',
+  })
+  assert.equal(frontend.pendingResponses.length, 1)
+  assert.equal(frontend.pendingResponses[0].origin, 'agent')
+})
+
+test('does not start a permission response resolved during context injection', async () => {
+  const frontend = createQwenFrontend()
+  frontend.ready = true
+  const sent = []
+  frontend.send = event => sent.push(event)
+  let releaseItem
+  frontend.createConversationItem = () => new Promise(resolve => {
+    releaseItem = resolve
+  })
+
+  const speaking = frontend.injectPermission({
+    id: 'permission-race',
+    summary: 'Edit snake.py',
+  }, {
+    authorizationId: 'permission-race',
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  frontend.cancelResponses((context, origin) => (
+    origin === 'permission'
+    && context.authorizationId === 'permission-race'
+  ))
+  releaseItem({})
+  const outcome = await speaking
+
+  assert.equal(outcome.cancelled, true)
+  assert.equal(
+    sent.some(message => message.type === 'response.create'),
+    false,
+  )
+})
+
 test('associates an unscoped provider error with the sole active response', async () => {
   const frontend = createQwenFrontend()
   frontend.ready = true

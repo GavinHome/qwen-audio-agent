@@ -284,6 +284,7 @@ export class AcpBackendAdapter {
     clientFactory = options => new AcpProcessClient(options),
     backendAvailable = endpointAvailable,
     sessionToolServer,
+    nativeDelegationAdapter,
   } = {}) {
     this.protocol = protocol
     this.root = root
@@ -310,6 +311,7 @@ export class AcpBackendAdapter {
     this.registry = new AcpSessionRegistry({ filePath: sessionStatePath })
     this.sessionToolServer = sessionToolServer || new AcpSessionToolServer()
     this.pendingPermissions = new Map()
+    this.resolvedPermissions = new Map()
     this.permissionRules = new Set()
     this.coordinatorSessions = new Map()
     this.coordinatorSessionPromises = new Map()
@@ -318,6 +320,7 @@ export class AcpBackendAdapter {
     this.delegatedWorkRuns = new Map()
     this.pendingCoordinatorFacts = new Map()
     this.toolCalls = new Map()
+    this.nativeDelegationAdapter = nativeDelegationAdapter || null
     // A managed OpenClaw Gateway and its ACP bridge use the same package.
     // Starting both while the package runtime is still resolving can race and
     // repeatedly tear down the bridge. Injected clients are already ready by
@@ -333,7 +336,6 @@ export class AcpBackendAdapter {
       onPermission: (params, context) => (
         this.handlePermission(params, context)
       ),
-      onUpdate: (update, context) => this.handleGlobalUpdate(update, context),
     })
   }
 
@@ -552,6 +554,8 @@ export class AcpBackendAdapter {
     const record = {
       ...permission,
       ownerId: clean(session?.ownerId),
+      sessionId: clean(session?.sessionId),
+      permissionScopeId: clean(session?.permissionScopeId),
       params,
       signature,
       pending,
@@ -568,6 +572,10 @@ export class AcpBackendAdapter {
 
   async respondPermission(id, decision, { ownerId } = {}) {
     const record = this.pendingPermissions.get(String(id))
+    if (!record) {
+      const resolved = this.resolvedPermissions.get(String(id))
+      if (resolved?.ownerId === clean(ownerId)) return resolved.permission
+    }
     if (!record || record.ownerId !== clean(ownerId)) {
       throw new AgentError('权限请求不存在、已经失效或不属于当前用户', {
         protocol: this.protocol,
@@ -591,7 +599,26 @@ export class AcpBackendAdapter {
       summary: record.summary,
     }
     record.onEvent?.({ type: 'backend.permission.resolved', permission })
+    this.resolvedPermissions.set(permission.id, {
+      ownerId: record.ownerId,
+      permission,
+    })
+    while (this.resolvedPermissions.size > 200) {
+      this.resolvedPermissions.delete(
+        this.resolvedPermissions.keys().next().value,
+      )
+    }
     return permission
+  }
+
+  cancelPermissionsForScope(permissionScopeId) {
+    const scope = clean(permissionScopeId)
+    if (!scope) return
+    for (const [id, record] of this.pendingPermissions) {
+      if (record.permissionScopeId !== scope) continue
+      this.pendingPermissions.delete(id)
+      record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+    }
   }
 
   onSessionUpdate(run, update) {
@@ -618,7 +645,8 @@ export class AcpBackendAdapter {
       || output.sessionId,
     )
     if (!sessionId) return
-    const delegationId = clean(output.runId) || `openclaw_run_${randomUUID()}`
+    const delegationId = clean(output.runId)
+    if (!delegationId) return
     run.delegation = this.createNativeDelegation(run, {
       delegationId,
       sessionId,
@@ -634,29 +662,6 @@ export class AcpBackendAdapter {
         160,
       ) || 'OpenClaw 项目任务',
     })
-  }
-
-  handleGlobalUpdate(update, { session } = {}) {
-    if (
-      !this.profile.nativeDelegation
-      || update?.sessionUpdate !== 'agent_message_chunk'
-      || update.content?.type !== 'text'
-    ) return
-    for (const run of this.delegatedWorkRuns.values()) {
-      const record = run.delegation
-      if (
-        !record
-        || !run.initialPromptDone
-        || record.parentSessionId !== clean(session?.sessionId)
-        || record.status !== 'running'
-      ) continue
-      record.announcement.push(String(update.content.text || ''))
-      clearTimeout(record.announcementTimer)
-      record.announcementTimer = setTimeout(() => {
-        const content = clean(record.announcement.join(''))
-        if (content) record.nativeCompletion.resolve(content)
-      }, 500)
-    }
   }
 
   async listProjectSessions({ query, directory, limit } = {}) {
@@ -729,10 +734,12 @@ export class AcpBackendAdapter {
     run.delegation = record
     this.delegatedWorkRuns.set(run.coordinationRunId, run)
     record.promise = this.serialize(`target:${record.sessionId}`, async () => {
+      const permissionScopeId = `prompt_${randomUUID()}`
       try {
         session.ownerId = run.ownerId
         session.coordinationRunId = run.coordinationRunId
         session.onEvent = run.onEvent
+        session.permissionScopeId = permissionScopeId
         const result = await this.client.prompt(record.sessionId, prompt, {
           signal: controller.signal,
           timeoutMs: 0,
@@ -751,6 +758,11 @@ export class AcpBackendAdapter {
         record.status = controller.signal.aborted ? 'cancelled' : 'failed'
         record.error = error
         throw error
+      } finally {
+        this.cancelPermissionsForScope(permissionScopeId)
+        if (session.permissionScopeId === permissionScopeId) {
+          session.permissionScopeId = null
+        }
       }
     })
     record.promise.catch(() => {})
@@ -865,8 +877,16 @@ export class AcpBackendAdapter {
     if (!record) return { status: 'not_found' }
     if (!['completed', 'failed', 'cancelled'].includes(record.status)) {
       record.status = 'cancelled'
+      if (this.nativeDelegationAdapter) {
+        await this.nativeDelegationAdapter.cancel({
+          runId: record.id,
+          sessionId: record.sessionId,
+        }).catch(() => {})
+      }
       record.controller.abort(new Error('用户已取消这项项目任务'))
-      await this.client.cancelSession(record.sessionId).catch(() => {})
+      if (!this.nativeDelegationAdapter) {
+        await this.client.cancelSession(record.sessionId).catch(() => {})
+      }
     }
     return {
       status: record.status,
@@ -945,10 +965,12 @@ export class AcpBackendAdapter {
     }
     const mcpServers = registration ? [registration.descriptor] : []
     const session = await this.ensureCoordinatorSession(ownerId, mcpServers)
+    const permissionScopeId = `prompt_${randomUUID()}`
     run.sessionId = session.sessionId
     session.ownerId = clean(ownerId)
     session.coordinationRunId = clean(coordinationRunId)
     session.onEvent = onEvent
+    session.permissionScopeId = permissionScopeId
     this.activeCoordinatorTurns.add(session.sessionId)
     try {
       // Re-supply MCP definitions on resume: ACP Sessions do not require the
@@ -989,10 +1011,9 @@ export class AcpBackendAdapter {
     } finally {
       this.activeCoordinatorTurns.delete(session.sessionId)
       registration?.release()
-      for (const [id, record] of this.pendingPermissions) {
-        if (record.workId !== clean(coordinationRunId)) continue
-        this.pendingPermissions.delete(id)
-        record.pending.resolve({ outcome: { outcome: 'cancelled' } })
+      this.cancelPermissionsForScope(permissionScopeId)
+      if (session.permissionScopeId === permissionScopeId) {
+        session.permissionScopeId = null
       }
     }
   }
@@ -1016,8 +1037,6 @@ export class AcpBackendAdapter {
       result: null,
       error: null,
       parentSessionId: run.sessionId,
-      announcement: [],
-      announcementTimer: null,
       nativeCompletion: deferred(),
     }
     this.delegatedWorkRuns.set(run.coordinationRunId, run)
@@ -1026,65 +1045,33 @@ export class AcpBackendAdapter {
     return record
   }
 
-  async waitForNativeDelegation(record, run) {
-    // OpenClaw delivers a completed child announcement back to its parent
-    // Session. Polling session/list is only used as a transport-independent
-    // wake-up signal; the coordinator remains the component that reads and
-    // presents the result.
-    let lastUpdated = ''
-    let changedAt = 0
-    while (!record.controller.signal.aborted) {
-      const announced = await Promise.race([
-        record.nativeCompletion.promise.then(content => ({ content })),
-        new Promise(resolvePromise => setTimeout(
-          () => resolvePromise(null),
-          1000,
-        )),
-      ])
-      if (announced?.content) {
-        record.status = 'completed'
-        record.result = { content: announced.content }
-        return {
-          id: record.id,
-          sessionId: record.sessionId,
-          directory: record.directory,
-          title: record.title,
-          content: announced.content,
-        }
-      }
-      const sessions = await this.client.listSessions({ limit: 100 })
-      const target = sessions.find(item => item.sessionId === record.sessionId)
-      if (target?.updatedAt && target.updatedAt !== lastUpdated) {
-        if (lastUpdated) changedAt = Date.now()
-        lastUpdated = target.updatedAt
-      }
-      // Some OpenClaw channels do not replay the child announcement as an
-      // unsolicited ACP update. A settled target timestamp wakes the
-      // coordinator, which then reads the authoritative sessions_history.
-      if (changedAt && Date.now() - changedAt >= 3000) {
-          record.status = 'completed'
-          const result = {
-            content: `OpenClaw Session ${record.sessionId} 已停止产生更新，请读取该 Session 的最终历史结果。`,
-          }
-          record.result = result
-          return {
-            id: record.id,
+  async waitForNativeDelegation(record) {
+    try {
+      const completed = this.nativeDelegationAdapter
+        ? await this.nativeDelegationAdapter.wait({
+            runId: record.id,
             sessionId: record.sessionId,
-            directory: record.directory,
-            title: record.title,
-            content: result.content,
-          }
+            signal: record.controller.signal,
+          })
+        : { content: await record.nativeCompletion.promise }
+      const content = clean(completed?.content)
+      record.status = 'completed'
+      record.result = { content }
+      return {
+        id: record.id,
+        sessionId: record.sessionId,
+        directory: record.directory,
+        title: record.title,
+        content,
       }
+    } catch (error) {
+      record.status = record.controller.signal.aborted ? 'cancelled' : 'failed'
+      record.error = error
+      throw error
     }
-    throw record.controller.signal.reason || new Error('任务已取消')
   }
 
   delegationResultPrompt(result, coordinationRunId) {
-    const nativeInstruction = this.profile.nativeDelegation
-      ? `请先调用 sessions_history 读取 sessionKey=${
-          result.sessionId
-        } 的最终结果，然后整理 presentation。`
-      : '请只整理该可信结果并生成 presentation。'
     return [
       '<qwen_audio_agent_delegation_result>',
       JSON.stringify({
@@ -1096,7 +1083,7 @@ export class AcpBackendAdapter {
       }, null, 2),
       '</qwen_audio_agent_delegation_result>',
       '这是由 Gateway 验证并关联到当前请求的第三层 Session 最终结果。',
-      nativeInstruction,
+      '请只整理该可信结果并生成 presentation。',
       '返回当前 request_id 的 completed 最终 presentation；',
       '不要再次执行、委托或查询目标任务。',
     ].join('\n')
@@ -1182,6 +1169,88 @@ export class AcpBackendAdapter {
       return this.resultEnvelope(final, target)
     } finally {
       this.delegatedWorkRuns.delete(clean(coordinationRunId))
+    }
+  }
+
+  canRecoverDelegatedWork(task) {
+    return Boolean(
+      this.nativeDelegationAdapter
+      && task?.delegation?.id
+      && task?.delegation?.sessionId,
+    )
+  }
+
+  async recoverDelegatedWork(task, {
+    signal,
+    onEvent,
+  } = {}) {
+    if (!this.canRecoverDelegatedWork(task)) {
+      throw new AgentError(`${this.label} 无法恢复这项第三层任务`, {
+        protocol: this.protocol,
+      })
+    }
+    const ownerId = clean(task.ownerId)
+    const coordinationRunId = clean(task.id)
+    const key = coordinatorKey(ownerId, this.protocol)
+    const session = await this.ensureCoordinatorSession(ownerId)
+    const run = {
+      ownerId,
+      coordinationRunId,
+      onEvent,
+      sessionId: session.sessionId,
+      nativeToolCalls: new Map(),
+      initialPromptDone: true,
+      delegation: null,
+    }
+    const saved = task.delegation
+    const delegation = this.createNativeDelegation(run, {
+      delegationId: clean(saved.id),
+      sessionId: clean(saved.sessionId),
+      directory: clean(saved.directory || this.directory),
+      title: bounded(saved.title || task.objective, 160)
+        || 'OpenClaw 项目任务',
+    })
+    signal?.addEventListener('abort', () => {
+      delegation.controller.abort(
+        signal.reason || new Error('用户已取消这项项目任务'),
+      )
+    }, { once: true })
+    onEvent?.({
+      type: 'backend.delegated',
+      delegation: {
+        id: delegation.id,
+        sessionId: delegation.sessionId,
+        title: delegation.title,
+        directory: delegation.directory,
+        presentation: saved.presentation || null,
+      },
+    })
+    try {
+      const target = await delegation.promise
+      onEvent?.({
+        type: 'backend.delegation.completed',
+        delegation: {
+          id: target.id,
+          sessionId: target.sessionId,
+          title: target.title,
+          directory: target.directory,
+        },
+      })
+      const final = await this.serialize(
+        `coordinator:${key}`,
+        () => this.coordinatorTurn(
+          this.delegationResultPrompt(target, coordinationRunId),
+          {
+            ownerId,
+            coordinationRunId,
+            signal,
+            onEvent,
+          },
+        ),
+      )
+      return this.resultEnvelope(final, target)
+    } finally {
+      this.delegatedWorkRuns.delete(coordinationRunId)
     }
   }
 

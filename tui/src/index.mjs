@@ -995,6 +995,23 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     }
   }
 
+  const syncActiveTasks = async () => {
+    const url = new URL('/api/tasks', options.url)
+    url.searchParams.set('sessionId', options.sessionId)
+    url.searchParams.set('active', 'true')
+    const response = await fetch(url, { headers })
+    if (!response.ok) {
+      throw new Error(`任务状态恢复失败（${response.status}）`)
+    }
+    const payload = await response.json()
+    for (const task of payload.tasks || []) {
+      const type = task.authorization?.status === 'pending'
+        ? 'task.permission.requested'
+        : `task.${task.status}`
+      handleGatewayMessage(JSON.stringify({ type, task }))
+    }
+  }
+
   const connectGateway = () => {
     if (closed || bridgeExited) return
     const nextSocket = new WebSocket(
@@ -1014,6 +1031,9 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         locale: Intl.DateTimeFormat().resolvedOptions().locale,
       }))
+      syncActiveTasks().catch(error => {
+        print(style(`[任务状态] ${error.message}`, 'yellow'))
+      })
       if (connectedOnce) {
         print(style('[qwen-audio-agent 已重新连接]', 'green'))
       } else {

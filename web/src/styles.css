@@ -320,6 +320,14 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   font: inherit;
   cursor: pointer;
 }
+.agent-task .task-controls button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+.agent-task .task-controls .permission-error {
+  max-width: 180px;
+  color: #ffaaaa;
+}
 .agent-task .task-controls .permission-allow {
   border-color: #4bc69466;
   color: #a9efd4;

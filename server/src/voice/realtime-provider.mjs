@@ -507,8 +507,9 @@ export class RealtimeFrontend {
     const injection = this.provider.buildPermissionInjection(permission, {
       textOnly: this.agentContext.textOnly === true,
     })
-    return this.enqueueResponse('permission', context, async () => {
+    return this.enqueueResponse('permission', context, async pending => {
       await this.createConversationItem(injection.item)
+      if (pending.settled) return false
       this.send({
         type: 'response.create',
         response: injection.response,
@@ -525,6 +526,36 @@ export class RealtimeFrontend {
     this.pendingResponses = []
     this.rejectConversationItemWaiters(new Error('Realtime 请求已取消'))
     if (hasResponse) this.send({ type: 'response.cancel' })
+  }
+
+  cancelResponses(predicate) {
+    const matches = pending => {
+      try {
+        return predicate?.(pending.context, pending.origin) === true
+      } catch {
+        return false
+      }
+    }
+    const retained = []
+    for (const pending of this.pendingResponses) {
+      if (!matches(pending)) {
+        retained.push(pending)
+        continue
+      }
+      this.settlePending(pending, { cancelled: true, phase: 'start' })
+    }
+    this.pendingResponses = retained
+    let cancelledActive = false
+    for (const pending of this.responseWaiters.values()) {
+      if (!matches(pending)) continue
+      cancelledActive = true
+      this.settlePending(pending, {
+        cancelled: true,
+        phase: 'completion',
+      })
+    }
+    if (cancelledActive) this.send({ type: 'response.cancel' })
+    return cancelledActive
   }
 
   enqueueAction(action) {
@@ -556,7 +587,7 @@ export class RealtimeFrontend {
       }
       this.pendingResponses.push(pending)
       try {
-        const created = await create()
+        const created = await create(pending)
         if (created === false) {
           const index = this.pendingResponses.indexOf(pending)
           if (index >= 0) this.pendingResponses.splice(index, 1)

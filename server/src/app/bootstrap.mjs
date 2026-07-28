@@ -26,6 +26,17 @@ taskManager.configureRetention({
   notificationClaimTtlMs: config.taskNotificationClaimTtlMs,
   maxTerminalTasksPerOwner: config.maxTerminalTasksPerOwner,
 })
+taskManager.recoverDelegated({
+  canRecover: task => agent.canRecoverDelegatedWork(task),
+  runner: (task, context) => agent.recoverDelegatedWork(task, context),
+  canceler: async (task, { abort }) => {
+    const result = await agent.cancelDelegatedWork(task.id, {
+      ownerId: task.ownerId,
+    })
+    abort()
+    return result
+  },
+})
 conversationSync.configureRetention({
   sessionTtlMs: config.conversationSessionTtlMs,
   maxSessions: config.maxConversationSessions,
