@@ -23,6 +23,8 @@ test('serves the shared Session tools over authenticated stateless MCP', async (
     sessionStatus: async input => ({ status: 'running', ...input }),
     cancelSession: async input => ({ status: 'cancelled', ...input }),
   })
+  assert.equal(new URL(registration.descriptor.url).pathname, '/mcp')
+  assert.doesNotMatch(registration.descriptor.url, /[?&]token=|\/mcp\/.+/)
   const transport = new StreamableHTTPClientTransport(
     new URL(registration.descriptor.url),
     {

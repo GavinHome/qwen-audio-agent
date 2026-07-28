@@ -186,7 +186,7 @@ export class AcpSessionToolServer {
       descriptor: {
         type: 'http',
         name: ACP_SESSION_TOOL_SERVER,
-        url: `http://${this.host}:${this.port}/mcp/${token}`,
+        url: `http://${this.host}:${this.port}/mcp`,
         headers: [{
           name: 'Authorization',
           value: `Bearer ${token}`,
@@ -198,12 +198,12 @@ export class AcpSessionToolServer {
 
   async handleRequest(req, res) {
     const url = new URL(req.url || '/', `http://${this.host}`)
-    const match = url.pathname.match(/^\/mcp\/([^/]+)$/)
-    const token = match?.[1] || ''
+    const authorization = String(req.headers.authorization || '')
+    const token = authorization.match(/^Bearer ([^\s]+)$/i)?.[1] || ''
     const context = this.contexts.get(token)
     if (
-      !context
-      || req.headers.authorization !== `Bearer ${token}`
+      url.pathname !== '/mcp'
+      || !context
     ) {
       res.writeHead(404)
       res.end()

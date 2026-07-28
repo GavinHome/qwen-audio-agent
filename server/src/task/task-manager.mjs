@@ -191,6 +191,12 @@ export class TaskManager {
     )))
   }
 
+  persistDeferred() {
+    const tasks = [...this.tasks.values()].map(task => this.persistedTask(task))
+    if (this.store?.saveDeferred) this.store.saveDeferred(tasks)
+    else this.store?.save(tasks)
+  }
+
   subscribe(listener) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -350,7 +356,8 @@ export class TaskManager {
       if (index >= 0) task.activity[index] = activity
       else task.activity.push(activity)
       task.activity = task.activity.slice(-20)
-      this.emit('task.progress', task)
+      this.emit('task.progress', task, { persist: false })
+      this.persistDeferred()
     }
     Promise.resolve()
       .then(() => {

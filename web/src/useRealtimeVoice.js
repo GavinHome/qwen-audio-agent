@@ -36,10 +36,26 @@ export function shouldAdvertiseVoice(enabled, inputReady) {
   return enabled === true && inputReady === true
 }
 
+export function microphoneControlEvent({
+  enabled,
+  inputOnlyMute = false,
+  takeover = false,
+} = {}) {
+  if (inputOnlyMute) {
+    return enabled
+      ? { type: 'input.unmute', takeover }
+      : { type: 'input.mute' }
+  }
+  return enabled
+    ? { type: 'unmute', takeover }
+    : { type: 'mute' }
+}
+
 export default function useRealtimeVoice({
   sessionId,
   enabled,
   outputMuted = false,
+  inputOnlyMute = false,
   clientType = 'web',
   clientLabel = 'WebUI',
   takeover = false,
@@ -73,7 +89,6 @@ export default function useRealtimeVoice({
     startedResponses: new Set(),
     sourceCounts: new Map(),
     doneResponses: new Set(),
-    endedResponses: new Set(),
   })
   eventRef.current = onEvent
   inputErrorRef.current = onInputError
@@ -129,9 +144,7 @@ export default function useRealtimeVoice({
       clearTimeout(timer)
     }
     for (const responseId of activeResponseIds) {
-      if (!playback.endedResponses.has(responseId)) {
-        sendPlaybackEvent('playback.cancelled', responseId, reason)
-      }
+      sendPlaybackEvent('playback.cancelled', responseId, reason)
     }
     playbackRef.current.sources.forEach(source => {
       try {
@@ -147,7 +160,6 @@ export default function useRealtimeVoice({
       startedResponses: new Set(),
       sourceCounts: new Map(),
       doneResponses: new Set(),
-      endedResponses: new Set(),
     }
   }
 
@@ -158,9 +170,7 @@ export default function useRealtimeVoice({
       !playback.startedResponses.has(responseId)
       || !playback.doneResponses.has(responseId)
       || (playback.sourceCounts.get(responseId) || 0) > 0
-      || playback.endedResponses.has(responseId)
     ) return
-    playback.endedResponses.add(responseId)
     sendPlaybackEvent('playback.ended', responseId)
     playback.startedResponses.delete(responseId)
     playback.sourceCounts.delete(responseId)
@@ -252,14 +262,18 @@ export default function useRealtimeVoice({
         setError('')
         setVisualError(false)
         eventRef.current?.({ type: 'gateway.connected' })
+        const inputEnabled = shouldAdvertiseVoice(
+          enabledRef.current,
+          inputReadyRef.current,
+        )
+        const outputEnabled = inputOnlyMute || inputEnabled
         socket.send(JSON.stringify({
           type: 'connect',
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           locale: navigator.language,
-          voiceEnabled: shouldAdvertiseVoice(
-            enabledRef.current,
-            inputReadyRef.current,
-          ),
+          voiceEnabled: outputEnabled,
+          inputEnabled,
+          outputEnabled,
           clientType,
           clientLabel,
           clientInstanceId: clientInstanceId.current,
@@ -347,7 +361,7 @@ export default function useRealtimeVoice({
       stopPlayback()
       mutedPlaybackResponses.current.clear()
     }
-  }, [clientLabel, clientType, sessionId, takeover])
+  }, [clientLabel, clientType, inputOnlyMute, sessionId, takeover])
 
   useEffect(() => {
     if (outputMuted) stopPlayback()
@@ -356,7 +370,10 @@ export default function useRealtimeVoice({
   useEffect(() => {
     if (!enabled) {
       inputReadyRef.current = false
-      sendSocketEvent({ type: 'mute' })
+      sendSocketEvent(microphoneControlEvent({
+        enabled: false,
+        inputOnlyMute,
+      }))
       setAudioLevel(0)
       setInputActive(false)
       return undefined
@@ -374,7 +391,10 @@ export default function useRealtimeVoice({
     const failInput = reason => {
       const message = reason?.message || String(reason || '无法打开麦克风')
       inputReadyRef.current = false
-      sendSocketEvent({ type: 'mute' })
+      sendSocketEvent(microphoneControlEvent({
+        enabled: false,
+        inputOnlyMute,
+      }))
       setAudioLevel(0)
       setInputActive(false)
       media?.getTracks().forEach(track => track.stop())
@@ -420,7 +440,11 @@ export default function useRealtimeVoice({
         source.connect(processor)
         processor.connect(context.destination)
         inputReadyRef.current = true
-        sendSocketEvent({ type: 'unmute', takeover })
+        sendSocketEvent(microphoneControlEvent({
+          enabled: true,
+          inputOnlyMute,
+          takeover,
+        }))
         const samples = new Float32Array(analyser.fftSize)
         const tick = () => {
           analyser.getFloatTimeDomainData(samples)
@@ -457,7 +481,7 @@ export default function useRealtimeVoice({
       source?.disconnect()
       analyser?.disconnect()
     }
-  }, [enabled, sessionId, takeover])
+  }, [enabled, inputOnlyMute, sessionId, takeover])
 
   useEffect(() => () => {
     audioRef.current?.close()

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -92,4 +92,34 @@ test('reattaches a persisted delegated run when its adapter supports recovery', 
   assert.equal(result.result, '恢复后的结果')
   assert.equal(saved[0].delegation.id, 'run-one')
   assert.equal(saved[0].delegation.sessionId, 'agent:child:one')
+})
+
+test('coalesces high-frequency task activity into a deferred atomic write', async () => {
+  const filePath = join(mkdtempSync(
+    join(tmpdir(), 'qwen-audio-agent-'),
+  ), 'tasks.json')
+  const store = new TaskStore({ filePath, deferredDelayMs: 60_000 })
+
+  store.saveDeferred([{ id: 'work-one', activity: ['first'] }])
+  store.saveDeferred([{ id: 'work-one', activity: ['latest'] }])
+
+  assert.throws(() => readFileSync(filePath, 'utf8'), { code: 'ENOENT' })
+  await store.flush()
+
+  const saved = JSON.parse(readFileSync(filePath, 'utf8'))
+  assert.deepEqual(saved.tasks[0].activity, ['latest'])
+})
+
+test('a synchronous terminal save supersedes an older deferred activity write', async () => {
+  const filePath = join(mkdtempSync(
+    join(tmpdir(), 'qwen-audio-agent-'),
+  ), 'tasks.json')
+  const store = new TaskStore({ filePath, deferredDelayMs: 60_000 })
+
+  store.saveDeferred([{ id: 'work-one', status: 'running' }])
+  store.save([{ id: 'work-one', status: 'completed' }])
+  await store.flush()
+
+  const saved = JSON.parse(readFileSync(filePath, 'utf8'))
+  assert.equal(saved.tasks[0].status, 'completed')
 })

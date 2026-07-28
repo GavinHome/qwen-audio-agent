@@ -4,6 +4,12 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs'
+import {
+  mkdir,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 const VERSION = 1
@@ -13,12 +19,18 @@ export class TaskStore {
     filePath = null,
     now = () => Date.now(),
     onWarning = warning => console.warn(warning.message),
+    deferredDelayMs = 250,
   } = {}) {
     this.filePath = filePath
     this.now = now
     this.onWarning = onWarning
     this.warning = null
     this.persistenceDisabled = false
+    this.deferredDelayMs = deferredDelayMs
+    this.deferredTimer = null
+    this.deferredContent = null
+    this.writeGeneration = 0
+    this.deferredWrites = Promise.resolve()
   }
 
   setWarning(message, quarantinePath = null) {
@@ -74,6 +86,10 @@ export class TaskStore {
 
   save(tasks) {
     if (!this.filePath || this.persistenceDisabled) return
+    clearTimeout(this.deferredTimer)
+    this.deferredTimer = null
+    this.deferredContent = null
+    this.writeGeneration += 1
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
       const temporary = `${this.filePath}.${process.pid}.tmp`
@@ -87,6 +103,58 @@ export class TaskStore {
       this.persistenceDisabled = true
       this.setWarning(`无法保存任务状态：${error.message}`)
     }
+  }
+
+  saveDeferred(tasks) {
+    if (!this.filePath || this.persistenceDisabled) return
+    this.deferredContent = `${JSON.stringify({
+      version: VERSION,
+      tasks,
+    }, null, 2)}\n`
+    clearTimeout(this.deferredTimer)
+    this.deferredTimer = setTimeout(() => {
+      this.deferredTimer = null
+      this.startDeferredWrite()
+    }, this.deferredDelayMs)
+    this.deferredTimer.unref?.()
+  }
+
+  startDeferredWrite() {
+    const content = this.deferredContent
+    if (!content || !this.filePath || this.persistenceDisabled) {
+      return this.deferredWrites
+    }
+    this.deferredContent = null
+    const generation = ++this.writeGeneration
+    const temporary = `${this.filePath}.${process.pid}.${generation}.tmp`
+    const operation = async () => {
+      try {
+        await mkdir(dirname(this.filePath), { recursive: true })
+        await writeFile(temporary, content, {
+          encoding: 'utf8',
+          mode: 0o600,
+        })
+        if (generation !== this.writeGeneration) {
+          await unlink(temporary).catch(() => {})
+          return
+        }
+        await rename(temporary, this.filePath)
+      } catch (error) {
+        await unlink(temporary).catch(() => {})
+        if (generation !== this.writeGeneration) return
+        this.persistenceDisabled = true
+        this.setWarning(`无法保存任务状态：${error.message}`)
+      }
+    }
+    this.deferredWrites = this.deferredWrites.then(operation, operation)
+    return this.deferredWrites
+  }
+
+  async flush() {
+    clearTimeout(this.deferredTimer)
+    this.deferredTimer = null
+    this.startDeferredWrite()
+    await this.deferredWrites
   }
 
   health() {

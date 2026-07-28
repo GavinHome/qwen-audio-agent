@@ -743,3 +743,33 @@ test('OpenClaw reattaches a persisted native delegation after Gateway restart', 
   ))
   await adapter.close()
 })
+
+test('releases completed ACP tool-call state instead of retaining it globally', () => {
+  const adapter = new AcpBackendAdapter({
+    protocol: 'qoder',
+    client: fakeAcpClient(),
+    sessionToolServer: fakeToolServer(),
+  })
+  const run = {
+    toolCalls: new Map(),
+    nativeToolCalls: new Map(),
+    onEvent: () => {},
+  }
+
+  adapter.onSessionUpdate(run, {
+    sessionUpdate: 'tool_call',
+    toolCallId: 'tool-one',
+    name: 'Read',
+    status: 'in_progress',
+    rawInput: { path: '/project/file.js' },
+  })
+  assert.equal(run.toolCalls.size, 1)
+
+  adapter.onSessionUpdate(run, {
+    sessionUpdate: 'tool_call_update',
+    toolCallId: 'tool-one',
+    status: 'completed',
+  })
+  assert.equal(run.toolCalls.size, 0)
+  assert.equal(Object.hasOwn(adapter, 'toolCalls'), false)
+})

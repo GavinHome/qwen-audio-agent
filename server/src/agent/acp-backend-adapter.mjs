@@ -138,8 +138,7 @@ function activityFromUpdate(update, known = new Map()) {
     ...(known.get(id) || {}),
     ...update,
   }
-  if (id) known.set(id, merged)
-  return {
+  const activity = {
     id: id || null,
     kind: 'tool',
     tool: bounded(merged.name || merged.title, 100) || 'tool',
@@ -153,6 +152,9 @@ function activityFromUpdate(update, known = new Map()) {
       || '',
     ),
   }
+  if (id && ['completed', 'failed'].includes(merged.status)) known.delete(id)
+  else if (id) known.set(id, merged)
+  return activity
 }
 
 function websocketUrl(httpUrl) {
@@ -319,7 +321,6 @@ export class AcpBackendAdapter {
     this.activeCoordinatorTurns = new Set()
     this.delegatedWorkRuns = new Map()
     this.pendingCoordinatorFacts = new Map()
-    this.toolCalls = new Map()
     this.nativeDelegationAdapter = nativeDelegationAdapter || null
     // A managed OpenClaw Gateway and its ACP bridge use the same package.
     // Starting both while the package runtime is still resolving can race and
@@ -622,7 +623,8 @@ export class AcpBackendAdapter {
   }
 
   onSessionUpdate(run, update) {
-    const activity = activityFromUpdate(update, this.toolCalls)
+    run.toolCalls ||= new Map()
+    const activity = activityFromUpdate(update, run.toolCalls)
     if (activity) run.onEvent?.({ type: 'backend.activity', activity })
     if (!this.profile.nativeDelegation) return
     if (!['tool_call', 'tool_call_update'].includes(update?.sessionUpdate)) {
@@ -943,6 +945,7 @@ export class AcpBackendAdapter {
       onEvent,
       delegation: null,
       nativeToolCalls: new Map(),
+      toolCalls: new Map(),
       initialPromptDone: false,
     }
     const ownerKey = clean(ownerId)
@@ -1199,6 +1202,7 @@ export class AcpBackendAdapter {
       onEvent,
       sessionId: session.sessionId,
       nativeToolCalls: new Map(),
+      toolCalls: new Map(),
       initialPromptDone: true,
       delegation: null,
     }

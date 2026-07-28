@@ -22,11 +22,13 @@ import {
   clientVoiceCapabilities,
 } from './active-voice-clients.mjs'
 import { isRecoverableRealtimeInactivityError } from './realtime-errors.mjs'
+import { ReconnectBackoff } from './reconnect-backoff.mjs'
 
 const MAX_PENDING_AUDIO_CHUNKS = 30
 const RESPONSE_START_WATCHDOG_MS = 12000
 const PERMISSION_RESPONSE_GRACE_MS = 800
 const RESPONSE_CONTEXT_CLEANUP_MS = 30000
+const REALTIME_STABLE_CONNECTION_MS = 10000
 
 function send(ws, event) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
@@ -113,6 +115,9 @@ export function attachRealtimeGateway(server, {
     let responseTurnCandidate = null
     let responseStartWatchdog = null
     let permissionResponseTimer = null
+    let realtimeReconnectTimer = null
+    let realtimeConnectedAt = 0
+    const realtimeReconnectBackoff = new ReconnectBackoff()
     const announcementWindow = new AnnouncementWindow()
     const playbackTurns = new Map()
     const notificationClaimantId = `voice_${randomUUID()}`
@@ -237,14 +242,18 @@ export function attachRealtimeGateway(server, {
     if (!voiceConnections.has(ownerId)) voiceConnections.set(ownerId, new Set())
     voiceConnections.get(ownerId).add(voiceClient)
 
-    const activateVoiceClient = ({ takeover = false } = {}) => {
+    const activateVoiceClient = ({
+      takeover = false,
+      enableInput = true,
+      enableOutput = true,
+    } = {}) => {
       const result = activeVoiceClients.activate(
         ownerId,
         voiceClient,
         { takeover },
       )
-      inputEnabled = result.granted
-      outputEnabled = result.granted
+      inputEnabled = result.granted && enableInput
+      outputEnabled = result.granted && enableOutput
       broadcastVoiceOwnership(ownerId)
       return result.granted
     }
@@ -445,7 +454,12 @@ export function attachRealtimeGateway(server, {
 
     const scheduleResponseContextCleanup = (id, context) => {
       const timer = setTimeout(() => {
-        if (responseContexts.get(id) === context) responseContexts.delete(id)
+        if (responseContexts.get(id) !== context) return
+        responseContexts.delete(id)
+        playbackTurns.delete(id)
+        announcementWindow.finishPlayback(id, {
+          hasFunctionCall: Boolean(context?.hasFunctionCall),
+        })
       }, RESPONSE_CONTEXT_CLEANUP_MS)
       timer.unref?.()
     }
@@ -996,6 +1010,12 @@ export function attachRealtimeGateway(server, {
           }
           responseContexts.delete(id)
         }
+        if (responseFailed && id) {
+          playbackTurns.delete(id)
+          announcementWindow.finishPlayback(id, {
+            hasFunctionCall: Boolean(responseContext?.hasFunctionCall),
+          })
+        }
         announcementWindow.responseDone({
           turnId: responseTurnId,
           origin: responseContext?.origin || 'model',
@@ -1048,6 +1068,12 @@ export function attachRealtimeGateway(server, {
               turnId: context.turnId || turnId,
             })
           }
+          if (id && context?.hasAudio) {
+            scheduleResponseContextCleanup(id, context)
+          } else if (id) {
+            responseContexts.delete(id)
+            playbackTurns.delete(id)
+          }
           announcementWindow.responseDone({
             turnId: context?.turnId || turnId,
             origin: context?.origin || 'model',
@@ -1096,15 +1122,24 @@ export function attachRealtimeGateway(server, {
           if (frontend !== createdFrontend) return
           frontend = null
           if (!inputEnabled && !outputEnabled) return
-          const reconnectTimer = setTimeout(() => {
+          if (
+            realtimeConnectedAt
+            && Date.now() - realtimeConnectedAt >= REALTIME_STABLE_CONNECTION_MS
+          ) {
+            realtimeReconnectBackoff.reset()
+          }
+          realtimeConnectedAt = 0
+          clearTimeout(realtimeReconnectTimer)
+          realtimeReconnectTimer = setTimeout(() => {
+            realtimeReconnectTimer = null
             ensureFrontend()
               .then(() => announcements.flush())
               .catch(error => send(ws, {
                 type: 'error',
                 message: `实时语音连接恢复失败：${error.message}`,
               }))
-          }, 0)
-          reconnectTimer.unref?.()
+          }, realtimeReconnectBackoff.next())
+          realtimeReconnectTimer.unref?.()
         },
       })
       frontend = createdFrontend
@@ -1112,6 +1147,7 @@ export function attachRealtimeGateway(server, {
       createdConnectPromise = createdFrontend.connect()
         .then(() => {
           if (frontend !== createdFrontend) return
+          realtimeConnectedAt = Date.now()
           refreshActiveTaskContext()
           announcePendingPermissions()
           pendingAudio.forEach(audio => createdFrontend.appendAudio(audio))
@@ -1143,10 +1179,16 @@ export function attachRealtimeGateway(server, {
         textOnlySession = event.textOnly === true
         const capabilities = clientVoiceCapabilities({
           voiceEnabled: event.voiceEnabled,
+          inputEnabled: event.inputEnabled,
+          outputEnabled: event.outputEnabled,
           textOnly: textOnlySession,
         })
         if (capabilities.participatesInVoiceArbitration) {
-          activateVoiceClient({ takeover: event.takeover === true })
+          activateVoiceClient({
+            takeover: event.takeover === true,
+            enableInput: capabilities.inputEnabled,
+            enableOutput: capabilities.outputEnabled,
+          })
         } else {
           releaseVoiceClient()
           inputEnabled = capabilities.inputEnabled
@@ -1171,6 +1213,22 @@ export function attachRealtimeGateway(server, {
       } else if (event.type === 'unmute') {
         if (textOnlySession) {
           inputEnabled = false
+          outputEnabled = true
+          broadcastVoiceOwnership(ownerId)
+        } else {
+          activateVoiceClient({ takeover: event.takeover === true })
+        }
+        ensureFrontend()
+          .then(() => {
+            announcePendingPermissions()
+            claimPendingNotifications()
+            announcements.flush()
+          })
+          .catch(error => send(ws, { type: 'error', message: error.message }))
+      } else if (event.type === 'input.unmute') {
+        if (textOnlySession) return
+        if (activeVoiceClients.isActive(ownerId, voiceClient)) {
+          inputEnabled = true
           outputEnabled = true
           broadcastVoiceOwnership(ownerId)
         } else {
@@ -1241,6 +1299,9 @@ export function attachRealtimeGateway(server, {
         pendingAudio = []
         announcementWindow.reset()
         frontend?.cancel()
+      } else if (event.type === 'input.mute') {
+        inputEnabled = false
+        pendingAudio = []
       }
     })
 
@@ -1260,6 +1321,8 @@ export function attachRealtimeGateway(server, {
       announcements.close()
       clearTimeout(permissionRetryTimer)
       permissionRetryTimer = null
+      clearTimeout(realtimeReconnectTimer)
+      realtimeReconnectTimer = null
       frontend?.close()
     })
   })
