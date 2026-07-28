@@ -18,8 +18,6 @@ voice to delegate long-running work such as search, file operations, and coding.
 Backend work never blocks the conversation; when a task
 finishes, the result is announced naturally.
 
-![qwen-audio-agent mascot: a capybara with a headset holding an Agent robot](docs/qwen-audio-agent-mascot.png)
-
 ## Core Features
 
 - Full-duplex realtime voice interaction, natural interruption, and continuous
