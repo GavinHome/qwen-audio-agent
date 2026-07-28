@@ -7,22 +7,11 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/github/license/QwenAudio/qwen-audio-agent)](LICENSE)
 
-## Say it. Don't prompt it.
+## Keep Your Agent Present
 
-No one says one thing, then stands there waiting for a minute.
-
-No one stops an entire conversation because someone needs to look something
-up.
-
-Real conversation is continuous.
-
-Agents should be too.
-
-That is why we built **qwen-audio-agent**.
-
-A realtime voice runtime that keeps Agents talking, working, and present.
-
-*Real-time Voice Runtime for AI Agents*
+Whether you are talking, thinking, or getting work done, your Agent stays in
+the conversation—listening, responding, and naturally letting you know when
+the work is done.
 
 ## Core Features
 

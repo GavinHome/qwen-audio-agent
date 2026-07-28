@@ -7,19 +7,10 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/github/license/QwenAudio/qwen-audio-agent)](LICENSE)
 
-## 我们不是这样和人交流的。
+## 让 Agent 一直在
 
-没有人说完一句话，然后站在那里等待一分钟。
-
-没有人会因为对方去查资料，就停止整个聊天。
-
-真正的交流，是连续的。
-
-而 Agent，也应该如此。
-
-所以，我们做了 **qwen-audio-agent**。
-
-一个让 Agent 持续交流、持续工作、持续在场的实时语音运行时。
+无论是聊天、思考，还是处理任务，Agent 都始终在当前对话里：它会倾听，会回应，
+也会在任务完成时自然地告诉你——已经好了。
 
 ## 核心特色
 
