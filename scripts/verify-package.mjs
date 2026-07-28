@@ -28,13 +28,23 @@ if (result.status !== 0) {
   throw new Error('npm pack 自检失败')
 }
 
-const packages = JSON.parse(result.stdout)
+const jsonStart = result.stdout.lastIndexOf('[\n  {\n    "id":')
+if (jsonStart < 0) {
+  process.stderr.write(result.stdout)
+  throw new Error('npm pack 输出中缺少成品 JSON')
+}
+const packages = JSON.parse(result.stdout.slice(jsonStart))
 if (packages.length !== 1) throw new Error('npm pack 返回了意外的包数量')
 const files = new Set(packages[0].files.map(file => file.path))
 const required = [
   'cli/bin/qwenaudio.mjs',
   'config/openclaw/openclaw.json5',
   'config/openclaw/workspace/AGENTS.md',
+  'config/hermes/workspace/AGENTS.md',
+  'config/codebuddy/workspace/AGENTS.md',
+  'config/codebuddy/workspace/.codebuddy/models.json',
+  'config/codex/workspace/AGENTS.md',
+  'config/acp/workspace/AGENTS.md',
   'config/opencode/agents/qwen-audio-agent-backend.md',
   'config/opencode/workspace/AGENTS.md',
   'config/qoder/workspace/AGENTS.md',
@@ -45,14 +55,16 @@ const required = [
   'PRIVACY.md',
   'SECURITY.md',
   'THIRD_PARTY_NOTICES.md',
-  'scripts/backend',
+  'scripts/audit-dependencies.mjs',
   'scripts/check-desktop-release-env.mjs',
+  'scripts/codex-acp',
   'scripts/install-global.mjs',
   'scripts/opencode-acp',
   'server/src/agent/acp-backend-adapter.mjs',
   'server/src/agent/acp-process-client.mjs',
   'server/src/agent/acp-session-registry.mjs',
   'server/src/agent/acp-session-tools.mjs',
+  'server/src/core/package-version.mjs',
   'server/src/index.mjs',
   'shared/runtime-environment.mjs',
   'tui/src/index.mjs',

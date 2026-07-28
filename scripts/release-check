@@ -28,6 +28,13 @@ for (const file of manifests) {
     throw new Error(`${file} has version ${manifest.version}; expected ${expected}`)
   }
 }
+for (const file of ['README.md', 'README_EN.md']) {
+  if (!readFileSync(file, 'utf8').includes(
+    `img.shields.io/badge/npm-v${expected}-orange`,
+  )) {
+    throw new Error(`${file} npm badge does not match ${expected}`)
+  }
+}
 
 const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
 if (lock.version !== expected || lock.packages?.['']?.version !== expected) {
@@ -71,6 +78,11 @@ if (!readFileSync('scripts/opencode-server', 'utf8').includes('opencode-ai@1.18.
 }
 if (!readFileSync('scripts/openclaw', 'utf8').includes('openclaw@2026.6.33')) {
   throw new Error('OpenClaw fallback package is not pinned')
+}
+if (!readFileSync('scripts/codex-acp', 'utf8').includes(
+  '@agentclientprotocol/codex-acp@1.1.7',
+)) {
+  throw new Error('Codex ACP fallback package is not pinned')
 }
 if (
   manifest.devDependencies?.['electron-builder'] !== '26.15.7'
@@ -143,15 +155,30 @@ for (const file of trackedFiles) {
     }
   }
 }
+
+const publicHistory = execFileSync(
+  'git',
+  ['log', 'HEAD', '-p', '--format=fuller'],
+  { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 },
+)
+for (const fragment of [
+  ...forbiddenFragments,
+  ['@alibaba', '-inc.com'].join(''),
+  ['code.alibaba', '-inc.com'].join(''),
+]) {
+  if (publicHistory.includes(fragment)) {
+    throw new Error('HEAD history contains private repository metadata')
+  }
+}
 NODE
 
 sh -n scripts/opencode-server
 sh -n scripts/openclaw
 sh -n scripts/openclaw-gateway
-sh -n scripts/backend
 node --check shared/runtime-environment.mjs
 node --check cli/src/runtime.mjs
 git diff --check
+npm run audit:release
 npm test
 npm run build
 node scripts/verify-package.mjs

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.0
+
+- 新增 Hermes、CodeBuddy 和 Codex 后台支持，并将 OpenCode、OpenClaw、Qoder
+  与新增 Agent 统一收敛到可插拔 ACP Agent/Runtime 驱动架构。
+- 后台 Agent 改为必须由用户显式选择；同时保留通用 ACP stdio 入口，便于接入
+  其他支持 ACP 的 Agent。
+- 完善 CodeBuddy 公共模型配置同步、Codex ACP 固定版本启动和各后端独立权限模式。
+- 修复 GitHub 直接安装缺少 WebUI、遗留 backend 入口绕过统一启动逻辑的问题，
+  并扩充 npm 成品内容检查。
+- 加强发布安全检查：覆盖完整依赖树、公开 Git 历史、后台启动器固定版本以及
+  新增 Agent 的模板与资源。
+- 修复非 Realtime WebSocket Upgrade 连接未释放，并统一 ACP/OpenClaw 上报的
+  客户端版本。
+- 更新中英文 README、架构图、吉祥物、隐私说明与后台配置文档，为首次公开发布
+  做准备。
+
 ## 0.7.0
 
 - 后台 Agent 接入统一迁移到 ACP，复用同一套会话、权限、任务和结果中转能力，

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
+import { PACKAGE_VERSION } from '../core/package-version.mjs'
 import { AgentError, requestSignal } from './backend-adapter.mjs'
 
 const MAX_STDERR_CHARS = 12_000
@@ -134,7 +135,7 @@ export class AcpProcessClient {
             clientInfo: {
               name: 'qwen-audio-agent',
               title: 'qwen-audio-agent Gateway',
-              version: '0.6.0',
+              version: PACKAGE_VERSION,
             },
           },
           { signal: AbortSignal.timeout(15_000) },

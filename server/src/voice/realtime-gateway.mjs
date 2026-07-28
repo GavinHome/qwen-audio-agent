@@ -47,6 +47,12 @@ function rejectUpgrade(socket, status, message) {
   socket.destroy()
 }
 
+export function rejectUnsupportedRealtimeUpgrade(socket, pathname) {
+  if (pathname === '/api/realtime') return false
+  socket.destroy()
+  return true
+}
+
 function clientDescriptor(event = {}) {
   const type = ['desktop', 'cli', 'web'].includes(event.clientType)
     ? event.clientType
@@ -87,7 +93,7 @@ export function attachRealtimeGateway(server, {
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url, 'http://localhost')
-    if (url.pathname !== '/api/realtime') return
+    if (rejectUnsupportedRealtimeUpgrade(socket, url.pathname)) return
     if (!isAllowedOrigin(request)) {
       rejectUpgrade(socket, '403 Forbidden', 'origin not allowed')
       return

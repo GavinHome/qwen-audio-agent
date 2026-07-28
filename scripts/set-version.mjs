@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import {
+  existsSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -91,6 +92,17 @@ export function updateVersions(root, requested) {
     lock.packages[workspace].version = version
   }
   updates.push({ path: lockPath, content: serializeJson(lock) })
+
+  for (const relativePath of ['README.md', 'README_EN.md']) {
+    const path = resolve(root, relativePath)
+    if (!existsSync(path)) continue
+    const content = readFileSync(path, 'utf8')
+    const updated = content.replace(
+      /img\.shields\.io\/badge\/npm-v[^-)]+-orange/g,
+      `img.shields.io/badge/npm-v${version}-orange`,
+    )
+    updates.push({ path, content: updated })
+  }
 
   for (const update of updates) writeAtomic(update.path, update.content)
   return {

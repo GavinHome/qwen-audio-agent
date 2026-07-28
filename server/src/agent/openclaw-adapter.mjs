@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { WebSocket } from 'ws'
+import { PACKAGE_VERSION } from '../core/package-version.mjs'
 import { AgentError, requestSignal } from './backend-adapter.mjs'
 
 const WAIT_SLICE_MS = 30_000
@@ -102,7 +103,7 @@ class OpenClawGatewayRpc {
               client: {
                 id: 'gateway-client',
                 displayName: 'qwen-audio-agent',
-                version: '0.6.0',
+                version: PACKAGE_VERSION,
                 platform: process.platform,
                 mode: 'backend',
               },

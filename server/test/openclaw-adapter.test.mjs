@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
+import { PACKAGE_VERSION } from '../src/core/package-version.mjs'
 import { OpenClawAcpDelegationAdapter } from '../src/agent/openclaw-adapter.mjs'
 
 class FakeWebSocket extends EventEmitter {
@@ -79,6 +80,10 @@ test('waits for the exact OpenClaw run and reads its Session history', async () 
   assert.equal(
     FakeWebSocket.requests[0].params.auth.token,
     'secret',
+  )
+  assert.equal(
+    FakeWebSocket.requests[0].params.client.version,
+    PACKAGE_VERSION,
   )
 })
 

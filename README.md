@@ -1,9 +1,9 @@
-# qwen-audio-agent
+# Qwen Audio Agent
 
 [中文](README.md) | [English](README_EN.md)
 
 [![CI](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/QwenAudio/qwen-audio-agent/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/badge/npm-v0.7.0-orange)](https://www.npmjs.com/package/qwen-audio-agent)
+[![npm](https://img.shields.io/badge/npm-v0.9.0-orange)](https://www.npmjs.com/package/qwen-audio-agent)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
@@ -14,8 +14,6 @@
 qwen-audio-agent 是面向主流 Agent 的实时语音前台。你可以像通话一样持续交流、
 随时打断，也可以直接用语音安排搜索、文件和代码等耗时任务。后台工作不会占住
 对话，任务完成后会自然播报结果。
-
-![qwen-audio-agent 连接各种 Agent](docs/qwen-audio-agent-voice-agent-ecosystem.png)
 
 ## 核心特色
 

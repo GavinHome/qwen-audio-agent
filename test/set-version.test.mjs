@@ -41,6 +41,12 @@ function fixture() {
     lockfileVersion: 3,
     packages,
   })
+  for (const file of ['README.md', 'README_EN.md']) {
+    writeFileSync(
+      join(root, file),
+      '[![npm](https://img.shields.io/badge/npm-v0.5.0-orange)](https://npmjs.com)\n',
+    )
+  }
   return root
 }
 
@@ -79,5 +85,11 @@ test('updates every manifest and package-lock workspace together', () => {
   assert.equal(lock.packages[''].version, '0.6.0')
   for (const workspace of WORKSPACES) {
     assert.equal(lock.packages[workspace].version, '0.6.0')
+  }
+  for (const file of ['README.md', 'README_EN.md']) {
+    assert.match(
+      readFileSync(join(root, file), 'utf8'),
+      /img\.shields\.io\/badge\/npm-v0\.6\.0-orange/,
+    )
   }
 })

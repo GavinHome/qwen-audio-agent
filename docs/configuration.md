@@ -297,9 +297,9 @@ qwenaudio gateway uninstall
 `~/.config/qwaudio/logs/gateway.log`；Linux 也可以通过
 `journalctl --user -u qwen-audio-agent-gateway` 查看。
 
-TUI、WebUI 和桌面版只连接 Gateway，不直接连接、启动或停止 OpenCode /
-OpenClaw / Qoder。桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时
-生效；Gateway 地址会立即验证并切换。
+TUI、WebUI 和桌面版只连接 Gateway，不直接连接、启动或停止任何后台 Agent。
+桌面设置中的核心配置会保存到用户配置文件，在下次启动 Gateway 时生效；
+Gateway 地址会立即验证并切换。
 
 OpenCode 和 OpenClaw 使用一致的运行时发现顺序：
 
