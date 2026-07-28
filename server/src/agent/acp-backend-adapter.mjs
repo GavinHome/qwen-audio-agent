@@ -1,8 +1,19 @@
 import { randomUUID } from 'node:crypto'
-import { createConnection } from 'node:net'
-import { resolve } from 'node:path'
 import { AgentError } from './backend-adapter.mjs'
 import { BACKEND_AGENT_INSTRUCTIONS } from './backend-agent-instructions.mjs'
+import {
+  acpBackendProfile,
+  endpointAvailable,
+} from './acp-backend-profile.mjs'
+import {
+  activityFromUpdate,
+  coordinatorKey,
+  coordinatorPresentation,
+  nativeToolOutput,
+  normalizeCoordinatorContent,
+  projectSessionKey,
+  sessionSummary,
+} from './acp-backend-session-utils.mjs'
 import { AcpProcessClient } from './acp-process-client.mjs'
 import { AcpSessionRegistry } from './acp-session-registry.mjs'
 import {
@@ -12,6 +23,8 @@ import {
 
 const MAX_SESSION_RESULTS = 100
 const MAX_DELEGATION_RESULT_CHARS = 12_000
+
+export { acpBackendProfile } from './acp-backend-profile.mjs'
 
 function clean(value) {
   return String(value || '').trim()
@@ -29,241 +42,6 @@ function deferred() {
     rejectPromise = reject
   })
   return { promise, resolve: resolvePromise, reject: rejectPromise }
-}
-
-function endpointAvailable(value, timeoutMs = 300) {
-  let target
-  try {
-    target = new URL(value)
-  } catch {
-    return Promise.resolve(false)
-  }
-  const port = Number(
-    target.port || (target.protocol === 'https:' ? 443 : 80),
-  )
-  return new Promise(resolvePromise => {
-    const socket = createConnection({
-      host: target.hostname,
-      port,
-    })
-    const finish = available => {
-      socket.destroy()
-      resolvePromise(available)
-    }
-    socket.setTimeout(timeoutMs)
-    socket.once('connect', () => finish(true))
-    socket.once('timeout', () => finish(false))
-    socket.once('error', () => finish(false))
-  })
-}
-
-function coordinatorKey(ownerId, protocol) {
-  return `${protocol}:${encodeURIComponent(clean(ownerId) || 'personal')}:backend`
-}
-
-function projectSessionKey(protocol, sessionId) {
-  return `${protocol}:${clean(sessionId)}`
-}
-
-function normalizeCoordinatorContent(content) {
-  const text = clean(content)
-  const candidate = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim()
-    || text
-  try {
-    const parsed = JSON.parse(candidate)
-    const inline = parsed?.presentation?.inline
-    if (typeof inline !== 'string') return text
-    parsed.presentation.inline = clean(inline)
-      ? {
-          title: 'Agent 结果',
-          format: 'markdown',
-          content: inline,
-        }
-      : null
-    return JSON.stringify(parsed)
-  } catch {
-    return text
-  }
-}
-
-function coordinatorPresentation(content) {
-  const candidate = clean(content).match(
-    /```(?:json)?\s*([\s\S]*?)```/i,
-  )?.[1] || clean(content)
-  try {
-    const presentation = JSON.parse(candidate)?.presentation
-    if (!presentation || typeof presentation !== 'object') return null
-    return {
-      speech: clean(presentation.speech),
-      inline: presentation.inline && typeof presentation.inline === 'object'
-        ? presentation.inline
-        : null,
-    }
-  } catch {
-    return null
-  }
-}
-
-function sessionSummary(session) {
-  return {
-    session_id: clean(session?.sessionId),
-    title: bounded(session?.title, 160),
-    directory: clean(session?.cwd),
-    updated_at: clean(session?.updatedAt),
-  }
-}
-
-function categoryForTool(update) {
-  const hint = [
-    update?.name,
-    update?.title,
-    JSON.stringify(update?.rawInput || {}),
-  ].join(' ').toLowerCase()
-  if (/image|draw|canvas|图片|图像|绘图/.test(hint)) return 'image'
-  if (/search|web|fetch|browser|搜索|查询/.test(hint)) return 'search'
-  if (/read|glob|grep|list|读取|查找/.test(hint)) return 'read'
-  if (/write|edit|patch|写入|修改/.test(hint)) return 'write'
-  return 'run'
-}
-
-function activityFromUpdate(update, known = new Map()) {
-  if (!['tool_call', 'tool_call_update'].includes(update?.sessionUpdate)) {
-    if (update?.sessionUpdate === 'agent_message_chunk') {
-      return { id: null, kind: 'text', status: 'running' }
-    }
-    return null
-  }
-  const id = clean(update.toolCallId)
-  const merged = {
-    ...(known.get(id) || {}),
-    ...update,
-  }
-  const activity = {
-    id: id || null,
-    kind: 'tool',
-    tool: bounded(merged.name || merged.title, 100) || 'tool',
-    status: merged.status || 'running',
-    category: categoryForTool(merged),
-    detail: bounded(
-      merged.rawInput?.description
-      || merged.rawInput?.query
-      || merged.rawInput?.path
-      || merged.rawInput?.command
-      || '',
-    ),
-  }
-  if (id && ['completed', 'failed'].includes(merged.status)) known.delete(id)
-  else if (id) known.set(id, merged)
-  return activity
-}
-
-function websocketUrl(httpUrl) {
-  const url = new URL(httpUrl)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString().replace(/\/+$/, '')
-}
-
-function nativeToolOutput(value) {
-  if (!value) return {}
-  if (typeof value === 'string') {
-    try {
-      return nativeToolOutput(JSON.parse(value))
-    } catch {
-      return {}
-    }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const parsed = nativeToolOutput(item)
-      if (Object.keys(parsed).length) return parsed
-    }
-    return {}
-  }
-  if (typeof value !== 'object') return {}
-  if (
-    value.childSessionKey
-    || value.sessionKey
-    || value.sessionId
-    || value.session_id
-  ) return value
-  const details = nativeToolOutput(value.details)
-  if (Object.keys(details).length) return details
-  for (const block of Array.isArray(value.content) ? value.content : []) {
-    const parsed = nativeToolOutput(block?.text || block?.content || block)
-    if (Object.keys(parsed).length) return parsed
-  }
-  return {}
-}
-
-export function acpBackendProfile({
-  protocol,
-  root,
-  directory,
-  cliPath,
-  baseUrl,
-  token,
-  tokenFile,
-  coordinatorAgent,
-  configDirectory,
-  permissionMode,
-  model,
-}) {
-  const environment = {
-    ...process.env,
-    QWEN_AUDIO_AGENT_ENV_LOADED: '1',
-    QWEN_AUDIO_AGENT_NODE: process.execPath,
-    ...(configDirectory ? { QODER_CONFIG_DIR: configDirectory } : {}),
-  }
-  if (protocol === 'qoder') {
-    return {
-      label: 'Qoder',
-      command: cliPath || 'qodercli',
-      args: [
-        '--acp',
-        ...(clean(model) && clean(model) !== 'auto'
-          ? ['--model', clean(model)]
-          : []),
-        ...(permissionMode === 'full'
-          ? ['--dangerously-skip-permissions']
-          : []),
-      ],
-      cwd: directory,
-      env: environment,
-      externalMcp: true,
-      nativeDelegation: false,
-    }
-  }
-  if (protocol === 'openclaw') {
-    return {
-      label: 'OpenClaw',
-      command: resolve(root, 'scripts/openclaw'),
-      args: [
-        'acp',
-        '--url',
-        websocketUrl(baseUrl),
-        ...(clean(token) && clean(tokenFile)
-          ? ['--token-file', clean(tokenFile)]
-          : []),
-        '--verbose',
-      ],
-      cwd: directory,
-      env: {
-        ...environment,
-        ...(token ? { OPENCLAW_GATEWAY_TOKEN: token } : {}),
-      },
-      externalMcp: false,
-      nativeDelegation: true,
-    }
-  }
-  return {
-    label: 'OpenCode',
-    command: resolve(root, 'scripts/opencode-acp'),
-    args: [],
-    cwd: directory,
-    env: environment,
-    externalMcp: true,
-    nativeDelegation: false,
-  }
 }
 
 export class AcpBackendAdapter {

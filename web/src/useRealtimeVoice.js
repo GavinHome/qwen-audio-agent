@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import {
+  GatewayClientEvent,
+  GatewayServerEvent,
+} from '../../shared/realtime-events.mjs'
 import { decodePcm, pcmBase64, resample } from './audio.js'
 
 const DEFAULT_INPUT_RATE = 16000
@@ -43,12 +47,12 @@ export function microphoneControlEvent({
 } = {}) {
   if (inputOnlyMute) {
     return enabled
-      ? { type: 'input.unmute', takeover }
-      : { type: 'input.mute' }
+      ? { type: GatewayClientEvent.INPUT_UNMUTE, takeover }
+      : { type: GatewayClientEvent.INPUT_MUTE }
   }
   return enabled
-    ? { type: 'unmute', takeover }
-    : { type: 'mute' }
+    ? { type: GatewayClientEvent.UNMUTE, takeover }
+    : { type: GatewayClientEvent.MUTE }
 }
 
 export default function useRealtimeVoice({
@@ -144,7 +148,7 @@ export default function useRealtimeVoice({
       clearTimeout(timer)
     }
     for (const responseId of activeResponseIds) {
-      sendPlaybackEvent('playback.cancelled', responseId, reason)
+      sendPlaybackEvent(GatewayClientEvent.PLAYBACK_CANCELLED, responseId, reason)
     }
     playbackRef.current.sources.forEach(source => {
       try {
@@ -171,7 +175,7 @@ export default function useRealtimeVoice({
       || !playback.doneResponses.has(responseId)
       || (playback.sourceCounts.get(responseId) || 0) > 0
     ) return
-    sendPlaybackEvent('playback.ended', responseId)
+    sendPlaybackEvent(GatewayClientEvent.PLAYBACK_ENDED, responseId)
     playback.startedResponses.delete(responseId)
     playback.sourceCounts.delete(responseId)
     playback.doneResponses.delete(responseId)
@@ -186,13 +190,13 @@ export default function useRealtimeVoice({
   const consumeMutedAudio = responseId => {
     if (!responseId || mutedPlaybackResponses.current.has(responseId)) return
     mutedPlaybackResponses.current.add(responseId)
-    sendPlaybackEvent('playback.started', responseId)
+    sendPlaybackEvent(GatewayClientEvent.PLAYBACK_STARTED, responseId)
   }
 
   const finishMutedAudio = responseId => {
     if (!responseId || !mutedPlaybackResponses.current.has(responseId)) return
     mutedPlaybackResponses.current.delete(responseId)
-    sendPlaybackEvent('playback.ended', responseId)
+    sendPlaybackEvent(GatewayClientEvent.PLAYBACK_ENDED, responseId)
   }
 
   const play = (base64, sampleRate = OUTPUT_RATE, responseId = '') => {
@@ -229,7 +233,7 @@ export default function useRealtimeVoice({
         }
         playback.startTimers.delete(responseId)
         playback.startedResponses.add(responseId)
-        sendPlaybackEvent('playback.started', responseId)
+        sendPlaybackEvent(GatewayClientEvent.PLAYBACK_STARTED, responseId)
       }
       const delay = Math.max(0, (start - context.currentTime) * 1000)
       const timer = setTimeout(checkStarted, delay)
@@ -261,14 +265,14 @@ export default function useRealtimeVoice({
         reconnectDelay = 500
         setError('')
         setVisualError(false)
-        eventRef.current?.({ type: 'gateway.connected' })
+        eventRef.current?.({ type: GatewayServerEvent.GATEWAY_CONNECTED })
         const inputEnabled = shouldAdvertiseVoice(
           enabledRef.current,
           inputReadyRef.current,
         )
         const outputEnabled = inputOnlyMute || inputEnabled
         socket.send(JSON.stringify({
-          type: 'connect',
+          type: GatewayClientEvent.CONNECT,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           locale: navigator.language,
           voiceEnabled: outputEnabled,
@@ -287,24 +291,26 @@ export default function useRealtimeVoice({
         } catch {
           return
         }
-        if (event.type === 'voice.ready' && event.inputSampleRate) {
+        if (event.type === GatewayServerEvent.VOICE_READY && event.inputSampleRate) {
           inputSampleRate.current = event.inputSampleRate
           setVisualError(false)
         }
-        if (event.type === 'voice.ownership') {
+        if (event.type === GatewayServerEvent.VOICE_OWNERSHIP) {
           setOwnership({
             state: event.state || 'available',
             holder: event.holder || null,
           })
         }
-        if (event.type === 'voice.deactivated') {
+        if (event.type === GatewayServerEvent.VOICE_DEACTIVATED) {
           setOwnership({
             state: 'busy',
             holder: event.holder || null,
           })
         }
-        if (event.type === 'turn.started') currentTurnId.current = event.turnId || ''
-        if (event.type === 'voice.state') {
+        if (event.type === GatewayServerEvent.TURN_STARTED) {
+          currentTurnId.current = event.turnId || ''
+        }
+        if (event.type === GatewayServerEvent.VOICE_STATE) {
           if (acceptsVoiceState(event, currentTurnId.current)) {
             setState(event.state)
             if (event.state === 'listening') {
@@ -312,24 +318,24 @@ export default function useRealtimeVoice({
             }
           }
         }
-        if (event.type === 'playback.clear') {
+        if (event.type === GatewayServerEvent.PLAYBACK_CLEAR) {
           stopPlayback(event.reason || '')
         }
-        if (event.type === 'audio.delta') {
+        if (event.type === GatewayServerEvent.AUDIO_DELTA) {
           if (outputMutedRef.current) {
             consumeMutedAudio(event.responseId)
           } else {
             play(event.audio, event.sampleRate, event.responseId)
           }
         }
-        if (event.type === 'audio.done') {
+        if (event.type === GatewayServerEvent.AUDIO_DONE) {
           if (mutedPlaybackResponses.current.has(event.responseId)) {
             finishMutedAudio(event.responseId)
           } else {
             markAudioDone(event.responseId)
           }
         }
-        if (event.type === 'error') setError(event.message)
+        if (event.type === GatewayServerEvent.ERROR) setError(event.message)
         eventRef.current?.(event)
       }
       socket.onerror = () => {
@@ -345,7 +351,7 @@ export default function useRealtimeVoice({
         setState('idle')
         setError('实时语音连接中断，正在重连')
         setVisualError(true)
-        eventRef.current?.({ type: 'gateway.disconnected' })
+        eventRef.current?.({ type: GatewayServerEvent.GATEWAY_DISCONNECTED })
         reconnectTimer = setTimeout(connect, reconnectDelay)
         reconnectDelay = Math.min(5000, reconnectDelay * 2)
       }
@@ -435,7 +441,10 @@ export default function useRealtimeVoice({
             context.sampleRate,
             inputSampleRate.current,
           )
-          socket.send(JSON.stringify({ type: 'audio.append', audio: pcmBase64(audio) }))
+          socket.send(JSON.stringify({
+            type: GatewayClientEvent.AUDIO_APPEND,
+            audio: pcmBase64(audio),
+          }))
         }
         source.connect(processor)
         processor.connect(context.destination)

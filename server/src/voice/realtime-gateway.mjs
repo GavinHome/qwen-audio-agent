@@ -1,5 +1,9 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import { randomUUID } from 'node:crypto'
+import {
+  GatewayClientEvent,
+  GatewayServerEvent,
+} from '../../../shared/realtime-events.mjs'
 import { AnnouncementManager } from './announcement/announcement-manager.mjs'
 import { AnnouncementWindow } from './announcement/announcement-window.mjs'
 import { config } from '../core/config.mjs'
@@ -1165,7 +1169,7 @@ export function attachRealtimeGateway(server, {
       return createdConnectPromise
     }
 
-    send(ws, { type: 'voice.state', state: 'idle' })
+    send(ws, { type: GatewayServerEvent.VOICE_STATE, state: 'idle' })
     ws.on('message', raw => {
       let event
       try {
@@ -1173,7 +1177,7 @@ export function attachRealtimeGateway(server, {
       } catch {
         return
       }
-      if (event.type === 'connect') {
+      if (event.type === GatewayClientEvent.CONNECT) {
         descriptor = clientDescriptor(event)
         voiceClient.descriptor = descriptor
         textOnlySession = event.textOnly === true
@@ -1210,7 +1214,7 @@ export function attachRealtimeGateway(server, {
             message: error.message,
           }))
         }
-      } else if (event.type === 'unmute') {
+      } else if (event.type === GatewayClientEvent.UNMUTE) {
         if (textOnlySession) {
           inputEnabled = false
           outputEnabled = true
@@ -1225,7 +1229,7 @@ export function attachRealtimeGateway(server, {
             announcements.flush()
           })
           .catch(error => send(ws, { type: 'error', message: error.message }))
-      } else if (event.type === 'input.unmute') {
+      } else if (event.type === GatewayClientEvent.INPUT_UNMUTE) {
         if (textOnlySession) return
         if (activeVoiceClients.isActive(ownerId, voiceClient)) {
           inputEnabled = true
@@ -1241,7 +1245,7 @@ export function attachRealtimeGateway(server, {
             announcements.flush()
           })
           .catch(error => send(ws, { type: 'error', message: error.message }))
-      } else if (event.type === 'audio.append') {
+      } else if (event.type === GatewayClientEvent.AUDIO_APPEND) {
         if (!inputEnabled || !activeVoiceClients.isActive(ownerId, voiceClient)) {
           return
         }
@@ -1253,7 +1257,7 @@ export function attachRealtimeGateway(server, {
           }
           ensureFrontend().catch(error => send(ws, { type: 'error', message: error.message }))
         }
-      } else if (event.type === 'text.message') {
+      } else if (event.type === GatewayClientEvent.TEXT_MESSAGE) {
         const text = String(event.text || '').trim()
         if (!text) return
         const turnId = `text_${randomUUID().replaceAll('-', '')}`
@@ -1278,28 +1282,28 @@ export function attachRealtimeGateway(server, {
             },
           ))
           .catch(error => send(ws, { type: 'error', message: error.message }))
-      } else if (event.type === 'interrupt') {
+      } else if (event.type === GatewayClientEvent.INTERRUPT) {
         turnGeneration += 1
         committedTurnGeneration = turnGeneration
         announcementWindow.interrupt()
         announcements.dismissActive()
         frontend?.cancel()
-      } else if (event.type === 'playback.started') {
+      } else if (event.type === GatewayClientEvent.PLAYBACK_STARTED) {
         startPlayback(String(event.responseId || ''))
-      } else if (event.type === 'playback.ended') {
+      } else if (event.type === GatewayClientEvent.PLAYBACK_ENDED) {
         finishPlayback(String(event.responseId || ''))
-      } else if (event.type === 'playback.cancelled') {
+      } else if (event.type === GatewayClientEvent.PLAYBACK_CANCELLED) {
         cancelQueuedPlayback(String(event.responseId || ''), {
           reason: String(event.reason || ''),
         })
-      } else if (event.type === 'mute') {
+      } else if (event.type === GatewayClientEvent.MUTE) {
         releaseVoiceClient()
         turnGeneration += 1
         committedTurnGeneration = turnGeneration
         pendingAudio = []
         announcementWindow.reset()
         frontend?.cancel()
-      } else if (event.type === 'input.mute') {
+      } else if (event.type === GatewayClientEvent.INPUT_MUTE) {
         inputEnabled = false
         pendingAudio = []
       }

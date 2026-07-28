@@ -585,6 +585,18 @@ export class RealtimeFrontend {
         settled: false,
         timer: null,
       }
+      if (this.pendingResponses.length) {
+        const error = new Error(
+          'Realtime 响应关联冲突：已有响应正在等待 response.created',
+        )
+        this.settlePending(pending, {
+          failed: true,
+          phase: 'correlation',
+          error: error.message,
+        })
+        this.onError?.(error)
+        return outcome
+      }
       this.pendingResponses.push(pending)
       try {
         const created = await create(pending)

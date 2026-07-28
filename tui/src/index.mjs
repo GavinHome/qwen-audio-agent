@@ -1,6 +1,10 @@
 import { emitKeypressEvents } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import WebSocket from 'ws'
+import {
+  GatewayClientEvent,
+  GatewayServerEvent,
+} from '../../shared/realtime-events.mjs'
 import { startMacVoiceIO } from './macos-voice-io.mjs'
 import { startPortAudioVoiceIO } from './portaudio-voice-io.mjs'
 
@@ -95,7 +99,7 @@ export function connectMessage({
   locale = Intl.DateTimeFormat().resolvedOptions().locale,
 } = {}) {
   return {
-    type: 'connect',
+    type: GatewayClientEvent.CONNECT,
     voiceEnabled: voiceEnabled !== false,
     ...(inputEnabled === undefined
       ? {}
@@ -114,8 +118,8 @@ export function connectMessage({
 
 export function microphoneControlEvent(muted) {
   return muted
-    ? { type: 'input.mute' }
-    : { type: 'input.unmute', takeover: false }
+    ? { type: GatewayClientEvent.INPUT_MUTE }
+    : { type: GatewayClientEvent.INPUT_UNMUTE, takeover: false }
 }
 
 function cookieFrom(response) {
@@ -856,18 +860,24 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     onError: message => print(`${style('[播放错误]', 'red')} ${message}`),
     onStarted: responseId => {
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'playback.started', responseId }))
+        socket.send(JSON.stringify({
+          type: GatewayClientEvent.PLAYBACK_STARTED,
+          responseId,
+        }))
       }
     },
     onEnded: responseId => {
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'playback.ended', responseId }))
+        socket.send(JSON.stringify({
+          type: GatewayClientEvent.PLAYBACK_ENDED,
+          responseId,
+        }))
       }
     },
     onCancelled: (responseId, reason = '') => {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
-          type: 'playback.cancelled',
+          type: GatewayClientEvent.PLAYBACK_CANCELLED,
           responseId,
           ...(reason ? { reason } : {}),
         }))
@@ -916,7 +926,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
     } catch {
       return
     }
-    if (event.type === 'voice.ready') {
+    if (event.type === GatewayServerEvent.VOICE_READY) {
       frontendReady = true
       const nextRate = Number(event.inputSampleRate) || inputSampleRate
       if (nextRate !== inputSampleRate) {
@@ -927,7 +937,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       }
       if (ownsVoice) startMicrophone()
     }
-    if (event.type === 'voice.ownership') {
+    if (event.type === GatewayServerEvent.VOICE_OWNERSHIP) {
       if (event.state === 'active') {
         ownsVoice = true
         everOwnedVoice = true
@@ -949,7 +959,7 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
         }
       }
     }
-    if (event.type === 'voice.deactivated') {
+    if (event.type === GatewayServerEvent.VOICE_DEACTIVATED) {
       ownsVoice = false
       muted = true
       setCaptureEnabled(false)
@@ -957,12 +967,12 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       transcriptRenderer.cancel()
       print(style('[语音已切换到另一窗口]', 'yellow'))
     }
-    if (event.type === 'playback.clear') {
+    if (event.type === GatewayServerEvent.PLAYBACK_CLEAR) {
       playback.clear(event.reason || '')
       transcriptRenderer.cancel()
       if (!audioMode.captureDuringPlayback) startMicrophone()
     }
-    if (event.type === 'audio.delta') {
+    if (event.type === GatewayServerEvent.AUDIO_DELTA) {
       if (!audioMode.captureDuringPlayback) setCaptureEnabled(false)
       const accepted = playback.write(
         event.audio,
@@ -971,7 +981,9 @@ export async function runTui(options = parseArguments(process.argv.slice(2))) {
       )
       if (!audioMode.captureDuringPlayback && !accepted) startMicrophone()
     }
-    if (event.type === 'audio.done') playback.done(event.responseId)
+    if (event.type === GatewayServerEvent.AUDIO_DONE) {
+      playback.done(event.responseId)
+    }
     transcriptDisplay.handle(event)
     if (event.type === 'timeline.inline') {
       const content = event.item?.content || event.item?.markdown || ''

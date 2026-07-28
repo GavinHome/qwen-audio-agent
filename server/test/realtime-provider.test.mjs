@@ -106,6 +106,72 @@ test('reports an unstarted response timeout as uncertain rather than successful'
   })
 })
 
+test('serializes response creation so only one start can await correlation', async () => {
+  const frontend = createQwenFrontend({
+    responseStartTimeoutMs: 50,
+    responseCompletionTimeoutMs: 50,
+  })
+  frontend.ready = true
+  const sent = []
+  frontend.send = event => sent.push(event)
+
+  const first = frontend.speak('第一条')
+  const second = frontend.speak('第二条')
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(frontend.pendingResponses.length, 1)
+  assert.equal(sent.length, 1)
+
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-one' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-one', status: 'completed' },
+  })
+  await first
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(frontend.pendingResponses.length, 1)
+  assert.equal(sent.length, 2)
+
+  frontend.handleLifecycle({
+    type: 'response.created',
+    response: { id: 'response-two' },
+  })
+  frontend.handleLifecycle({
+    type: 'response.done',
+    response: { id: 'response-two', status: 'completed' },
+  })
+  await second
+})
+
+test('fails closed instead of ambiguously correlating two pending starts', async () => {
+  const errors = []
+  const frontend = createQwenFrontend({
+    onError: error => errors.push(error),
+  })
+  frontend.ready = true
+  const sent = []
+  frontend.send = event => sent.push(event)
+  frontend.pendingResponses.push({
+    origin: 'existing',
+    context: {},
+    settled: false,
+    resolve: () => {},
+    timer: null,
+  })
+
+  const outcome = await frontend.speak('不应发送')
+
+  assert.equal(outcome.failed, true)
+  assert.equal(outcome.phase, 'correlation')
+  assert.equal(frontend.pendingResponses.length, 1)
+  assert.deepEqual(sent, [])
+  assert.match(errors[0].message, /响应关联冲突/)
+})
+
 test('configures Qwen Audio Realtime with Smart Turn only', () => {
   const session = REALTIME_PROVIDERS.qwen.buildSession({ configured: false })
 
