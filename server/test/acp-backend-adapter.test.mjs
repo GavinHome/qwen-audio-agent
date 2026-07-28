@@ -301,6 +301,49 @@ test('uses one ACP profile family while preserving backend differences', () => {
   assert.equal(generic.command, 'example-agent')
   assert.deepEqual(generic.args, ['--acp', '--profile', 'voice'])
   assert.equal(generic.externalMcp, true)
+  const hermes = acpBackendProfile({
+    protocol: 'hermes',
+    root,
+    directory: '/work',
+    cliPath: '/opt/hermes',
+    permissionMode: 'native',
+  })
+  assert.equal(hermes.command, '/opt/hermes')
+  assert.deepEqual(hermes.args, ['acp', '--accept-hooks'])
+  const codeBuddy = acpBackendProfile({
+    protocol: 'codebuddy',
+    root,
+    directory: '/work',
+    model: 'qwen3.7-max',
+    modelUrl: 'https://example.com/v1/chat/completions',
+    permissionMode: 'full',
+  })
+  assert.deepEqual(codeBuddy.args, [
+    '--acp',
+    '--model',
+    'qwen3.7-max',
+    '--dangerously-skip-permissions',
+  ])
+  assert.equal(
+    codeBuddy.env.CODEBUDDY_MODEL_URL,
+    'https://example.com/v1/chat/completions',
+  )
+  const codex = acpBackendProfile({
+    protocol: 'codex',
+    root,
+    directory: '/work',
+    model: 'qwen3.7-max',
+    modelUrl: 'https://example.com/compatible-mode/v1',
+    permissionMode: 'full',
+  })
+  assert.equal(codex.command, '/repo/scripts/codex-acp')
+  assert.equal(codex.env.INITIAL_AGENT_MODE, 'agent-full-access')
+  const codexConfig = JSON.parse(codex.env.CODEX_CONFIG)
+  assert.equal(codexConfig.model, 'qwen3.7-max')
+  assert.equal(
+    codexConfig.model_providers['qwen-audio-agent'].base_url,
+    'https://example.com/compatible-mode/v1',
+  )
 })
 
 for (const action of ['start', 'send']) {

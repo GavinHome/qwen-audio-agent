@@ -3,7 +3,10 @@ import { dirname, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  resolveCodeBuddyWorkspace,
+  resolveCodexWorkspace,
   resolveBackendModels,
+  resolveHermesWorkspace,
   resolveOpenCodeWorkspace,
   resolveQoderWorkspace,
 } from '../src/core/config.mjs'
@@ -31,6 +34,22 @@ test('uses the user data directory for the default Qoder workspace', () => {
   assert.equal(
     resolveQoderWorkspace({}, '/home/user/.config/qwaudio'),
     '/home/user/.config/qwaudio/workspaces/qoder',
+  )
+})
+
+test('uses the user data directory for additional ACP backend workspaces', () => {
+  const directory = '/home/user/.config/qwaudio'
+  assert.equal(
+    resolveHermesWorkspace({}, directory),
+    '/home/user/.config/qwaudio/workspaces/hermes',
+  )
+  assert.equal(
+    resolveCodeBuddyWorkspace({}, directory),
+    '/home/user/.config/qwaudio/workspaces/codebuddy',
+  )
+  assert.equal(
+    resolveCodexWorkspace({}, directory),
+    '/home/user/.config/qwaudio/workspaces/codex',
   )
 })
 

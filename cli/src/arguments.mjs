@@ -208,7 +208,7 @@ export function helpText() {
     '',
     'Gateway 选项：',
     '  --url URL              Gateway 地址（默认 http://127.0.0.1:3101）',
-    '  --backend NAME         opencode（默认）、openclaw、qoder 或 acp',
+    '  --backend NAME         opencode（默认）、openclaw、qoder、hermes、codebuddy、codex 或 acp',
     '  --backend-mode MODE    managed（默认）或 compatible',
     '  --backend-permission-mode MODE  native（默认）或 full（最高权限）',
     '  --backend-url URL      后台 Server 地址',

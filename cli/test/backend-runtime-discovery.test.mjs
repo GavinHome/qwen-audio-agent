@@ -257,6 +257,34 @@ test('package mode uses pinned, configurable npm package versions', {
   }
 })
 
+test('Codex ACP prefers an installed adapter and pins its package fallback', {
+  skip: process.platform === 'win32',
+}, () => {
+  const binary = fixture()
+  const packageRuntime = fixture()
+  try {
+    command(resolve(binary.bin, 'codex-acp'))
+    command(resolve(packageRuntime.bin, 'npx'))
+    assert.deepEqual(run('scripts/codex-acp', binary, {
+      CODEX_ACP_RUNTIME: 'auto',
+    }, ['--help']), [
+      'codex-acp',
+      '--help',
+    ])
+    assert.deepEqual(run('scripts/codex-acp', packageRuntime, {
+      CODEX_ACP_RUNTIME: 'package',
+    }, ['--help']), [
+      'npx',
+      '-y',
+      '@agentclientprotocol/codex-acp@1.1.7',
+      '--help',
+    ])
+  } finally {
+    binary.close()
+    packageRuntime.close()
+  }
+})
+
 test('maps one common backend model into each native backend model', {
   skip: process.platform === 'win32',
 }, () => {

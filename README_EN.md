@@ -59,8 +59,9 @@ module walkthrough.
 | OpenCode | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
 | OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★★ |
 | Qoder | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
-| Codex | In development | Coding tasks, tool calls, and project collaboration | ★★★★☆ |
-| Hermes | In development | Tool calls, task execution, and project collaboration | ★★★★☆ |
+| Hermes | Supported | Native ACP, tool calls, project Sessions, and task execution | ★★★★☆ |
+| CodeBuddy | Supported | Native ACP, custom models, project Sessions, and permission control | ★★★★☆ |
+| Codex | Supported | Codex ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations

@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { parseEnv } from 'node:util'
 
 const SECRET_KEY = 'QWEN_AUDIO_AGENT_AUTH_SECRET'
@@ -20,10 +20,10 @@ const USER_CONFIG_TEMPLATE = [
   'DASHSCOPE_API_KEY=',
   'QWEN_AUDIO_REALTIME_PROVIDER=dashscope',
   '',
-  '# 可选：AGENT_PROTOCOL=opencode、openclaw、qoder 或 acp',
+  '# 可选：AGENT_PROTOCOL=opencode、openclaw、qoder、hermes、codebuddy、codex 或 acp',
   '# AGENT_PROTOCOL=opencode',
   '# QWEN_AUDIO_AGENT_BACKEND_MODE=managed',
-  '# 权限模式：native（后台自行询问）或 full（最高权限；仅 managed OpenCode/Qoder）',
+  '# 权限模式：native（后台自行询问）或 full（最高权限；仅支持安全映射的 managed 后端）',
   '# QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native',
   '# QWEN_AUDIO_AGENT_BACKEND_MODEL=qwen3.7-max',
   '# 兼容模式可选：QWEN_AUDIO_AGENT_BACKEND_AGENT=已有 Agent ID',
@@ -161,6 +161,17 @@ function ensureManagedWorkspace(directory, templatePath) {
   return directory
 }
 
+function ensurePrivateTemplate(templatePath, targetPath) {
+  mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 })
+  try {
+    copyFileSync(templatePath, targetPath, constants.COPYFILE_EXCL)
+    chmodSync(targetPath, 0o600)
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  return targetPath
+}
+
 function migratePrivateFile(legacyPath, targetPath) {
   try {
     lstatSync(targetPath)
@@ -229,6 +240,22 @@ export function loadRuntimeEnvironment({
   const qoderWorkspace = env.QODER_WORKSPACE
     ? resolve(root, env.QODER_WORKSPACE)
     : resolve(configDirectory, 'workspaces/qoder')
+  const defaultHermesWorkspace = !env.HERMES_WORKSPACE
+  const hermesWorkspace = env.HERMES_WORKSPACE
+    ? resolve(root, env.HERMES_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/hermes')
+  const defaultCodeBuddyWorkspace = !env.CODEBUDDY_WORKSPACE
+  const codeBuddyWorkspace = env.CODEBUDDY_WORKSPACE
+    ? resolve(root, env.CODEBUDDY_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/codebuddy')
+  const defaultCodexWorkspace = !env.CODEX_WORKSPACE
+  const codexWorkspace = env.CODEX_WORKSPACE
+    ? resolve(root, env.CODEX_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/codex')
+  const defaultAcpWorkspace = !env.ACP_WORKSPACE
+  const acpWorkspace = env.ACP_WORKSPACE
+    ? resolve(root, env.ACP_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/acp')
   let migratedFiles = []
   if (prepareBackendRuntime) {
     if (defaultOpenCodeWorkspace) {
@@ -249,11 +276,43 @@ export function loadRuntimeEnvironment({
         resolve(root, 'config/qoder/workspace/AGENTS.md'),
       )
     }
+    if (defaultHermesWorkspace) {
+      ensureManagedWorkspace(
+        hermesWorkspace,
+        resolve(root, 'config/hermes/workspace/AGENTS.md'),
+      )
+    }
+    if (defaultCodeBuddyWorkspace) {
+      ensureManagedWorkspace(
+        codeBuddyWorkspace,
+        resolve(root, 'config/codebuddy/workspace/AGENTS.md'),
+      )
+      ensurePrivateTemplate(
+        resolve(root, 'config/codebuddy/workspace/.codebuddy/models.json'),
+        resolve(codeBuddyWorkspace, '.codebuddy/models.json'),
+      )
+    }
+    if (defaultCodexWorkspace) {
+      ensureManagedWorkspace(
+        codexWorkspace,
+        resolve(root, 'config/codex/workspace/AGENTS.md'),
+      )
+    }
+    if (defaultAcpWorkspace) {
+      ensureManagedWorkspace(
+        acpWorkspace,
+        resolve(root, 'config/acp/workspace/AGENTS.md'),
+      )
+    }
     mkdirSync(openClawStateDirectory, { recursive: true, mode: 0o700 })
     env.OPENCODE_WORKSPACE = openCodeWorkspace
     env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE = openClawWorkspace
     env.OPENCLAW_STATE_DIR = openClawStateDirectory
     env.QODER_WORKSPACE = qoderWorkspace
+    env.HERMES_WORKSPACE = hermesWorkspace
+    env.CODEBUDDY_WORKSPACE = codeBuddyWorkspace
+    env.CODEX_WORKSPACE = codexWorkspace
+    env.ACP_WORKSPACE = acpWorkspace
     migratedFiles = [
       [resolve(root, 'runtime/frontend-memory.json'), frontendMemoryPath],
       [resolve(root, 'runtime/tasks.json'), taskStatePath],
@@ -273,6 +332,10 @@ export function loadRuntimeEnvironment({
     openCodeWorkspace,
     openClawWorkspace,
     qoderWorkspace,
+    hermesWorkspace,
+    codeBuddyWorkspace,
+    codexWorkspace,
+    acpWorkspace,
     openClawStateDirectory,
     migratedFiles,
     loadedFiles,

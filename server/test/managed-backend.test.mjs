@@ -128,6 +128,31 @@ test('generic ACP is managed as a Gateway child without a separate server', asyn
   }), /只支持 managed/)
 })
 
+test('additional ACP backends run inside the Gateway without an HTTP server', async () => {
+  for (const protocol of ['hermes', 'codebuddy', 'codex']) {
+    assert.deepEqual(resolveManagedBackend({
+      AGENT_PROTOCOL: protocol,
+    }), {
+      protocol,
+      mode: 'managed',
+      permissionMode: 'native',
+      baseUrl: null,
+    })
+    const runtime = await startManagedBackend({
+      root: '/repo',
+      env: { AGENT_PROTOCOL: protocol },
+      spawnImpl: () => {
+        throw new Error(`${protocol} must not spawn an HTTP backend server`)
+      },
+    })
+    assert.equal(runtime.ownsProcess, false)
+    assert.throws(() => resolveManagedBackend({
+      AGENT_PROTOCOL: protocol,
+      QWEN_AUDIO_AGENT_BACKEND_MODE: 'compatible',
+    }), /只支持 managed/)
+  }
+})
+
 test('full permission mode configures managed OpenCode without discarding inline config', () => {
   const env = {
     AGENT_PROTOCOL: 'opencode',

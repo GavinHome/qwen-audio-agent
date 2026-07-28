@@ -1,4 +1,7 @@
+import { codeBuddyBackendDriver } from './codebuddy.mjs'
+import { codexBackendDriver } from './codex.mjs'
 import { genericAcpBackendDriver } from './generic-acp.mjs'
+import { hermesBackendDriver } from './hermes.mjs'
 import { openClawBackendDriver } from './openclaw.mjs'
 import { openCodeBackendDriver } from './opencode.mjs'
 import { qoderBackendDriver } from './qoder.mjs'
@@ -7,6 +10,9 @@ const drivers = new Map([
   openCodeBackendDriver,
   openClawBackendDriver,
   qoderBackendDriver,
+  hermesBackendDriver,
+  codeBuddyBackendDriver,
+  codexBackendDriver,
   genericAcpBackendDriver,
 ].map(driver => [driver.id, driver]))
 

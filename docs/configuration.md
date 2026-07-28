@@ -129,6 +129,81 @@ ACP_WORKSPACE=
 JSON 字符串数组，以便参数中包含空格时仍能准确解析。它使用标准 ACP Session 和
 Gateway 提供的 Session MCP 工具，不假设某个 Agent 私有的启动、权限或 UI 能力。
 
+### Hermes
+
+Hermes Agent（[nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent)）
+自带 ACP 模式，Gateway 使用 `hermes acp` 启动：
+
+```dotenv
+AGENT_PROTOCOL=hermes
+QWEN_AUDIO_AGENT_BACKEND_MODE=managed
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
+```
+
+Hermes 使用自身配置的模型与 provider，不受
+`QWEN_AUDIO_AGENT_BACKEND_MODEL` 影响。首次使用前可运行
+`hermes acp --check` 检查依赖。高级配置：
+
+```dotenv
+HERMES_BIN=
+HERMES_WORKSPACE=
+```
+
+如果 `session/new` 因不可达的 provider 模型目录而长时间等待，可在
+`~/.hermes/config.yaml` 中通过 `model_catalog.excluded_providers` 排除没有使用的
+provider。
+
+### CodeBuddy
+
+CodeBuddy Code（腾讯 `@tencent-ai/codebuddy-code`）使用
+`codebuddy --acp`。其 ACP 模式需要账号认证；首次使用前应交互式运行
+`codebuddy`，并通过 `/login` 完成一次登录。
+
+```dotenv
+AGENT_PROTOCOL=codebuddy
+QWEN_AUDIO_AGENT_BACKEND_MODE=managed
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
+```
+
+默认协调工作区包含项目级 `.codebuddy/models.json`，通过环境变量读取统一
+DashScope 凭据与模型地址。高级配置：
+
+```dotenv
+CODEBUDDY_BIN=
+CODEBUDDY_WORKSPACE=
+CODEBUDDY_MODEL=qwen3.7-max
+CODEBUDDY_MODEL_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+```
+
+如修改 `CODEBUDDY_MODEL`，需同步在工作区 `.codebuddy/models.json` 中添加对应
+模型 ID。
+
+### Codex
+
+Codex（[openai/codex](https://github.com/openai/codex)）通过 ACP 项目维护的
+[codex-acp](https://github.com/agentclientprotocol/codex-acp) 接入。启动脚本优先
+使用已安装的 `codex-acp`，否则通过 `npx` 使用固定版本。
+
+```dotenv
+AGENT_PROTOCOL=codex
+QWEN_AUDIO_AGENT_BACKEND_MODE=managed
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
+```
+
+模型与 provider 通过进程环境交给 Codex，不修改用户的 `~/.codex`。高级配置：
+
+```dotenv
+CODEX_ACP_BIN=
+CODEX_ACP_PACKAGE=@agentclientprotocol/codex-acp@1.1.7
+CODEX_ACP_RUNTIME=auto
+CODEX_WORKSPACE=
+CODEX_MODEL=qwen3.7-max
+CODEX_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+Hermes、CodeBuddy 和 Codex 均由 Gateway 直接管理 ACP 子进程，只支持
+`managed`，不接受 `--backend-url`。
+
 ## 后台权限模式
 
 `QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` 可设为：

@@ -83,6 +83,21 @@ test('accepts a generic ACP backend without an HTTP URL', () => {
   ], {}), /只支持 managed/)
 })
 
+test('accepts named local ACP backends without an HTTP URL', () => {
+  for (const backend of ['hermes', 'codebuddy', 'codex']) {
+    const options = parseArguments(['gateway', '--backend', backend], {})
+    assert.equal(options.backend, backend)
+    assert.equal(options.backendUrl, '')
+    assert.throws(() => parseArguments([
+      'gateway',
+      '--backend',
+      backend,
+      '--backend-mode',
+      'compatible',
+    ], {}), /只支持 managed/)
+  }
+})
+
 test('parses supported backend permission modes', () => {
   const options = parseArguments([
     'gateway',

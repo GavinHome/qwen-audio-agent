@@ -21,6 +21,24 @@ const definitions = new Map([
     supportsCompatible: false,
     supportsFullPermission: true,
   }],
+  ['hermes', {
+    id: 'hermes',
+    label: 'Hermes',
+    supportsCompatible: false,
+    supportsFullPermission: true,
+  }],
+  ['codebuddy', {
+    id: 'codebuddy',
+    label: 'CodeBuddy',
+    supportsCompatible: false,
+    supportsFullPermission: true,
+  }],
+  ['codex', {
+    id: 'codex',
+    label: 'Codex',
+    supportsCompatible: false,
+    supportsFullPermission: true,
+  }],
   ['acp', {
     id: 'acp',
     label: 'ACP Agent',

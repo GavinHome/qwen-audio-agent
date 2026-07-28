@@ -34,6 +34,33 @@ export function resolveQoderWorkspace(
     : resolve(configDirectory, 'workspaces/qoder')
 }
 
+export function resolveHermesWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.HERMES_WORKSPACE
+    ? resolve(root, env.HERMES_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/hermes')
+}
+
+export function resolveCodeBuddyWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.CODEBUDDY_WORKSPACE
+    ? resolve(root, env.CODEBUDDY_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/codebuddy')
+}
+
+export function resolveCodexWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.CODEX_WORKSPACE
+    ? resolve(root, env.CODEX_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/codex')
+}
+
 export function resolveOpenClawWorkspace(
   env = process.env,
   configDirectory = runtimeEnvironment.configDirectory,
@@ -195,6 +222,34 @@ export const config = {
     process.env.QODERCLI_PATH || process.env.QODER_CLI_PATH || '',
   ).trim(),
   qoderModel: String(process.env.QODER_MODEL || 'auto').trim() || 'auto',
+  hermesDirectory: resolveHermesWorkspace(),
+  hermesCliPath: String(process.env.HERMES_BIN || '').trim(),
+  codeBuddyDirectory: resolveCodeBuddyWorkspace(),
+  codeBuddyCliPath: String(process.env.CODEBUDDY_BIN || '').trim(),
+  codeBuddyModel: String(
+    process.env.CODEBUDDY_MODEL || backendModelName(backendModels.common),
+  ).trim(),
+  codeBuddyModelUrl: (
+    process.env.CODEBUDDY_MODEL_URL
+    || (
+      process.env.DASHSCOPE_WORKSPACE_ID
+        ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions`
+        : 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+    )
+  ),
+  codexDirectory: resolveCodexWorkspace(),
+  codexCliPath: String(process.env.CODEX_ACP_BIN || '').trim(),
+  codexModel: String(
+    process.env.CODEX_MODEL || backendModelName(backendModels.common),
+  ).trim(),
+  codexModelUrl: (
+    process.env.CODEX_BASE_URL
+    || (
+      process.env.DASHSCOPE_WORKSPACE_ID
+        ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
+        : 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    )
+  ).replace(/\/+$/, ''),
   acpCommand: String(process.env.ACP_COMMAND || '').trim(),
   acpArgs: resolveAcpArgs(process.env.ACP_ARGS),
   acpLabel: String(process.env.ACP_LABEL || 'ACP Agent').trim() || 'ACP Agent',

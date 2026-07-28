@@ -16,6 +16,7 @@ qwen-audio-agent 使用并分发若干开源组件。项目自身使用 Apache L
 | remark-gfm | MIT | https://github.com/remarkjs/remark-gfm |
 | electron-builder | MIT | https://github.com/electron-userland/electron-builder |
 | Agent Client Protocol TypeScript SDK | Apache-2.0 | https://github.com/agentclientprotocol/typescript-sdk |
+| Codex ACP adapter | Apache-2.0 | https://github.com/agentclientprotocol/codex-acp |
 | Model Context Protocol TypeScript SDK | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
 | Zod | MIT | https://github.com/colinhacks/zod |
 | concurrently | MIT | https://github.com/open-cli-tools/concurrently |

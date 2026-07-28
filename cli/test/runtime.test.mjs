@@ -195,6 +195,21 @@ test('derives generic ACP without an HTTP backend', () => {
   })
 })
 
+test('derives named local ACP backends without an HTTP URL', () => {
+  for (const backend of ['hermes', 'codebuddy', 'codex']) {
+    assert.deepEqual(resolveBackend({
+      backend,
+      backendMode: 'managed',
+    }, {}), {
+      protocol: backend,
+      mode: 'managed',
+      permissionMode: 'native',
+      agentId: '',
+      baseUrl: null,
+    })
+  }
+})
+
 test('requires complete identity before reusing a Gateway', () => {
   assert.throws(
     () => assertGatewayCompatibility({ backend: { ok: true } }, {

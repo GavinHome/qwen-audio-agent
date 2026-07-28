@@ -13,6 +13,7 @@ export function acpBackendProfile({
   configDirectory,
   permissionMode,
   model,
+  modelUrl,
   args,
   label,
 }) {
@@ -27,6 +28,7 @@ export function acpBackendProfile({
     configDirectory,
     permissionMode,
     model,
+    modelUrl,
     args,
     label,
   })
