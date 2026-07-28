@@ -7,11 +7,23 @@
 [![node](https://img.shields.io/badge/node-%E2%89%A522.22.2-brightgreen)](https://nodejs.org/)
 [![license](https://img.shields.io/github/license/QwenAudio/qwen-audio-agent)](LICENSE)
 
-## Keep Your Agent Present
+## Agent Presence
+
+No one says one thing and then stands there waiting for a minute.
+
+No one brings an entire conversation to a halt just because the other person
+needs to look something up.
+
+Real conversation is continuous.
+
+Agents should be too.
+
+That is why we built **qwen-audio-agent**—a realtime voice runtime that keeps
+Agents talking, working, and present.
 
 Whether you are talking, thinking, or getting work done, your Agent stays in
-the conversation—listening, responding, and naturally letting you know when
-the work is done.
+the conversation. It listens, responds, and naturally lets you know when the
+work is done: “It’s ready.”
 
 ## Core Features
 
@@ -35,7 +47,7 @@ that needs tools or sustained processing is delegated to a backend Agent.
 Throughout the entire interaction, you are always talking to the same
 assistant.
 
-<details>
+<details open>
 <summary>View the detailed architecture</summary>
 
 ![qwen-audio-agent integration reference architecture](docs/qwen-audio-agent-three-layer-architecture-en.png)
