@@ -28,8 +28,12 @@ function normalizedOrigin(value) {
 
 export function resolveBackend(options = {}, env = process.env) {
   const protocol = String(
-    options.backend || env.AGENT_PROTOCOL || 'opencode',
+    options.backend || env.AGENT_PROTOCOL || '',
   ).toLowerCase()
+  if (!protocol) throw new Error(
+    '必须指定后台 Agent：在 config.env 设置 AGENT_PROTOCOL，'
+    + `或使用 --backend（可选 ${backendNames().join('、')}）`,
+  )
   const definition = backendDefinition(protocol)
   if (!definition) throw new Error(
     `不支持的后台 Agent：${protocol}（可选 ${backendNames().join('、')}）`,

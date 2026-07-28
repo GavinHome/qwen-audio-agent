@@ -23,10 +23,11 @@ qwenaudio config
 
 ## 最小配置
 
-默认 OpenCode 后台只需要填写：
+最小配置需要填写凭据，并显式选择一个后台 Agent（以 OpenClaw 为例）：
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
+AGENT_PROTOCOL=openclaw
 ```
 
 增强模式默认使用 `qwen3.7-max` 作为后台模型。需要修改时只写一个公共配置：
@@ -72,21 +73,21 @@ tasks.json            # 后台任务、结果和待播报通知的恢复状态
 
 ## 选择后台
 
-OpenCode 是默认后台。Gateway 通过 `opencode acp` 与它交互；managed 模式还会
+`AGENT_PROTOCOL` 没有默认值，必须显式指定。OpenClaw 默认地址为 `http://127.0.0.1:18789`：
+
+```dotenv
+AGENT_PROTOCOL=openclaw
+OPENCLAW_BASE_URL=http://127.0.0.1:18789
+OPENCLAW_GATEWAY_TOKEN=
+```
+
+OpenCode：Gateway 通过 `opencode acp` 与它交互；managed 模式还会
 管理用于打开原生 Session 界面的本地服务，用户不需要另行启动：
 
 ```dotenv
 AGENT_PROTOCOL=opencode
 QWEN_AUDIO_AGENT_BACKEND_MODE=managed
 QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
-```
-
-OpenClaw 默认地址为 `http://127.0.0.1:18789`：
-
-```dotenv
-AGENT_PROTOCOL=openclaw
-OPENCLAW_BASE_URL=http://127.0.0.1:18789
-OPENCLAW_GATEWAY_TOKEN=
 ```
 
 Qoder 使用本机 `qodercli --acp`，没有 HTTP 后台地址：

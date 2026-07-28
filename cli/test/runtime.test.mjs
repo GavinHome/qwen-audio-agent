@@ -147,6 +147,10 @@ test('rejects an existing Gateway with different ownership settings', async () =
   )
 })
 
+test('requires an explicit backend selection', () => {
+  assert.throws(() => resolveBackend({}, {}), /必须指定后台 Agent/)
+})
+
 test('derives selected backend configuration', () => {
   assert.deepEqual(resolveBackend({
     backend: 'openclaw',

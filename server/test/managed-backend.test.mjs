@@ -64,6 +64,10 @@ test('managed mode owns one backend and moves away from occupied ports', async (
   assert.deepEqual(signals, [[-4242, 'SIGTERM']])
 })
 
+test('requires an explicit backend selection', () => {
+  assert.throws(() => resolveManagedBackend({}), /必须指定后台 Agent/)
+})
+
 test('normalizes the selected backend', () => {
   assert.deepEqual(resolveManagedBackend({
     AGENT_PROTOCOL: 'opencode',

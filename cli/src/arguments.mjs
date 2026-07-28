@@ -63,7 +63,7 @@ export function parseArguments(argv, env = process.env) {
     audioMode: String(
       env.QWEN_AUDIO_AGENT_TUI_AUDIO_MODE || 'half',
     ).toLowerCase(),
-    backend: String(env.AGENT_PROTOCOL || 'opencode').toLowerCase(),
+    backend: String(env.AGENT_PROTOCOL || '').toLowerCase(),
     backendMode: String(
       env.QWEN_AUDIO_AGENT_BACKEND_MODE || 'managed',
     ).toLowerCase(),
@@ -119,8 +119,10 @@ export function parseArguments(argv, env = process.env) {
     else throw new Error(`未知参数：${argument}`)
   }
 
-  const definition = backendDefinition(options.backend)
-  if (!definition) {
+  const definition = options.backend
+    ? backendDefinition(options.backend)
+    : null
+  if (options.backend && !definition) {
     throw new Error(
       `不支持的后台：${options.backend}（可选 ${backendNames().join('、')}）`,
     )
@@ -161,13 +163,17 @@ export function parseArguments(argv, env = process.env) {
   }
 
   options.url = cleanOrigin(options.url, ' Gateway URL')
-  const configuredBackendUrl = definition.baseUrlEnvironment
+  const configuredBackendUrl = definition?.baseUrlEnvironment
     ? env[definition.baseUrlEnvironment] || definition.defaultBaseUrl
     : ''
-  options.backendUrl = definition.baseUrlEnvironment
+  options.backendUrl = definition?.baseUrlEnvironment
     ? cleanOrigin(options.backendUrl || configuredBackendUrl, '后台地址')
     : ''
-  if (!definition.supportsCompatible && options.backendMode !== 'managed') {
+  if (
+    definition
+    && !definition.supportsCompatible
+    && options.backendMode !== 'managed'
+  ) {
     throw new Error(`${definition.label} 后台当前只支持 managed 模式`)
   }
   if (
@@ -177,11 +183,22 @@ export function parseArguments(argv, env = process.env) {
     throw new Error('最高权限模式只支持由 Gateway 管理的后台 Agent')
   }
   if (
-    options.backendPermissionMode === 'full'
+    definition
+    && options.backendPermissionMode === 'full'
     && !definition.supportsFullPermission
   ) {
     throw new Error(
       `${definition.label} 不支持 Gateway 统一最高权限模式`,
+    )
+  }
+  if (
+    command === 'gateway'
+    && options.gatewayAction === 'run'
+    && !options.backend
+  ) {
+    throw new Error(
+      '必须指定后台 Agent：在 config.env 设置 AGENT_PROTOCOL，'
+      + `或使用 --backend（可选 ${backendNames().join('、')}）`,
     )
   }
   options.sessionId = String(options.sessionId || '').trim()
@@ -208,7 +225,7 @@ export function helpText() {
     '',
     'Gateway 选项：',
     '  --url URL              Gateway 地址（默认 http://127.0.0.1:3101）',
-    '  --backend NAME         opencode（默认）、openclaw、qoder、hermes、codebuddy、codex 或 acp',
+    '  --backend NAME         必填：openclaw、opencode、qoder、hermes、codebuddy、codex 或 acp（也可在 config.env 设置 AGENT_PROTOCOL）',
     '  --backend-mode MODE    managed（默认）或 compatible',
     '  --backend-permission-mode MODE  native（默认）或 full（最高权限）',
     '  --backend-url URL      后台 Server 地址',

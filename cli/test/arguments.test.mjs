@@ -2,15 +2,20 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { helpText, parseArguments } from '../src/arguments.mjs'
 
-test('defaults to the Gateway command and managed OpenCode', () => {
-  const options = parseArguments([], {})
+test('requires an explicit backend for running the Gateway', () => {
+  assert.throws(() => parseArguments([], {}), /必须指定后台 Agent/)
+  assert.throws(
+    () => parseArguments(['gateway', 'run'], {}),
+    /必须指定后台 Agent/,
+  )
+  const options = parseArguments([], { AGENT_PROTOCOL: 'openclaw' })
   assert.equal(options.command, 'gateway')
   assert.equal(options.gatewayAction, 'run')
   assert.equal(options.url, 'http://127.0.0.1:3101')
-  assert.equal(options.backend, 'opencode')
+  assert.equal(options.backend, 'openclaw')
   assert.equal(options.backendMode, 'managed')
   assert.equal(options.backendPermissionMode, 'native')
-  assert.equal(options.backendUrl, 'http://127.0.0.1:4096')
+  assert.equal(options.backendUrl, 'http://127.0.0.1:18789')
 })
 
 test('parses independent TUI and WebUI client commands', () => {
@@ -118,8 +123,9 @@ test('parses supported backend permission modes', () => {
 })
 
 test('parses foreground and service Gateway commands', () => {
-  assert.equal(parseArguments(['gateway'], {}).gatewayAction, 'run')
-  assert.equal(parseArguments(['gateway', 'run'], {}).gatewayAction, 'run')
+  const env = { AGENT_PROTOCOL: 'openclaw' }
+  assert.equal(parseArguments(['gateway'], env).gatewayAction, 'run')
+  assert.equal(parseArguments(['gateway', 'run'], env).gatewayAction, 'run')
   assert.equal(
     parseArguments(['gateway', 'install'], {}).gatewayAction,
     'install',

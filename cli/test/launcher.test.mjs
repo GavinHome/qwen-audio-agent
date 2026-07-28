@@ -13,7 +13,7 @@ function harness({ ownsProcesses = false } = {}) {
   return {
     calls,
     dependencies: {
-      env: {},
+      env: { AGENT_PROTOCOL: 'opencode' },
       stdout: { write: value => calls.push(['stdout', value]) },
       signalSource: new EventEmitter(),
       prepareEnvironment: () => ({

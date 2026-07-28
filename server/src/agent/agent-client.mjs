@@ -175,4 +175,44 @@ export class AgentClient {
   }
 }
 
-export const agent = new AgentClient()
+// The shared client is created lazily so that importing this module never
+// fails in environments without AGENT_PROTOCOL, such as unit tests. The
+// Gateway itself fails fast in resolveManagedBackend before this point.
+let sharedAgent = null
+
+function requireAgent() {
+  if (!sharedAgent) {
+    if (!config.agentProtocol) {
+      throw new Error(
+        '必须指定后台 Agent：请在 config.env 中设置 AGENT_PROTOCOL',
+      )
+    }
+    sharedAgent = new AgentClient()
+  }
+  return sharedAgent
+}
+
+export const agent = {
+  get protocol() {
+    return requireAgent().protocol
+  },
+  get label() {
+    return requireAgent().label
+  },
+  describe: () => requireAgent().describe(),
+  health: () => requireAgent().health(),
+  runCoordinator: (message, options = {}) =>
+    requireAgent().runCoordinator(message, options),
+  respondPermission: (id, decision, options = {}) =>
+    requireAgent().respondPermission(id, decision, options),
+  cancelDelegatedWork: (workId, options = {}) =>
+    requireAgent().cancelDelegatedWork(workId, options),
+  queryDelegatedWork: (workId, question, options = {}) =>
+    requireAgent().queryDelegatedWork(workId, question, options),
+  canRecoverDelegatedWork: task =>
+    requireAgent().canRecoverDelegatedWork(task),
+  recoverDelegatedWork: (task, options = {}) =>
+    requireAgent().recoverDelegatedWork(task, options),
+  uiUrl: (options = {}) => requireAgent().uiUrl(options),
+  close: () => sharedAgent ? sharedAgent.close() : Promise.resolve(),
+}

@@ -1,7 +1,10 @@
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { loadRuntimeEnvironment } from '../../../shared/runtime-environment.mjs'
-import { backendDefinition } from '../../../shared/backend-catalog.mjs'
+import {
+  backendDefinition,
+  backendNames,
+} from '../../../shared/backend-catalog.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../../..')
@@ -138,8 +141,14 @@ if (!['native', 'full'].includes(backendPermissionMode)) {
   )
 }
 const requestedAgentProtocol = String(
-  process.env.AGENT_PROTOCOL || 'opencode',
+  process.env.AGENT_PROTOCOL || '',
 ).toLowerCase()
+if (requestedAgentProtocol && !backendDefinition(requestedAgentProtocol)) {
+  throw new Error(
+    `不支持的后台 Agent：${requestedAgentProtocol}`
+    + `（可选 ${backendNames().join('、')}）`,
+  )
+}
 const sharedBackendAgent = String(
   process.env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
 ).trim()
@@ -180,9 +189,7 @@ export const config = {
     process.env.QWEN_AUDIO_AGENT_IDENTITY_MODE || 'personal'
   ).toLowerCase() === 'browser' ? 'browser' : 'personal',
   personalOwnerId: process.env.QWEN_AUDIO_AGENT_PERSONAL_OWNER_ID || 'user_personal',
-  agentProtocol: backendDefinition(requestedAgentProtocol)
-    ? requestedAgentProtocol
-    : 'opencode',
+  agentProtocol: requestedAgentProtocol,
   backendMode,
   backendPermissionMode,
   agentTimeoutMs: numberSetting(process.env.AGENT_TIMEOUT_MS, 300000, { min: 10000 }),

@@ -106,11 +106,11 @@ qwenaudio config
 ```
 
 2. Open the displayed `config.env` file, add your DashScope API Key, and select
-   OpenCode:
+   OpenClaw:
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
-AGENT_PROTOCOL=opencode
+AGENT_PROTOCOL=openclaw
 ```
 
 3. Start the Gateway in one terminal:
@@ -191,16 +191,17 @@ qwenaudio gateway uninstall
 
 ## Choose a Backend Agent
 
-Select the backend Agent with `AGENT_PROTOCOL`:
-
-```dotenv
-AGENT_PROTOCOL=opencode
-```
-
+Select the backend Agent with `AGENT_PROTOCOL` (required, no default value).
 Use OpenClaw:
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
+```
+
+Use OpenCode:
+
+```dotenv
+AGENT_PROTOCOL=opencode
 ```
 
 Use Qoder:
@@ -208,6 +209,13 @@ Use Qoder:
 ```dotenv
 AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
+```
+
+Hermes, CodeBuddy, and Codex can also be selected directly:
+
+```dotenv
+AGENT_PROTOCOL=hermes
+# Or codebuddy or codex
 ```
 
 Use another Agent that supports ACP over stdio:

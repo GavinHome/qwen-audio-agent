@@ -91,11 +91,11 @@ npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
 qwenaudio config
 ```
 
-2. 打开命令显示的 `config.env`，填写 DashScope API Key，并选择 OpenCode：
+2. 打开命令显示的 `config.env`，填写 DashScope API Key，并选择 OpenClaw：
 
 ```dotenv
 DASHSCOPE_API_KEY=your-key
-AGENT_PROTOCOL=opencode
+AGENT_PROTOCOL=openclaw
 ```
 
 3. 在一个终端中启动 Gateway：
@@ -171,16 +171,16 @@ qwenaudio gateway uninstall
 
 ## 选择后台 Agent
 
-通过 `AGENT_PROTOCOL` 选择后台 Agent：
-
-```dotenv
-AGENT_PROTOCOL=opencode
-```
-
-使用 OpenClaw：
+通过 `AGENT_PROTOCOL` 选择后台 Agent（必填，没有默认值）。使用 OpenClaw：
 
 ```dotenv
 AGENT_PROTOCOL=openclaw
+```
+
+使用 OpenCode：
+
+```dotenv
+AGENT_PROTOCOL=opencode
 ```
 
 使用 Qoder：
@@ -188,6 +188,13 @@ AGENT_PROTOCOL=openclaw
 ```dotenv
 AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
+```
+
+Hermes、CodeBuddy 和 Codex 也可直接选择：
+
+```dotenv
+AGENT_PROTOCOL=hermes
+# 或 codebuddy、codex
 ```
 
 使用其他支持 ACP stdio 的 Agent：
