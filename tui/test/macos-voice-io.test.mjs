@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import test from 'node:test'
 import {
@@ -12,7 +13,7 @@ test('uses the standard macOS cache for the native voice helper', () => {
     macVoiceIOBinaryPath({
       homeDirectory: '/Users/example',
     }),
-    '/Users/example/Library/Caches/qwaudio/tui/macos-voice-io',
+    resolve('/Users/example', 'Library/Caches/qwaudio/tui/macos-voice-io'),
   )
 })
 
