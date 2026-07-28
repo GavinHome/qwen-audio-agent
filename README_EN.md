@@ -80,7 +80,13 @@ You need Node.js 22.22.2+ or 24.15.0+, npm 10+, and a
 DashScope API Key. The repository includes `.nvmrc` and `.node-version`; if you
 use nvm, run `nvm use`.
 
-One-line install (directly from GitHub):
+One-line install (recommended, from npm):
+
+```bash
+npm install -g qwen-audio-agent
+```
+
+You can also install the latest code directly from GitHub:
 
 ```bash
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
@@ -95,7 +101,13 @@ npm install
 npm run install:global
 ```
 
-Upgrade to the latest version (just re-run the install command):
+Upgrade to the latest npm release:
+
+```bash
+npm install -g qwen-audio-agent@latest
+```
+
+Upgrade to the latest code from GitHub:
 
 ```bash
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git

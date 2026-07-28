@@ -92,6 +92,12 @@ if (
   throw new Error('desktop build dependencies are not pinned to the reviewed versions')
 }
 if (
+  manifest.scripts?.prepare !== 'node scripts/prepare-build.mjs'
+  || !manifest.scripts?.build?.includes('--no-global')
+) {
+  throw new Error('npm and GitHub installation build lifecycle is not portable')
+}
+if (
   manifest.scripts['desktop:build'].includes('hardenedRuntime=false')
   || !manifest.scripts['desktop:build:local'].includes('hardenedRuntime=false')
 ) {

@@ -61,6 +61,7 @@ const required = [
   'scripts/codex-acp',
   'scripts/install-global.mjs',
   'scripts/opencode-acp',
+  'scripts/prepare-build.mjs',
   'server/src/agent/acp-backend-adapter.mjs',
   'server/src/agent/acp-process-client.mjs',
   'server/src/agent/acp-session-registry.mjs',

@@ -66,7 +66,13 @@
 需要 Node.js 22.22.2+ 或 24.15.0+、npm 10+ 和 DashScope API Key。
 仓库提供 `.nvmrc` 和 `.node-version`；使用 nvm 时可直接运行 `nvm use`。
 
-一键安装（直接从 GitHub 安装）：
+一键安装（推荐，从 npm 安装）：
+
+```bash
+npm install -g qwen-audio-agent
+```
+
+也可以直接从 GitHub 安装最新代码：
 
 ```bash
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
@@ -81,7 +87,13 @@ npm install
 npm run install:global
 ```
 
-升级到最新版本（重新执行安装命令即可）：
+升级到最新 npm 版本：
+
+```bash
+npm install -g qwen-audio-agent@latest
+```
+
+升级到 GitHub 最新代码：
 
 ```bash
 npm install -g git+https://github.com/QwenAudio/qwen-audio-agent.git
