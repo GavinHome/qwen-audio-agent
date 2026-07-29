@@ -167,6 +167,18 @@ function legacyBackendAgent(value, legacyDefault) {
   return selected === legacyDefault ? 'qwen-audio-agent-backend' : selected
 }
 
+export function resolveOpenCodeCoordinatorAgent(env = process.env) {
+  const selected = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_AGENT
+    || env.OPENCODE_COORDINATOR_AGENT
+    || '',
+  ).trim()
+  return [
+    'qwen-audio-agent-backend',
+    'qwen-audio-agent-coordinator',
+  ].includes(selected) ? '' : selected
+}
+
 export const config = {
   root,
   host: process.env.HOST || '127.0.0.1',
@@ -290,14 +302,7 @@ export const config = {
     || (backendOwnership === 'owned' ? backendModels.openClaw : '')
   ),
   backendModel: backendOwnership === 'owned' ? backendModels.common : '',
-  openCodeCoordinatorAgent: (
-    sharedBackendAgent
-    || legacyBackendAgent(
-      process.env.OPENCODE_COORDINATOR_AGENT,
-      'qwen-audio-agent-coordinator',
-    )
-    || (backendOwnership === 'owned' ? 'qwen-audio-agent-backend' : '')
-  ),
+  openCodeCoordinatorAgent: resolveOpenCodeCoordinatorAgent(),
   announceIntoContext: (
     String(process.env.QWEN_AUDIO_AGENT_ANNOUNCE_INTO_CONTEXT || 'true').toLowerCase()
     === 'true'

@@ -45,7 +45,7 @@ test('selects one shared ACP adapter for OpenCode', () => {
     protocol: 'opencode',
     baseUrl: 'http://opencode.test',
     directory: '/workspace',
-    coordinatorAgent: 'qwen-audio-agent-backend',
+    coordinatorAgent: 'custom-coordinator',
     sessionStatePath: null,
     acpClient: fakeAcpClient(),
     sessionToolServer: fakeToolServer(),

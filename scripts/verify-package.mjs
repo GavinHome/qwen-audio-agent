@@ -47,7 +47,6 @@ const required = [
   'config/codex/workspace/AGENTS.md',
   'config/claude/workspace/AGENTS.md',
   'config/acp/workspace/AGENTS.md',
-  'config/opencode/agents/qwen-audio-agent-backend.md',
   'config/opencode/workspace/AGENTS.md',
   'config/qoder/workspace/AGENTS.md',
   'CONTRIBUTING.md',

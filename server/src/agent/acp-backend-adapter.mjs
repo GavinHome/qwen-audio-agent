@@ -131,7 +131,7 @@ export class AcpBackendAdapter {
       ownership: this.ownership,
       permissionMode: this.permissionMode,
       transport: 'acp',
-      backendAgent: this.coordinatorAgent || 'qwen-audio-agent-backend',
+      backendAgent: this.coordinatorAgent || null,
       sessionModel: 'one-persistent-backend-agent',
       capabilities: {
         delegation: true,

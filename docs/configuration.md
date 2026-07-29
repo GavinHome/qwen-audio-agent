@@ -354,8 +354,8 @@ OpenCode ACP 接入当前要求 OpenCode `1.18.0` 或更高版本。`auto` 模�
 
 qwen-audio-agent 启动的 OpenCode 默认继承用户原有的全局配置（通常是
 `~/.config/opencode/opencode.json`），因此已经安装的 MCP、Skill、权限、模型和
-插件可以继续使用；qwen-audio-agent 的协调 Agent 配置以附加形式加载，第三层
-Session 工具则由 Gateway 通过 ACP 动态提供。
+插件可以继续使用。协调规则和第三层 Session 工具由 Gateway 在每轮请求中通过
+ACP 动态提供，不会额外安装或覆盖 OpenCode Agent。
 
 如果用户配置或第三方插件与 qwen-audio-agent 冲突，可以临时启用隔离模式排查：
 
