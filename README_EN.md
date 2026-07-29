@@ -61,15 +61,15 @@ module walkthrough.
 
 ## Agent Support
 
-| Backend Agent | Integration | Key strengths | Rating |
+| Backend Agent | Integration | Setup | Rating |
 | --- | --- | --- | --- |
-| OpenCode | Native ACP | Coding and tool tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
-| OpenClaw | Built-in ACP Bridge | Native Agent and tool ecosystem, task execution, and permission control | ★★★★★ |
-| Qoder | Native ACP | Coding tasks, starting and continuing Sessions, task delegation, and cancellation | ★★★★★ |
-| Hermes | Native ACP | Tool calls, project Sessions, and task execution | ★★★★☆ |
-| CodeBuddy | Native ACP | Custom models, project Sessions, and permission control | ★★★★☆ |
-| Codex | External ACP Adapter | Coding tasks, project Sessions, and permission control | ★★★★☆ |
-| Claude Code | External ACP Adapter | Claude Code tools, project Sessions, and permission control | ★★★★☆ |
+| OpenCode | Native ACP | Automatic installation supported | ★★★★★ |
+| OpenClaw | Built-in ACP Bridge | Automatic installation supported | ★★★★★ |
+| Qoder | Native ACP | Requires user installation and authentication | ★★★★★ |
+| Hermes | Native ACP | Requires user installation and model configuration | ★★★★☆ |
+| CodeBuddy | Native ACP | Requires user installation and authentication | ★★★★☆ |
+| Codex | External ACP Adapter | Automatic installation supported | ★★★★☆ |
+| Claude Code | External ACP Adapter | Automatic installation supported; user authentication required | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations
