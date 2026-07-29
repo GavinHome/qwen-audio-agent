@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- 新增基于 `@zed-industries/claude-code-acp` 的 Claude Code 后端，支持独立协调
+  工作区、原生权限确认、第三层项目 Session 和固定版本回退启动。
+
 ## 0.9.1
 
 - 修复 Gateway 在任务结果已经开始播报后重启，仍可能重复播报同一条旧消息的问题；

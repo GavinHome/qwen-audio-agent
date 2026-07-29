@@ -58,6 +58,7 @@ Agent 也应该始终在场。
 | Hermes | 已支持 | 原生 ACP、工具调用、项目 Session 与任务执行 | ★★★★☆ |
 | CodeBuddy | 已支持 | 原生 ACP、自定义模型、项目 Session 与权限控制 | ★★★★☆ |
 | Codex | 已支持 | Codex ACP、代码任务、项目 Session 与权限控制 | ★★★★☆ |
+| Claude Code | 已支持 | Claude Code ACP、代码任务、项目 Session 与权限控制 | ★★★★☆ |
 
 推荐指数综合反映当前集成完整度、兼容性和实际验证程度：五星表示已经过充分测试的
 推荐集成，四星表示正在开发或尚未完成同等范围验证。是否当前可用以状态栏为准。
@@ -219,11 +220,11 @@ AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
-Hermes、CodeBuddy 和 Codex 也可直接选择：
+Hermes、CodeBuddy、Codex 和 Claude Code 也可直接选择：
 
 ```dotenv
 AGENT_PROTOCOL=hermes
-# 或 codebuddy、codex
+# 或 codebuddy、codex、claude
 ```
 
 使用其他支持 ACP stdio 的 Agent：

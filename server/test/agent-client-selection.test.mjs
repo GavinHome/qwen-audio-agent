@@ -80,6 +80,7 @@ for (const protocol of [
   'hermes',
   'codebuddy',
   'codex',
+  'claude',
   'acp',
 ]) {
   test(`selects ${protocol} through the same ACP adapter`, () => {
@@ -97,6 +98,7 @@ for (const protocol of [
       codeBuddyModel: 'qwen3.7-max',
       codexDirectory: '/codex',
       codexModel: 'qwen3.7-max',
+      claudeDirectory: '/claude',
       sessionStatePath: null,
       acpClient: fakeAcpClient(),
       sessionToolServer: fakeToolServer(),

@@ -69,6 +69,7 @@ module walkthrough.
 | Hermes | Supported | Native ACP, tool calls, project Sessions, and task execution | ★★★★☆ |
 | CodeBuddy | Supported | Native ACP, custom models, project Sessions, and permission control | ★★★★☆ |
 | Codex | Supported | Codex ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
+| Claude Code | Supported | Claude Code ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations
@@ -246,11 +247,11 @@ AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
-Hermes, CodeBuddy, and Codex can also be selected directly:
+Hermes, CodeBuddy, Codex, and Claude Code can also be selected directly:
 
 ```dotenv
 AGENT_PROTOCOL=hermes
-# Or codebuddy or codex
+# Or codebuddy, codex, or claude
 ```
 
 Use another Agent that supports ACP over stdio:

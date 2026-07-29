@@ -64,6 +64,15 @@ export function resolveCodexWorkspace(
     : resolve(configDirectory, 'workspaces/codex')
 }
 
+export function resolveClaudeWorkspace(
+  env = process.env,
+  configDirectory = runtimeEnvironment.configDirectory,
+) {
+  return env.CLAUDE_WORKSPACE
+    ? resolve(root, env.CLAUDE_WORKSPACE)
+    : resolve(configDirectory, 'workspaces/claude')
+}
+
 export function resolveOpenClawWorkspace(
   env = process.env,
   configDirectory = runtimeEnvironment.configDirectory,
@@ -258,6 +267,14 @@ export const config = {
         : 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     )
   ).replace(/\/+$/, ''),
+  claudeDirectory: resolveClaudeWorkspace(),
+  claudeCliPath: String(process.env.CLAUDE_CODE_ACP_BIN || '').trim(),
+  claudeExecutable: String(
+    process.env.CLAUDE_CODE_EXECUTABLE || '',
+  ).trim(),
+  claudeConfigDirectory: process.env.CLAUDE_CONFIG_DIR
+    ? resolve(process.env.CLAUDE_CONFIG_DIR)
+    : '',
   acpCommand: String(process.env.ACP_COMMAND || '').trim(),
   acpArgs: resolveAcpArgs(process.env.ACP_ARGS),
   acpLabel: String(process.env.ACP_LABEL || 'ACP Agent').trim() || 'ACP Agent',

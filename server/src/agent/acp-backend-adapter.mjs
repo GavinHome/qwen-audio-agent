@@ -55,6 +55,7 @@ export class AcpBackendAdapter {
     directory = process.cwd(),
     cliPath = '',
     configDirectory = '',
+    claudeExecutable = '',
     baseUrl = '',
     token = '',
     tokenFile = '',
@@ -86,6 +87,7 @@ export class AcpBackendAdapter {
       tokenFile,
       coordinatorAgent,
       configDirectory,
+      claudeExecutable,
       permissionMode: this.permissionMode,
       model: this.model,
     })
