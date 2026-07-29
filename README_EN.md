@@ -66,7 +66,7 @@ module walkthrough.
 | OpenCode | Native ACP | Automatic installation supported | ★★★★★ |
 | OpenClaw | Built-in ACP Bridge | Automatic installation supported | ★★★★★ |
 | Qoder | Native ACP | Requires user installation and authentication | ★★★★★ |
-| Hermes | Native ACP | Requires user installation and authentication | ★★★★☆ |
+| Hermes | Native ACP | Requires user installation and model configuration | ★★★★☆ |
 | CodeBuddy | Native ACP | Requires user installation and authentication | ★★★★☆ |
 | Codex | External ACP Adapter | Automatic installation supported | ★★★★☆ |
 | Claude Code | External ACP Adapter | Automatic installation supported; user authentication required | ★★★★☆ |

@@ -55,7 +55,7 @@ Agent 也应该始终在场。
 | OpenCode | 原生 ACP | 可自动安装 | ★★★★★ |
 | OpenClaw | 内置 ACP 桥接 | 可自动安装 | ★★★★★ |
 | Qoder | 原生 ACP | 需要用户安装和认证 | ★★★★★ |
-| Hermes | 原生 ACP | 需要用户安装和认证 | ★★★★☆ |
+| Hermes | 原生 ACP | 需要用户安装和配置模型 | ★★★★☆ |
 | CodeBuddy | 原生 ACP | 需要用户安装和认证 | ★★★★☆ |
 | Codex | 外部 ACP 适配 | 可自动安装 | ★★★★☆ |
 | Claude Code | 外部 ACP 适配 | 可自动安装，需要用户认证 | ★★★★☆ |
