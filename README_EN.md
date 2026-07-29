@@ -61,22 +61,22 @@ module walkthrough.
 
 ## Agent Support
 
-| Backend Agent | Integration | Key strengths | Status | Rating |
-| --- | --- | --- | --- | --- |
-| OpenCode | Native ACP | Coding and tool tasks, project Sessions, progress queries, and cancellation | Supported | ★★★★★ |
-| OpenClaw | ACP Bridge | Native Agent and tool ecosystem, task execution, and permission control | Supported | ★★★★★ |
-| Qoder | Native ACP | Coding tasks, starting and continuing Sessions, task delegation, and cancellation | Supported | ★★★★★ |
-| Hermes | Native ACP | Tool calls, project Sessions, and task execution | Supported | ★★★★☆ |
-| CodeBuddy | Native ACP | Custom models, project Sessions, and permission control | Supported | ★★★★☆ |
-| Codex | ACP Adapter | Coding tasks, project Sessions, and permission control | Supported | ★★★★☆ |
-| Claude Code | ACP Adapter | Claude Code tools, project Sessions, and permission control | Supported | ★★★★☆ |
+| Backend Agent | Integration | Key strengths | Rating |
+| --- | --- | --- | --- |
+| OpenCode | Native ACP | Coding and tool tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
+| OpenClaw | Built-in ACP Bridge | Native Agent and tool ecosystem, task execution, and permission control | ★★★★★ |
+| Qoder | Native ACP | Coding tasks, starting and continuing Sessions, task delegation, and cancellation | ★★★★★ |
+| Hermes | Native ACP | Tool calls, project Sessions, and task execution | ★★★★☆ |
+| CodeBuddy | Native ACP | Custom models, project Sessions, and permission control | ★★★★☆ |
+| Codex | External ACP Adapter | Coding tasks, project Sessions, and permission control | ★★★★☆ |
+| Claude Code | External ACP Adapter | Claude Code tools, project Sessions, and permission control | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations
 that have been thoroughly tested; four stars identify integrations still in
-development or not yet validated to the same extent. Refer to the status column
-for current availability. See the [configuration guide](docs/configuration.md)
-for detailed setup and capability boundaries.
+development or not yet validated to the same extent. See the
+[configuration guide](docs/configuration.md) for detailed setup and capability
+boundaries.
 
 ## Installation
 
