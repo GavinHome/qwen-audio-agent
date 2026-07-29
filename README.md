@@ -50,15 +50,15 @@ Agent 也应该始终在场。
 
 ## Agent 支持
 
-| 后台 Agent | 接入方式 | 核心特点 | 推荐指数 |
+| 后台 Agent | 接入方式 | 接入准备 | 推荐指数 |
 | --- | --- | --- | --- |
-| OpenCode | 原生 ACP | 代码与工具任务、项目 Session、进度查询与取消 | ★★★★★ |
-| OpenClaw | 内置 ACP 桥接 | 原生 Agent 与工具生态、任务执行、权限控制 | ★★★★★ |
-| Qoder | 原生 ACP | 代码任务、Session 新建与继续、任务委派与取消 | ★★★★★ |
-| Hermes | 原生 ACP | 工具调用、项目 Session、任务执行 | ★★★★☆ |
-| CodeBuddy | 原生 ACP | 自定义模型、项目 Session、权限控制 | ★★★★☆ |
-| Codex | 外部 ACP 适配 | 代码任务、项目 Session、权限控制 | ★★★★☆ |
-| Claude Code | 外部 ACP 适配 | Claude Code 工具、项目 Session、权限控制 | ★★★★☆ |
+| OpenCode | 原生 ACP | 可自动安装 | ★★★★★ |
+| OpenClaw | 内置 ACP 桥接 | 可自动安装 | ★★★★★ |
+| Qoder | 原生 ACP | 需要用户安装和认证 | ★★★★★ |
+| Hermes | 原生 ACP | 需要用户安装和认证 | ★★★★☆ |
+| CodeBuddy | 原生 ACP | 需要用户安装和认证 | ★★★★☆ |
+| Codex | 外部 ACP 适配 | 可自动安装 | ★★★★☆ |
+| Claude Code | 外部 ACP 适配 | 可自动安装，需要用户认证 | ★★★★☆ |
 
 推荐指数综合反映当前集成完整度、兼容性和实际验证程度：五星表示已经过充分测试的
 推荐集成，四星表示正在开发或尚未完成同等范围验证。
