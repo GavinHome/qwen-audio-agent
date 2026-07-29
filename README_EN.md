@@ -61,21 +61,22 @@ module walkthrough.
 
 ## Agent Support
 
-| Backend Agent | Status | Main capabilities | Rating |
+| Backend Agent | Integration | Key strengths | Rating |
 | --- | --- | --- | --- |
-| OpenCode | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
-| OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★★ |
-| Qoder | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
-| Hermes | Supported | Native ACP, tool calls, project Sessions, and task execution | ★★★★☆ |
-| CodeBuddy | Supported | Native ACP, custom models, project Sessions, and permission control | ★★★★☆ |
-| Codex | Supported | Codex ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
+| OpenCode | Native ACP | Coding and tool tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
+| OpenClaw | Built-in ACP Bridge | Native Agent and tool ecosystem, task execution, and permission control | ★★★★★ |
+| Qoder | Native ACP | Coding tasks, starting and continuing Sessions, task delegation, and cancellation | ★★★★★ |
+| Hermes | Native ACP | Tool calls, project Sessions, and task execution | ★★★★☆ |
+| CodeBuddy | Native ACP | Custom models, project Sessions, and permission control | ★★★★☆ |
+| Codex | External ACP Adapter | Coding tasks, project Sessions, and permission control | ★★★★☆ |
+| Claude Code | External ACP Adapter | Claude Code tools, project Sessions, and permission control | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations
 that have been thoroughly tested; four stars identify integrations still in
-development or not yet validated to the same extent. Refer to the status column
-for current availability. See the [configuration guide](docs/configuration.md)
-for detailed setup and capability boundaries.
+development or not yet validated to the same extent. See the
+[configuration guide](docs/configuration.md) for detailed setup and capability
+boundaries.
 
 ## Installation
 
@@ -246,11 +247,11 @@ AGENT_PROTOCOL=qoder
 QODER_MODEL=auto
 ```
 
-Hermes, CodeBuddy, and Codex can also be selected directly:
+Hermes, CodeBuddy, Codex, and Claude Code can also be selected directly:
 
 ```dotenv
 AGENT_PROTOCOL=hermes
-# Or codebuddy or codex
+# Or codebuddy, codex, or claude
 ```
 
 Use another Agent that supports ACP over stdio:
