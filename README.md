@@ -50,15 +50,15 @@ Agent 也应该始终在场。
 
 ## Agent 支持
 
-| 后台 Agent | 状态 | 主要能力 | 推荐指数 |
-| --- | --- | --- | --- |
-| OpenCode | 已支持 | 工具与代码任务、项目 Session、进度查询与取消 | ★★★★★ |
-| OpenClaw | 已支持 | Agent、工具、任务执行与权限控制 | ★★★★★ |
-| Qoder | 已支持 | 原生 CLI Session、新建或继续项目、任务委派与取消 | ★★★★★ |
-| Hermes | 已支持 | 原生 ACP、工具调用、项目 Session 与任务执行 | ★★★★☆ |
-| CodeBuddy | 已支持 | 原生 ACP、自定义模型、项目 Session 与权限控制 | ★★★★☆ |
-| Codex | 已支持 | Codex ACP、代码任务、项目 Session 与权限控制 | ★★★★☆ |
-| Claude Code | 已支持 | Claude Code ACP、代码任务、项目 Session 与权限控制 | ★★★★☆ |
+| 后台 Agent | 接入方式 | 核心特点 | 状态 | 推荐指数 |
+| --- | --- | --- | --- | --- |
+| OpenCode | 原生 ACP | 代码与工具任务、项目 Session、进度查询与取消 | 已支持 | ★★★★★ |
+| OpenClaw | ACP Bridge | 原生 Agent 与工具生态、任务执行、权限控制 | 已支持 | ★★★★★ |
+| Qoder | 原生 ACP | 代码任务、Session 新建与继续、任务委派与取消 | 已支持 | ★★★★★ |
+| Hermes | 原生 ACP | 工具调用、项目 Session、任务执行 | 已支持 | ★★★★☆ |
+| CodeBuddy | 原生 ACP | 自定义模型、项目 Session、权限控制 | 已支持 | ★★★★☆ |
+| Codex | ACP Adapter | 代码任务、项目 Session、权限控制 | 已支持 | ★★★★☆ |
+| Claude Code | ACP Adapter | Claude Code 工具、项目 Session、权限控制 | 已支持 | ★★★★☆ |
 
 推荐指数综合反映当前集成完整度、兼容性和实际验证程度：五星表示已经过充分测试的
 推荐集成，四星表示正在开发或尚未完成同等范围验证。是否当前可用以状态栏为准。

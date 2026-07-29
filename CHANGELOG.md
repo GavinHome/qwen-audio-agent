@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 - 新增基于 `@zed-industries/claude-code-acp` 的 Claude Code 后端，支持独立协调
   工作区、原生权限确认、第三层项目 Session 和固定版本回退启动。

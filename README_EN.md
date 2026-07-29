@@ -61,15 +61,15 @@ module walkthrough.
 
 ## Agent Support
 
-| Backend Agent | Status | Main capabilities | Rating |
-| --- | --- | --- | --- |
-| OpenCode | Supported | Tools and coding tasks, project Sessions, progress queries, and cancellation | ★★★★★ |
-| OpenClaw | Supported | Agents, tools, task execution, and permission control | ★★★★★ |
-| Qoder | Supported | Native CLI Sessions, starting or continuing projects, task delegation, and cancellation | ★★★★★ |
-| Hermes | Supported | Native ACP, tool calls, project Sessions, and task execution | ★★★★☆ |
-| CodeBuddy | Supported | Native ACP, custom models, project Sessions, and permission control | ★★★★☆ |
-| Codex | Supported | Codex ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
-| Claude Code | Supported | Claude Code ACP, coding tasks, project Sessions, and permission control | ★★★★☆ |
+| Backend Agent | Integration | Key strengths | Status | Rating |
+| --- | --- | --- | --- | --- |
+| OpenCode | Native ACP | Coding and tool tasks, project Sessions, progress queries, and cancellation | Supported | ★★★★★ |
+| OpenClaw | ACP Bridge | Native Agent and tool ecosystem, task execution, and permission control | Supported | ★★★★★ |
+| Qoder | Native ACP | Coding tasks, starting and continuing Sessions, task delegation, and cancellation | Supported | ★★★★★ |
+| Hermes | Native ACP | Tool calls, project Sessions, and task execution | Supported | ★★★★☆ |
+| CodeBuddy | Native ACP | Custom models, project Sessions, and permission control | Supported | ★★★★☆ |
+| Codex | ACP Adapter | Coding tasks, project Sessions, and permission control | Supported | ★★★★☆ |
+| Claude Code | ACP Adapter | Claude Code tools, project Sessions, and permission control | Supported | ★★★★☆ |
 
 Ratings reflect the current integration completeness, compatibility, and
 extent of real-world validation. Five stars identify recommended integrations
