@@ -16,11 +16,21 @@ import {
   normalizeRealtimeProvider,
 } from '../../shared/realtime-provider-catalog.mjs'
 import { normalizeDesktopLanguage } from './i18n.mjs'
+import {
+  normalizeBloubColor,
+  normalizeBloubExpression,
+  normalizeBloubShape,
+} from '../../shared/bloub-catalog.mjs'
 
 const DEFAULTS = {
   gatewayUrl: 'http://127.0.0.1:3101',
   orbStyle: 'fluid',
   orbSkin: 'fluid',
+  orbBloubShape: 'cercle',
+  orbBloubColor: 'encre',
+  orbBloubExpression: 'neutre',
+  orbBloubAutoState: true,
+  orbBloubFixedShape: false,
   autoHideSeconds: 60,
   wakeShortcut: 'CommandOrControl+Shift+Space',
   wakeWordEnabled: false,
@@ -45,6 +55,11 @@ const SETTING_KEYS = {
   gatewayUrl: 'QWEN_AUDIO_AGENT_URL',
   orbStyle: 'QWEN_AUDIO_ORB_STYLE',
   orbSkin: 'QWEN_AUDIO_ORB_SKIN',
+  orbBloubShape: 'QWEN_AUDIO_ORB_BLOUB_SHAPE',
+  orbBloubColor: 'QWEN_AUDIO_ORB_BLOUB_COLOR',
+  orbBloubExpression: 'QWEN_AUDIO_ORB_BLOUB_EXPRESSION',
+  orbBloubAutoState: 'QWEN_AUDIO_ORB_BLOUB_AUTO_STATE',
+  orbBloubFixedShape: 'QWEN_AUDIO_ORB_BLOUB_FIXED_SHAPE',
   autoHideSeconds: 'QWEN_AUDIO_DESKTOP_AUTO_HIDE_SECONDS',
   wakeShortcut: 'QWEN_AUDIO_DESKTOP_WAKE_SHORTCUT',
   wakeWordEnabled: 'QWEN_AUDIO_WAKE_WORD_ENABLED',
@@ -59,6 +74,8 @@ const SETTING_KEYS = {
   speechToSpeechAuthToken: 'SPEECH_TO_SPEECH_AUTH_TOKEN',
   backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
   backendOwnership: 'QWEN_AUDIO_AGENT_BACKEND_OWNERSHIP',
+  backendUrl: 'QWEN_AUDIO_AGENT_BACKEND_URL',
+  backendCredential: 'QWEN_AUDIO_AGENT_BACKEND_CREDENTIAL',
   nodePath: 'QWEN_AUDIO_AGENT_NODE_PATH',
   language: 'QWEN_AUDIO_DESKTOP_LANGUAGE',
 }
@@ -226,6 +243,31 @@ export function parseSettings(content = '', fallback = {}) {
     'QWEN_AUDIO_ORB_SKIN',
     fallback.QWEN_AUDIO_ORB_SKIN || '',
   )
+  const configuredBloubShape = configured(
+    values,
+    'QWEN_AUDIO_ORB_BLOUB_SHAPE',
+    fallback.QWEN_AUDIO_ORB_BLOUB_SHAPE || '',
+  )
+  const configuredBloubColor = configured(
+    values,
+    'QWEN_AUDIO_ORB_BLOUB_COLOR',
+    fallback.QWEN_AUDIO_ORB_BLOUB_COLOR || '',
+  )
+  const configuredBloubExpression = configured(
+    values,
+    'QWEN_AUDIO_ORB_BLOUB_EXPRESSION',
+    fallback.QWEN_AUDIO_ORB_BLOUB_EXPRESSION || '',
+  )
+  const configuredBloubAutoState = configured(
+    values,
+    'QWEN_AUDIO_ORB_BLOUB_AUTO_STATE',
+    fallback.QWEN_AUDIO_ORB_BLOUB_AUTO_STATE ?? true,
+  )
+  const configuredBloubFixedShape = configured(
+    values,
+    'QWEN_AUDIO_ORB_BLOUB_FIXED_SHAPE',
+    fallback.QWEN_AUDIO_ORB_BLOUB_FIXED_SHAPE ?? false,
+  )
   const configuredS2sUrl = configured(
     values,
     'SPEECH_TO_SPEECH_REALTIME_URL',
@@ -277,6 +319,11 @@ export function parseSettings(content = '', fallback = {}) {
       orbSkin: configuredOrbSkin,
       orbStyle: configuredOrbStyle,
     }),
+    orbBloubShape: normalizeBloubShape(configuredBloubShape),
+    orbBloubColor: normalizeBloubColor(configuredBloubColor),
+    orbBloubExpression: normalizeBloubExpression(configuredBloubExpression),
+    orbBloubAutoState: String(configuredBloubAutoState).toLowerCase() === 'true',
+    orbBloubFixedShape: String(configuredBloubFixedShape).toLowerCase() === 'true',
     autoHideSeconds: cleanAutoHideSeconds(configured(
       values,
       'QWEN_AUDIO_DESKTOP_AUTO_HIDE_SECONDS',
@@ -382,6 +429,15 @@ export function normalizeSettings(settings = {}) {
       ? String(settings.orbStyle || DEFAULTS.orbStyle).toLowerCase()
       : DEFAULTS.orbStyle,
     orbSkin: normalizeOrbSkinId(settings.orbSkin) || DEFAULTS.orbSkin,
+    orbBloubShape: normalizeBloubShape(settings.orbBloubShape),
+    orbBloubColor: normalizeBloubColor(settings.orbBloubColor),
+    orbBloubExpression: normalizeBloubExpression(settings.orbBloubExpression),
+    orbBloubAutoState: settings.orbBloubAutoState === undefined
+      ? DEFAULTS.orbBloubAutoState
+      : String(settings.orbBloubAutoState).toLowerCase() === 'true',
+    orbBloubFixedShape: settings.orbBloubFixedShape === undefined
+      ? DEFAULTS.orbBloubFixedShape
+      : String(settings.orbBloubFixedShape).toLowerCase() === 'true',
     autoHideSeconds: cleanAutoHideSeconds(
       settings.autoHideSeconds ?? DEFAULTS.autoHideSeconds,
     ),

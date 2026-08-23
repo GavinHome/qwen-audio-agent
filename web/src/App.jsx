@@ -17,7 +17,9 @@ import MessageContent from './MessageContent.jsx'
 import MultimodalComposer from './MultimodalComposer.jsx'
 import DesktopFluidOrb from './DesktopFluidOrb.jsx'
 import DesktopSpriteOrb from './DesktopSpriteOrb.jsx'
+import DesktopBloubOrb from './DesktopBloubOrb.jsx'
 import { desktopOrbClassName, resolveOrbVisualState } from './orb-presentation.js'
+import { useBloubAppearance } from './use-bloub-appearance.js'
 import {
   isBuiltinOrbSkin,
   resolveOrbSkinId,
@@ -799,6 +801,11 @@ export default function App() {
     task => task.authorization?.status === 'pending',
   )
 
+  const bloubAppearance = useBloubAppearance({
+    orbSkinId,
+    orbVisualState,
+  })
+
   useEffect(() => {
     if (!desktopOrbMode) return
     const current = desktopRuntime.overall
@@ -1108,9 +1115,19 @@ export default function App() {
         >
         {isBuiltinOrbSkin(orbSkinId) || spriteOrbFailed
           ? (
-              <DesktopFluidOrb
-                style={isBuiltinOrbSkin(orbSkinId) ? orbSkinId : 'fluid'}
-              />
+              orbSkinId === 'bloub-bot'
+                ? (
+                    <DesktopBloubOrb
+                      shape={bloubAppearance.shape}
+                      color={bloubAppearance.color}
+                      expression={bloubAppearance.expression}
+                    />
+                  )
+                : (
+                    <DesktopFluidOrb
+                      style={isBuiltinOrbSkin(orbSkinId) ? orbSkinId : 'fluid'}
+                    />
+                  )
             )
           : (
               <DesktopSpriteOrb

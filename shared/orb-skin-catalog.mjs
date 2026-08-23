@@ -5,6 +5,7 @@
 export const BUILTIN_ORB_SKINS = Object.freeze([
   Object.freeze({ id: 'fluid', type: 'theme', displayName: '流光声波球' }),
   Object.freeze({ id: 'goo', type: 'theme', displayName: '液态渐变球' }),
+  Object.freeze({ id: 'bloub-bot', type: 'theme', displayName: 'Bloub 墨球' }),
 ])
 
 export const ORB_SKIN_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i
@@ -18,11 +19,12 @@ export function normalizeOrbSkinId(value) {
   return ORB_SKIN_ID_PATTERN.test(id) ? id : ''
 }
 
-// 统一回退链：orbSkin → orbStyle（旧配置只读兼容）→ fluid。
-export function resolveOrbSkinId({ orbSkin, orbStyle } = {}) {
+// 统一回退链：orbSkin → orbStyle（旧配置只读兼容）→ defaultSkin → fluid。
+export function resolveOrbSkinId({ orbSkin, orbStyle } = {}, defaultSkin) {
   return (
     normalizeOrbSkinId(orbSkin)
     || normalizeOrbSkinId(orbStyle)
+    || normalizeOrbSkinId(defaultSkin)
     || 'fluid'
   )
 }

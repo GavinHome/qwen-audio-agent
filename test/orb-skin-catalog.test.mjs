@@ -9,7 +9,7 @@ import {
 } from '../shared/orb-skin-catalog.mjs'
 
 test('exposes the builtin theme skins as first-class catalog entries', () => {
-  assert.deepEqual(BUILTIN_ORB_SKINS.map(skin => skin.id), ['fluid', 'goo'])
+  assert.deepEqual(BUILTIN_ORB_SKINS.map(skin => skin.id), ['fluid', 'goo', 'bloub-bot'])
   for (const skin of BUILTIN_ORB_SKINS) {
     assert.equal(skin.type, 'theme')
     assert.ok(skin.displayName)
@@ -17,6 +17,7 @@ test('exposes the builtin theme skins as first-class catalog entries', () => {
   }
   assert.equal(isBuiltinOrbSkin('fluid'), true)
   assert.equal(isBuiltinOrbSkin('goo'), true)
+  assert.equal(isBuiltinOrbSkin('bloub-bot'), true)
   assert.equal(isBuiltinOrbSkin('firefly--lingxiaotian'), false)
   assert.equal(isBuiltinOrbSkin(''), false)
 })
@@ -39,6 +40,6 @@ test('resolves the effective skin through the unified fallback chain', () => {
   )
   assert.equal(resolveOrbSkinId({ orbSkin: '', orbStyle: 'goo' }), 'goo')
   assert.equal(resolveOrbSkinId({ orbSkin: '../bad', orbStyle: 'goo' }), 'goo')
-  assert.equal(resolveOrbSkinId({}), 'fluid')
+  assert.equal(resolveOrbSkinId({}, 'bloub-bot'), 'bloub-bot')
   assert.equal(resolveOrbSkinId(), 'fluid')
 })

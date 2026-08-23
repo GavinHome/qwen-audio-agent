@@ -479,6 +479,11 @@ async function loadQwenAudioAgent(window) {
       autoHideSeconds: settings.autoHideSeconds,
       wakeWordEnabled: settings.wakeWordEnabled,
       language: effectiveDesktopLanguage(settings.language, app.getLocale()),
+      orbBloubShape: settings.orbBloubShape,
+      orbBloubColor: settings.orbBloubColor,
+      orbBloubExpression: settings.orbBloubExpression,
+      orbBloubAutoState: settings.orbBloubAutoState,
+      orbBloubFixedShape: settings.orbBloubFixedShape,
     }))
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -1102,6 +1107,13 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     || previous.backendCredential !== normalized.backendCredential
   )
   const orbSkinChanged = previous.orbSkin !== normalized.orbSkin
+  const orbBloubAppearanceChanged = (
+    previous.orbBloubShape !== normalized.orbBloubShape
+    || previous.orbBloubColor !== normalized.orbBloubColor
+    || previous.orbBloubExpression !== normalized.orbBloubExpression
+    || previous.orbBloubAutoState !== normalized.orbBloubAutoState
+    || previous.orbBloubFixedShape !== normalized.orbBloubFixedShape
+  )
   const autoHideChanged = (
     previous.autoHideSeconds !== normalized.autoHideSeconds
   )
@@ -1216,7 +1228,7 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
   process.env.QWEN_AUDIO_ORB_SKIN = normalized.orbSkin
   await ensureDesktopUi()
   const desktopRendererChanged = (
-    (restarted || gatewayChanged || orbSkinChanged || autoHideChanged || languageChanged)
+    (restarted || gatewayChanged || orbSkinChanged || orbBloubAppearanceChanged || autoHideChanged || languageChanged)
     && mainWindow
     && !mainWindow.isDestroyed()
   )

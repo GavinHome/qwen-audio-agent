@@ -359,6 +359,34 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   overflow: visible;
   isolation: isolate;
 }
+.bloub-orb {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+}
+.bloub-orb-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.bloub-appearance {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bloub-appearance select {
+  background: #ffffff08;
+  color: inherit;
+  border: 1px solid #ffffff18;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+}
 .fluid-orb::before,
 .fluid-orb::after {
   content: "";
