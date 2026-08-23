@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   DEFAULT_DASHSCOPE_REALTIME_MODEL,
+  DEFAULT_STEPFUN_REALTIME_MODEL,
   resolveDashScopeRealtimeModelProfile,
 } from './realtime-model-catalog.mjs'
 
@@ -11,19 +12,32 @@ export {
   DASHSCOPE_REALTIME_MODEL_PROFILES,
   DEFAULT_DASHSCOPE_REALTIME_MODEL,
   DEFAULT_DASHSCOPE_REALTIME_VOICE,
+  DEFAULT_STEPFUN_REALTIME_MODEL,
+  DEFAULT_STEPFUN_REALTIME_VOICE,
+  STEPFUN_REALTIME_MODEL_PROFILES,
   listDashScopeRealtimeModelProfiles,
+  listStepFunRealtimeModelProfiles,
   resolveDashScopeRealtimeModelProfile,
+  resolveStepFunRealtimeModelProfile,
 } from './realtime-model-catalog.mjs'
 
 export const DEFAULT_REALTIME_PROVIDER = 'dashscope'
 export const DEFAULT_DASHSCOPE_REALTIME_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime'
 export const DEFAULT_SPEECH_TO_SPEECH_REALTIME_URL = 'ws://127.0.0.1:8765/v1/realtime'
+// StepFun 开放平台按量计费端点；Step Plan 订阅端点（/step_plan/v1）不支持
+// step-audio-2 系列模型，不要作为默认值。
+export const DEFAULT_STEPFUN_REALTIME_URL = 'wss://api.stepfun.com/v1/realtime'
 
 const PROVIDERS = Object.freeze({
   dashscope: Object.freeze({
     key: 'dashscope',
     label: 'DashScope',
     aliases: Object.freeze(['qwen']),
+  }),
+  stepfun: Object.freeze({
+    key: 'stepfun',
+    label: 'StepFun',
+    aliases: Object.freeze(['stepaudio']),
   }),
   'speech-to-speech': Object.freeze({
     key: 'speech-to-speech',
@@ -102,6 +116,14 @@ export function resolveRealtimeFrontendConfiguration(env = process.env) {
     dashscopeModel,
     env,
   )
+  const stepfunApiKey = clean(env.STEPFUN_API_KEY)
+  const stepfunRealtimeUrl = withoutTrailing(
+    env.STEPFUN_REALTIME_URL || DEFAULT_STEPFUN_REALTIME_URL,
+    /(?:\/+|\?+)$/,
+  )
+  const stepfunModel = clean(env.STEPFUN_REALTIME_MODEL)
+    || DEFAULT_STEPFUN_REALTIME_MODEL
+  const stepfunVoice = clean(env.STEPFUN_REALTIME_VOICE)
   const speechToSpeechRealtimeUrl = withoutTrailing(
     env.SPEECH_TO_SPEECH_REALTIME_URL
     || env.S2S_REALTIME_URL
@@ -118,6 +140,8 @@ export function resolveRealtimeFrontendConfiguration(env = process.env) {
   )
   const configured = provider === 'dashscope'
     ? Boolean(dashscopeApiKey)
+    : provider === 'stepfun'
+    ? Boolean(stepfunApiKey)
     : speechToSpeechConfigured
   const identity = provider === 'dashscope'
     ? {
@@ -126,6 +150,14 @@ export function resolveRealtimeFrontendConfiguration(env = process.env) {
         model: dashscopeModel,
         voice: dashscopeVoice,
         credential: dashscopeApiKey,
+      }
+    : provider === 'stepfun'
+    ? {
+        provider,
+        endpoint: stepfunRealtimeUrl,
+        model: stepfunModel,
+        voice: stepfunVoice,
+        credential: stepfunApiKey,
       }
     : {
         provider,
@@ -145,11 +177,17 @@ export function resolveRealtimeFrontendConfiguration(env = process.env) {
     dashscopeRealtimeUrl,
     dashscopeModel,
     dashscopeVoice,
+    stepfunApiKey,
+    stepfunRealtimeUrl,
+    stepfunModel,
+    stepfunVoice,
     speechToSpeechRealtimeUrl,
     speechToSpeechAuthToken,
     speechToSpeechConfigured,
     missingConfigurationMessage: provider === 'dashscope'
       ? '缺少 DASHSCOPE_API_KEY。请运行 qwenaudio config 查看配置文件位置。'
+      : provider === 'stepfun'
+      ? '缺少 STEPFUN_API_KEY。请运行 qwenaudio config 查看配置文件位置。'
       : `无法使用 ${PROVIDERS[provider].label} 前台，请检查其服务地址和配置。`,
   }
 }

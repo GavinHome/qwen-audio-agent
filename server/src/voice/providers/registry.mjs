@@ -4,6 +4,7 @@ import {
 } from '../../../../shared/realtime-provider-catalog.mjs'
 import { dashscopeProvider } from './dashscope.mjs'
 import { s2sProvider } from './s2s.mjs'
+import { stepfunProvider } from './stepfun.mjs'
 import { createRealtimeProviderRegistry } from './provider-registry.mjs'
 
 export {
@@ -14,7 +15,7 @@ export {
 } from './provider-registry.mjs'
 
 export const defaultRealtimeProviderRegistry = createRealtimeProviderRegistry({
-  providers: [dashscopeProvider, s2sProvider],
+  providers: [dashscopeProvider, stepfunProvider, s2sProvider],
 })
 
 export function resolveRealtimeProvider(requested) {
@@ -75,7 +76,9 @@ export function describeActiveRealtime(requested, {
  */
 export const REALTIME_PROVIDERS = Object.freeze({
   dashscope: dashscopeProvider,
+  stepfun: stepfunProvider,
   'speech-to-speech': s2sProvider,
   qwen: dashscopeProvider,
+  stepaudio: stepfunProvider,
   s2s: s2sProvider,
 })

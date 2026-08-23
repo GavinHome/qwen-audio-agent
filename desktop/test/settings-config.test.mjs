@@ -17,6 +17,10 @@ const REALTIME_DEFAULTS = {
   realtimeModel: 'qwen-audio-3.0-realtime-plus',
   audioRealtimeVoice: '',
   omniRealtimeVoice: '',
+  stepfunApiKey: '',
+  stepfunRealtimeUrl: 'wss://api.stepfun.com/v1/realtime',
+  stepfunModel: 'step-audio-2',
+  stepfunRealtimeVoice: '',
   speechToSpeechRealtimeUrl: '',
   speechToSpeechAuthToken: '',
 }
@@ -79,6 +83,36 @@ test('keeps profile defaults out of persisted desktop voice overrides', () => {
     }).omniRealtimeVoice,
     '',
   )
+})
+
+test('reads StepFun realtime settings and requires its API key', () => {
+  const settings = parseSettings([
+    'QWEN_AUDIO_REALTIME_PROVIDER=stepfun',
+    'STEPFUN_API_KEY=sk-stepfun',
+    'STEPFUN_REALTIME_MODEL=step-1o-audio',
+    'STEPFUN_REALTIME_VOICE=cloned-voice',
+    '',
+  ].join('\n'))
+
+  assert.equal(settings.realtimeProvider, 'stepfun')
+  assert.equal(settings.stepfunApiKey, 'sk-stepfun')
+  assert.equal(settings.stepfunRealtimeUrl, 'wss://api.stepfun.com/v1/realtime')
+  assert.equal(settings.stepfunModel, 'step-1o-audio')
+  assert.equal(settings.stepfunRealtimeVoice, 'cloned-voice')
+  assert.equal(realtimeSettingsConfigured(settings), true)
+  assert.equal(
+    realtimeSettingsConfigured({ ...settings, stepfunApiKey: '' }),
+    false,
+  )
+
+  const content = updateSettingsContent('', settings)
+  assert.match(content, /STEPFUN_API_KEY=sk-stepfun/)
+  assert.match(content, /STEPFUN_REALTIME_MODEL=step-1o-audio/)
+  assert.match(content, /STEPFUN_REALTIME_VOICE=cloned-voice/)
+
+  // 清空音色后配置文件不再保留该键，回落到模型默认音色。
+  const cleared = updateSettingsContent(content, { stepfunRealtimeVoice: '' })
+  assert.doesNotMatch(cleared, /STEPFUN_REALTIME_VOICE=/)
 })
 
 test('persists independent desktop voice overrides without changing them on model switch', () => {

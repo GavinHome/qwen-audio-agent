@@ -104,6 +104,14 @@
                   <input
                     type="radio"
                     name="realtime-provider"
+                    value="stepfun"
+                  />
+                  <span>StepFun</span>
+                </label>
+                <label class="provider-segment">
+                  <input
+                    type="radio"
+                    name="realtime-provider"
                     value="speech-to-speech"
                   />
                   <span>Speech-to-Speech</span>
@@ -159,6 +167,61 @@
                 </div>
                 <p class="provider-attribution">
                   Qwen Realtime · DashScope 兼容协议
+                </p>
+              </div>
+
+              <div
+                class="provider-panel"
+                data-provider-panel="stepfun"
+                hidden
+              >
+                <div class="setting-row service-url-row">
+                  <label for="stepfun-realtime-url">服务地址</label>
+                  <input
+                    id="stepfun-realtime-url"
+                    type="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="wss://api.stepfun.com/v1/realtime"
+                  />
+                </div>
+
+                <div class="setting-row api-key-row">
+                  <label for="stepfun-api-key">API Key</label>
+                  <div class="field-with-action">
+                    <input
+                      id="stepfun-api-key"
+                      type="password"
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="StepFun API Key"
+                    />
+                    <button id="get-stepfun-api-key" class="link-button" type="button">
+                      <img src="./assets/icons/链接.svg" alt="" />
+                      获取 API Key
+                    </button>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <label for="stepfun-model">模型</label>
+                  <select id="stepfun-model">
+                    <!-- 选项由 settings.js 从共享模型目录动态渲染 -->
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <label for="stepfun-voice">音色</label>
+                  <input
+                    id="stepfun-voice"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="qingchunshaonv"
+                  />
+                </div>
+                <p class="provider-attribution">
+                  StepFun Realtime · StepAudio 兼容协议
                 </p>
               </div>
 

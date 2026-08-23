@@ -185,6 +185,11 @@ export const config = {
   speechToSpeechAuthToken: realtimeFrontend.speechToSpeechAuthToken,
   audioModel: realtimeFrontend.dashscopeModel,
   audioVoice: realtimeFrontend.dashscopeVoice,
+  // StepFun 开放平台 Realtime 前台（step-audio-2 系列）。
+  stepfunApiKey: realtimeFrontend.stepfunApiKey,
+  stepfunRealtimeUrl: realtimeFrontend.stepfunRealtimeUrl,
+  stepfunModel: realtimeFrontend.stepfunModel,
+  stepfunVoice: realtimeFrontend.stepfunVoice,
   allowedOrigins: String(process.env.QWEN_AUDIO_AGENT_ALLOWED_ORIGINS || '')
     .split(',')
     .map(value => value.trim())

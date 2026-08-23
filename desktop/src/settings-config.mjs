@@ -13,6 +13,8 @@ import {
   DEFAULT_DASHSCOPE_REALTIME_URL,
   DEFAULT_REALTIME_PROVIDER,
   DEFAULT_SPEECH_TO_SPEECH_REALTIME_URL,
+  DEFAULT_STEPFUN_REALTIME_MODEL,
+  DEFAULT_STEPFUN_REALTIME_URL,
   normalizeRealtimeProvider,
 } from '../../shared/realtime-provider-catalog.mjs'
 import { normalizeDesktopLanguage } from './i18n.mjs'
@@ -31,6 +33,10 @@ const DEFAULTS = {
   realtimeModel: DEFAULT_DASHSCOPE_REALTIME_MODEL,
   audioRealtimeVoice: '',
   omniRealtimeVoice: '',
+  stepfunApiKey: '',
+  stepfunRealtimeUrl: DEFAULT_STEPFUN_REALTIME_URL,
+  stepfunModel: DEFAULT_STEPFUN_REALTIME_MODEL,
+  stepfunRealtimeVoice: '',
   speechToSpeechRealtimeUrl: '',
   speechToSpeechAuthToken: '',
   backendModel: '',
@@ -55,6 +61,10 @@ const SETTING_KEYS = {
   realtimeModel: 'QWEN_AUDIO_REALTIME_MODEL',
   audioRealtimeVoice: 'QWEN_AUDIO_REALTIME_VOICE',
   omniRealtimeVoice: 'QWEN_OMNI_REALTIME_VOICE',
+  stepfunApiKey: 'STEPFUN_API_KEY',
+  stepfunRealtimeUrl: 'STEPFUN_REALTIME_URL',
+  stepfunModel: 'STEPFUN_REALTIME_MODEL',
+  stepfunRealtimeVoice: 'STEPFUN_REALTIME_VOICE',
   speechToSpeechRealtimeUrl: 'SPEECH_TO_SPEECH_REALTIME_URL',
   speechToSpeechAuthToken: 'SPEECH_TO_SPEECH_AUTH_TOKEN',
   backendModel: 'QWEN_AUDIO_AGENT_BACKEND_MODEL',
@@ -263,6 +273,26 @@ export function parseSettings(content = '', fallback = {}) {
     'QWEN_OMNI_REALTIME_VOICE',
     fallback.QWEN_OMNI_REALTIME_VOICE || DEFAULTS.omniRealtimeVoice,
   ) || '').trim()
+  const configuredStepFunApiKey = configured(
+    values,
+    'STEPFUN_API_KEY',
+    fallback.STEPFUN_API_KEY || DEFAULTS.stepfunApiKey,
+  )
+  const configuredStepFunUrl = configured(
+    values,
+    'STEPFUN_REALTIME_URL',
+    fallback.STEPFUN_REALTIME_URL || DEFAULTS.stepfunRealtimeUrl,
+  )
+  const stepfunModel = String(configured(
+    values,
+    'STEPFUN_REALTIME_MODEL',
+    fallback.STEPFUN_REALTIME_MODEL || DEFAULTS.stepfunModel,
+  ) || DEFAULTS.stepfunModel).trim()
+  const stepfunRealtimeVoice = String(configured(
+    values,
+    'STEPFUN_REALTIME_VOICE',
+    fallback.STEPFUN_REALTIME_VOICE || DEFAULTS.stepfunRealtimeVoice,
+  ) || '').trim()
   return {
     gatewayUrl: configured(
       values,
@@ -308,6 +338,11 @@ export function parseSettings(content = '', fallback = {}) {
     realtimeModel,
     audioRealtimeVoice,
     omniRealtimeVoice,
+    stepfunApiKey: String(configuredStepFunApiKey || '').trim(),
+    stepfunRealtimeUrl: String(configuredStepFunUrl || '').trim()
+      || DEFAULTS.stepfunRealtimeUrl,
+    stepfunModel,
+    stepfunRealtimeVoice,
     speechToSpeechRealtimeUrl: String(
       configuredS2sUrl
       || (realtimeProvider === 'speech-to-speech'
@@ -352,6 +387,12 @@ export function normalizeSettings(settings = {}) {
   ).trim()
   const omniRealtimeVoice = String(
     settings.omniRealtimeVoice ?? DEFAULTS.omniRealtimeVoice,
+  ).trim()
+  const stepfunModel = String(
+    settings.stepfunModel || DEFAULTS.stepfunModel,
+  ).trim() || DEFAULTS.stepfunModel
+  const stepfunRealtimeVoice = String(
+    settings.stepfunRealtimeVoice ?? DEFAULTS.stepfunRealtimeVoice,
   ).trim()
   const agentProtocol = cleanAgentProtocol(
     settings.agentProtocol ?? DEFAULTS.agentProtocol,
@@ -402,6 +443,16 @@ export function normalizeSettings(settings = {}) {
     realtimeModel,
     audioRealtimeVoice,
     omniRealtimeVoice,
+    stepfunApiKey: String(
+      settings.stepfunApiKey ?? DEFAULTS.stepfunApiKey,
+    ).trim(),
+    stepfunRealtimeUrl: cleanRealtimeUrl(
+      settings.stepfunRealtimeUrl,
+      DEFAULTS.stepfunRealtimeUrl,
+      'StepFun 服务地址',
+    ),
+    stepfunModel,
+    stepfunRealtimeVoice,
     speechToSpeechRealtimeUrl: requestedS2sUrl
       ? cleanRealtimeUrl(requestedS2sUrl, '')
       : realtimeProvider === 'speech-to-speech'
@@ -438,6 +489,18 @@ export function realtimeSettingsConfigured(settings = {}) {
         'Qwen Audio 服务地址',
       )
       return Boolean(String(settings.dashscopeApiKey || '').trim())
+    } catch {
+      return false
+    }
+  }
+  if (provider === 'stepfun') {
+    try {
+      cleanRealtimeUrl(
+        settings.stepfunRealtimeUrl,
+        DEFAULTS.stepfunRealtimeUrl,
+        'StepFun 服务地址',
+      )
+      return Boolean(String(settings.stepfunApiKey || '').trim())
     } catch {
       return false
     }
@@ -501,6 +564,7 @@ export function updateSettingsContent(content = '', settings = {}) {
   const removed = new Set([
     ['audioRealtimeVoice', 'QWEN_AUDIO_REALTIME_VOICE'],
     ['omniRealtimeVoice', 'QWEN_OMNI_REALTIME_VOICE'],
+    ['stepfunRealtimeVoice', 'STEPFUN_REALTIME_VOICE'],
     ['backendUrl', backend?.baseUrlEnvironment],
     ['backendCredential', credentialEnvironment],
   ].filter(([field, key]) => (

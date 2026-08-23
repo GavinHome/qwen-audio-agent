@@ -10,7 +10,9 @@ import {
 } from './realtime-status.mjs'
 import {
   DEFAULT_DASHSCOPE_REALTIME_MODEL,
+  DEFAULT_STEPFUN_REALTIME_MODEL,
   listDashScopeRealtimeModelProfiles,
+  listStepFunRealtimeModelProfiles,
 } from '../../shared/realtime-model-catalog.mjs'
 import { updaterButtonState, updaterStatusText } from './update-status.mjs'
 import { createRealtimeVoiceDrafts } from './realtime-voice-settings.mjs'
@@ -47,6 +49,11 @@ const speechToSpeechRealtimeUrl = document.querySelector(
 const speechToSpeechAuthToken = document.querySelector(
   '#speech-to-speech-token',
 )
+const stepfunApiKey = document.querySelector('#stepfun-api-key')
+const stepfunRealtimeUrl = document.querySelector('#stepfun-realtime-url')
+const stepfunModel = document.querySelector('#stepfun-model')
+const stepfunVoice = document.querySelector('#stepfun-voice')
+const getStepFunApiKey = document.querySelector('#get-stepfun-api-key')
 const backendList = document.querySelector('#backend-list')
 const backendPicker = document.querySelector('.backend-picker')
 const backendPickerTrigger = document.querySelector('#backend-picker-trigger')
@@ -81,6 +88,9 @@ const settingsPanels = [...document.querySelectorAll('[data-settings-panel]')]
 
 let translate = desktopTranslator('auto', navigator.language)
 const t = (text, params) => translate(text, params)
+
+const defaultStepFunRealtimeBaseUrl = 'wss://api.stepfun.com/v1/realtime'
+const STEPFUN_API_KEY_URL = 'https://platform.stepfun.com/interface-key'
 
 function applyLanguage(value) {
   translate = desktopTranslator(value, navigator.language)
@@ -136,6 +146,29 @@ function renderRealtimeModelOptions(selectedModel) {
   }
   realtimeModel.replaceChildren(...children)
   realtimeModel.value = selectedModel || DEFAULT_DASHSCOPE_REALTIME_MODEL
+}
+
+function renderStepFunModelOptions(selectedModel) {
+  const profiles = listStepFunRealtimeModelProfiles()
+  const children = profiles.map(profile => {
+    const option = document.createElement('option')
+    option.value = profile.id
+    option.textContent = profile.label
+    return option
+  })
+  const known = profiles.some(profile => profile.id === selectedModel)
+  if (selectedModel && !known) {
+    // 音色复刻等自定义模型 ID 以“自定义”分组保留，方便看到现状。
+    const custom = document.createElement('optgroup')
+    custom.label = t('自定义')
+    const option = document.createElement('option')
+    option.value = selectedModel
+    option.textContent = selectedModel
+    custom.append(option)
+    children.push(custom)
+  }
+  stepfunModel.replaceChildren(...children)
+  stepfunModel.value = selectedModel || DEFAULT_STEPFUN_REALTIME_MODEL
 }
 
 function selectSettingsTab(value, { focus = false } = {}) {
@@ -744,8 +777,8 @@ function renderRealtimeVoice() {
 }
 
 function renderRealtimeProvider(value, { populateDefault = false } = {}) {
-  const provider = value === 'speech-to-speech'
-    ? 'speech-to-speech'
+  const provider = ['dashscope', 'stepfun', 'speech-to-speech'].includes(value)
+    ? value
     : 'dashscope'
   for (const input of realtimeProviderInputs) {
     input.checked = input.value === provider
@@ -762,6 +795,13 @@ function renderRealtimeProvider(value, { populateDefault = false } = {}) {
   }
   if (populateDefault && provider === 'dashscope' && !realtimeBaseUrl.value.trim()) {
     realtimeBaseUrl.value = defaultRealtimeBaseUrl
+  }
+  if (
+    populateDefault
+    && provider === 'stepfun'
+    && !stepfunRealtimeUrl.value.trim()
+  ) {
+    stepfunRealtimeUrl.value = defaultStepFunRealtimeBaseUrl
   }
 }
 
@@ -780,6 +820,10 @@ function formSettings() {
     agentProtocol: selectedBackend(),
     realtimeModel: realtimeModel.value,
     ...realtimeVoiceDrafts.settings(),
+    stepfunApiKey: stepfunApiKey.value,
+    stepfunRealtimeUrl: stepfunRealtimeUrl.value,
+    stepfunModel: stepfunModel.value,
+    stepfunRealtimeVoice: stepfunVoice.value.trim(),
     speechToSpeechRealtimeUrl: speechToSpeechRealtimeUrl.value,
     speechToSpeechAuthToken: speechToSpeechAuthToken.value,
     backendModel: backendModel.value,
@@ -805,6 +849,10 @@ function fingerprint(value) {
     realtimeModel: value.realtimeModel,
     audioRealtimeVoice: value.audioRealtimeVoice,
     omniRealtimeVoice: value.omniRealtimeVoice,
+    stepfunApiKey: value.stepfunApiKey,
+    stepfunRealtimeUrl: value.stepfunRealtimeUrl,
+    stepfunModel: value.stepfunModel,
+    stepfunRealtimeVoice: value.stepfunRealtimeVoice,
     speechToSpeechRealtimeUrl: value.speechToSpeechRealtimeUrl,
     speechToSpeechAuthToken: value.speechToSpeechAuthToken,
     backendModel: value.backendModel,
@@ -1050,6 +1098,13 @@ function render() {
   )
   realtimeVoiceDrafts = createRealtimeVoiceDrafts(settings)
   renderRealtimeVoice()
+  stepfunApiKey.value = settings.stepfunApiKey || ''
+  stepfunRealtimeUrl.value = settings.stepfunRealtimeUrl
+    || defaultStepFunRealtimeBaseUrl
+  renderStepFunModelOptions(
+    settings.stepfunModel || DEFAULT_STEPFUN_REALTIME_MODEL,
+  )
+  stepfunVoice.value = settings.stepfunRealtimeVoice || ''
   speechToSpeechRealtimeUrl.value = settings.speechToSpeechRealtimeUrl || ''
   speechToSpeechAuthToken.value = settings.speechToSpeechAuthToken || ''
   renderRealtimeProvider(settings.realtimeProvider)
@@ -1070,6 +1125,10 @@ for (const control of [
   autoHideSeconds,
   dashscopeApiKey,
   realtimeBaseUrl,
+  stepfunApiKey,
+  stepfunRealtimeUrl,
+  stepfunModel,
+  stepfunVoice,
   speechToSpeechRealtimeUrl,
   speechToSpeechAuthToken,
   realtimeModel,
@@ -1102,6 +1161,7 @@ for (const control of [
       renderBackendOptions(selectedBackend())
       renderSkinOptions(orbSkinSelect.value)
       renderRealtimeModelOptions(realtimeModel.value)
+      renderStepFunModelOptions(stepfunModel.value)
       renderRuntime()
     }
     updateApplyState()
@@ -1110,6 +1170,10 @@ for (const control of [
 
 getApiKey.addEventListener('click', () => {
   window.qwenAudioAgentDesktop.openExternal(BAILIAN_API_KEY_URL)
+})
+
+getStepFunApiKey?.addEventListener('click', () => {
+  window.qwenAudioAgentDesktop.openExternal(STEPFUN_API_KEY_URL)
 })
 
 orbSkinSelect.addEventListener('change', updateRemoveSkinState)

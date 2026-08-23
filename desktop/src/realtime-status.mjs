@@ -1,14 +1,19 @@
-import { resolveDashScopeRealtimeModelProfile } from '../../shared/realtime-model-catalog.mjs'
+import {
+  resolveDashScopeRealtimeModelProfile,
+  resolveStepFunRealtimeModelProfile,
+} from '../../shared/realtime-model-catalog.mjs'
 
 export function realtimeStatusLabel(provider) {
-  return provider === 'speech-to-speech'
-    ? 'Speech-to-Speech'
-    : 'DashScope'
+  if (provider === 'speech-to-speech') return 'Speech-to-Speech'
+  if (provider === 'stepfun') return 'StepFun'
+  return 'DashScope'
 }
 
 export function realtimeModelStatusLabel(model) {
   const value = String(model || '').trim()
   if (!value) return ''
+  const stepFunProfile = resolveStepFunRealtimeModelProfile(value)
+  if (stepFunProfile.family !== 'unknown') return stepFunProfile.label
   const profile = resolveDashScopeRealtimeModelProfile(value)
   return profile.family === 'unknown'
     ? profile.label

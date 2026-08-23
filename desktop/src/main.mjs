@@ -1056,6 +1056,8 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
   if (!remote && !realtimeSettingsConfigured(normalized)) {
     throw new Error(normalized.realtimeProvider === 'dashscope'
       ? '请先填写 DashScope API Key'
+      : normalized.realtimeProvider === 'stepfun'
+      ? '请先填写 StepFun API Key'
       : '请先填写 Speech-to-Speech 服务地址')
   }
   if (remote) {
@@ -1095,6 +1097,12 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     || previous.speechToSpeechAuthToken
       !== normalized.speechToSpeechAuthToken
   )
+  const stepfunChanged = (
+    previous.stepfunApiKey !== normalized.stepfunApiKey
+    || previous.stepfunRealtimeUrl !== normalized.stepfunRealtimeUrl
+    || previous.stepfunModel !== normalized.stepfunModel
+    || previous.stepfunRealtimeVoice !== normalized.stepfunRealtimeVoice
+  )
   const backendModelChanged = previous.backendModel !== normalized.backendModel
   const backendConnectionChanged = (
     previous.backendOwnership !== normalized.backendOwnership
@@ -1119,6 +1127,7 @@ ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
     || realtimeModelChanged
     || realtimeVoiceChanged
     || speechToSpeechChanged
+    || stepfunChanged
     || backendModelChanged
     || backendConnectionChanged
     || wakeWordChanged
