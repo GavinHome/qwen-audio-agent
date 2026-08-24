@@ -2,7 +2,6 @@ import {
   COMET_DOT,
   COMET_RIBBONS,
   DOT_PEAK,
-  DOT_R,
   DOT_X,
   NOTIF_ANGLE,
   NOTIF_DIST,
@@ -130,21 +129,6 @@ const barItalic = (pose: Partial<Silhouette> = {}): Silhouette => ({
  */
 const TEAR = polyPath(hullOfCircles(0, 0, 0.118, 0, 0.172, 0.012))
 
-/**
- * Le triangle ne tourne pas sur lui-meme : son centre decrit un cercle de
- * rayon 0.213 autour de l'origine (mesure). C'est ce decalage qui donne
- * l'impression qu'il bascule au lieu de pivoter sur place.
- */
-const TRI_ORBIT = 0.213
-
-function spinningTriangle(rot: number): Silhouette {
-  return silhouette('triangle', {
-    rot,
-    cx: -TRI_ORBIT * Math.sin(rot),
-    cy: TRI_ORBIT * Math.cos(rot)
-  })
-}
-
 /* ------------------------------------------------------------------ etats */
 
 export type StateId =
@@ -215,32 +199,31 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * DEVIATION d'integration, pas la video : la boule garde sa forme et son
+     * visage, les trois points flottent AU-DESSUS comme une bulle de pensee.
+     * Sur la video la boule DEVIENT les points, sans visage — lisible dans un
+     * montage de demonstration, mais un assistant qui reflechit doit rester
+     * present. La vague de pulsation gauche-droite est celle de la video.
+     */
     id: 'thinking',
     duration: 2.6,
     morph: 0.4,
-    baseFace: false,
-    baseBody: false,
+    baseFace: true,
+    baseBody: true,
     blinkIn: true,
-    pose: (t) => {
-      const mid = dotPulse(t, 1)
-      // Les points lateraux sortent des flancs de la boule : dans la video ils
-      // restent fusionnes avec elle 1-2 frames avant de se detacher.
-      const emerge = 0.3 + 0.7 * easings.easeOutCubic(clamp(t / 0.3))
-      return base({
-        // la boule DEVIENT le point du milieu : le morph reste continu
-        sil: circle(DOT_R * (1 + (DOT_PEAK - 1) * mid), { cx: DOT_X[1]! }),
-        eyeAlpha: 0,
-        dots: [0, 2].map((i) => {
+    pose: (t) =>
+      base({
+        dots: [0, 1, 2].map((i) => {
           const k = dotPulse(t, i)
           return {
-            x: DOT_X[i]! * emerge,
-            y: 0,
-            r: DOT_R * (1 + (DOT_PEAK - 1) * k),
-            opacity: 0.55 + 0.45 * k
+            x: DOT_X[i]! * 0.42,
+            y: -1.17,
+            r: 0.088 * (1 + (DOT_PEAK - 1) * k),
+            opacity: 0.45 + 0.55 * k
           }
         })
       })
-    }
   },
 
   {
@@ -315,11 +298,19 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * DEVIATION d'integration : sur la video notify n'a pas de visage, mais
+     * l'experience desktop demande que les expressions de l'utilisateur soient
+     * visibles meme dans cet etat. On ouvre donc `baseFace` : le visage de
+     * l'expression choisie remplace la pose de reference, et la notification
+     * bleue reste affichee en surimpression — elle ne fait pas partie du
+     * visage, donc elle n'est pas ecrasee.
+     */
     id: 'notify',
     duration: 2.2,
     morph: 0.5,
     blinkIn: true,
-    baseFace: false,
+    baseFace: true,
     baseBody: true,
     pose: (t) => {
       // Pop du point bleu : pic a +14 % vers 0.3 s puis stabilisation.
@@ -406,25 +397,28 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * DEVIATION d'integration, pas la video : le corps garde la forme choisie
+     * et le visage de l'expression, et le bouquet les balaie en BOUCLE pendant
+     * toute la parole. Sur la video le corps est un triangle immobile traverse
+     * une seule fois ; ici la parole dure, et le fondu couvre la jointure de la
+     * boucle (l'opacite est nulle a t=0 comme a t=2.6).
+     */
     id: 'play',
     duration: 2,
     morph: 0.5,
-    baseFace: false,
-    baseBody: false,
+    baseFace: true,
+    baseBody: true,
     blinkIn: true,
     pose: (t) => {
-      // Le triangle reste quasi immobile pendant que le bouquet le traverse.
-      const fade = clamp(t / 0.35) * clamp((2.2 - t) / 0.5)
+      const tl = t % 2.6
+      const fade = clamp(tl / 0.35) * clamp((2.2 - tl) / 0.5)
       return base({
-        sil: spinningTriangle(0),
-        gaze: { yaw: 12, pitch: -8, roll: -6 },
-        split: 15,
-        eyes: pair(0.18, 0.34),
-        // le bouquet balaie de la droite vers la gauche par-dessus le triangle
+        // le bouquet balaie de la droite vers la gauche par-dessus le corps
         arcs: SWOOSH.map((s, i) => ({
           id: `sw${i}`,
-          seed: { ...s, cx: 0.45 - t * 0.42 },
-          t,
+          seed: { ...s, cx: 0.45 - tl * 0.42 },
+          t: tl,
           opacity: fade
         }))
       })
@@ -432,46 +426,42 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * DEVIATION d'integration, pas la video : le corps garde la forme choisie,
+     * sans triangle ni rotation propre. Sur la video les yeux balayent a
+     * +-65 degres au rythme de 1 Hz et les six anneaux tournent a 3,3 tours/s :
+     * des valeurs relevees pour un ECLAT de 3,4 s, intenable en boucle sur un
+     * etat de travail qui dure. On garde le vocabulaire, divise par deux
+     * l'amplitude et la cadence, et on ne garde que trois anneaux.
+     * Le fondu reste nul aux deux bornes de la boucle ; `minDuration` aussi :
+     * le regard doit finir de se poser.
+     */
     id: 'orbit',
     duration: 3.4,
-    // le corps a fini de se relacher du triangle vers la boule a 1.6 + 0.9
     minDuration: 2.5,
     morph: 0.6,
     baseFace: false,
-    baseBody: false,
+    baseBody: true,
     blinkIn: false,
     pose: (t) => {
-      // Rotation mesuree : rampe sur 0.35 s puis 1.25 tour/s (sens antihoraire).
-      const ramp = easings.easeInOutCubic(clamp(t / 0.35))
-      const rot = -TAU * 1.25 * t * ramp
-      // Le corps se relache du triangle vers la boule pendant l'orbite.
-      const back = easings.easeInOutCubic(clamp((t - 1.6) / 0.9))
-      const tri = spinningTriangle(rot)
-      const ball = circle(1, { rot })
-      const sil: Silhouette = {
-        radii: tri.radii.map((r, i) => r + (ball.radii[i]! - r) * back),
-        rot,
-        cx: tri.cx * (1 - back),
-        cy: tri.cy * (1 - back),
-        sx: 1,
-        sy: 1
-      }
-      const fade = clamp(t / 0.8) * clamp((3.6 - t) / 0.9)
+      const back = easings.easeInOutCubic(clamp((t - 1.2) / 0.7))
+      const tr = t % 4.4
+      const fade = clamp(tr / 0.8) * clamp((3.8 - tr) / 0.9)
       return base({
-        sil,
-        // les yeux filent autour de la sphere ~3x plus vite que la silhouette
+        // le regard cherche lentement puis se pose : recherche, pas secousse
         gaze: {
-          yaw: REST_GAZE.yaw + Math.sin(t * 6.5) * 65 * (1 - back),
+          yaw: REST_GAZE.yaw + Math.sin(t * 2.6) * 38 * (1 - back),
           pitch: -4 + back * 32,
           roll: -13
         },
         eyes: pair(0.18, 0.34 + back * 0.07),
-        // les anneaux entrent un par un sur 0.8 s
+        // 六个 anneaux aux couleurs distinctes, temps ralenti de moitie (~1,5 tours/s) :
+        // le « chargement » reste lisible sans tourbillonner
         arcs: RINGS.map((s, i) => ({
           id: `rg${i}`,
           seed: s,
-          t,
-          opacity: fade * clamp((t - i * 0.13) / 0.3)
+          t: tr * 0.45,
+          opacity: fade * clamp((tr - i * 0.13) / 0.3)
         }))
       })
     }
@@ -524,21 +514,27 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * DEVIATION d'integration, pas la video : l'eclatement est un feedback
+     * utilisateur (survol), pas un plan de demonstration. On garde la meme
+     * choregraphie — effondrement sans rebond, puis recomposition — mais on
+     * comprime la duree de 2,6 s a 1,0 s pour que l'interaction reste fluide
+     * et ne fige pas l'etat conversationnel trop longtemps.
+     */
     id: 'burst',
-    duration: 2.6,
-    // le corps est recompose a 1.7 + 0.7
-    minDuration: 2.4,
-    morph: 0.4,
+    duration: 1.0,
+    minDuration: 0.8,
+    morph: 0.35,
     baseFace: false,
     baseBody: false,
     blinkIn: false,
     pose: (t) => {
-      // Effondrement mesure : 1.0 -> 0.166 en 0.7 s, ease-out, sans rebond.
-      const collapse = 1 - 0.834 * easings.easeOutQuint(clamp(t / 0.7))
-      const regrow = easings.easeOutQuint(clamp((t - 1.7) / 0.7))
+      // Effondrement puis recomposition en 1,0 s, sans rebond.
+      const collapse = 1 - 0.834 * easings.easeOutQuint(clamp(t / 0.35))
+      const regrow = easings.easeOutQuint(clamp((t - 0.5) / 0.4))
       return base({
         sil: circle(collapse + (1 - collapse) * regrow),
-        eyeAlpha: clamp((t - 1.85) / 0.4),
+        eyeAlpha: clamp((t - 0.6) / 0.25),
         dots: particles(t, 1),
         dotsBehind: true
       })

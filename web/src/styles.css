@@ -373,20 +373,6 @@ header .voice.waiting { color: #ded5ff; border-color: #927cf480; }
   height: 100%;
   display: block;
 }
-.bloub-appearance {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.bloub-appearance select {
-  background: #ffffff08;
-  color: inherit;
-  border: 1px solid #ffffff18;
-  border-radius: 10px;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 12px;
-}
 .fluid-orb::before,
 .fluid-orb::after {
   content: "";

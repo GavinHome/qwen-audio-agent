@@ -13,6 +13,7 @@ test('exposes the builtin theme skins as first-class catalog entries', () => {
   for (const skin of BUILTIN_ORB_SKINS) {
     assert.equal(skin.type, 'theme')
     assert.ok(skin.displayName)
+    assert.ok(skin.displayNameEn, `${skin.id} needs an English label for the settings UI`)
     assert.match(skin.id, ORB_SKIN_ID_PATTERN)
   }
   assert.equal(isBuiltinOrbSkin('fluid'), true)

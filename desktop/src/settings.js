@@ -24,6 +24,7 @@ import {
   BLOUB_SHAPES,
   BLOUB_COLORS,
   BLOUB_EXPRESSIONS,
+  bloubEntryLabel,
 } from '../../shared/bloub-catalog.mjs'
 
 const orbBloubShape = document.querySelector('#orb-bloub-shape')
@@ -1025,13 +1026,20 @@ function updateBloubAppearanceVisibility() {
   if (visible) renderBloubAppearanceOptions()
 }
 
+// 设置窗口的生效语言：动态渲染的 option 不走 localizeDesktopDocument
+// 的文本遍历（它只在 applyLanguage 时跑一遍），必须在这里按语言取标签。
+function settingsLanguage() {
+  return effectiveDesktopLanguage(desktopLanguage.value, navigator.language)
+}
+
 function renderBloubAppearanceOptions() {
+  const language = settingsLanguage()
   const renderOptions = (select, catalog, selected) => {
     select.textContent = ''
     for (const item of catalog) {
       const option = document.createElement('option')
       option.value = item.id
-      option.textContent = item.displayName || item.id
+      option.textContent = bloubEntryLabel(item, language) || item.id
       select.append(option)
     }
     if (selected && catalog.some(item => item.id === selected)) {
@@ -1045,6 +1053,7 @@ function renderBloubAppearanceOptions() {
 }
 
 function renderSkinOptions(selected) {
+  const language = settingsLanguage()
   orbSkinSelect.textContent = ''
   const groups = [
     { label: t('内置'), type: 'theme' },
@@ -1058,7 +1067,11 @@ function renderSkinOptions(selected) {
     for (const skin of items) {
       const option = document.createElement('option')
       option.value = skin.id
-      option.textContent = skin.displayName || skin.id
+      option.textContent = (
+        language === 'en' && skin.displayNameEn
+          ? skin.displayNameEn
+          : (skin.displayName || skin.id)
+      )
       optgroup.append(option)
     }
     orbSkinSelect.append(optgroup)

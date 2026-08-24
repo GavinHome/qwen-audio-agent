@@ -4,14 +4,15 @@
 // 语音状态翻译成引擎状态，驱动一帧帧连续变形。
 //
 // 与 BloubBot.vue 的差异：无 montage 播放器（悬浮球由语音状态驱动），
-// 无指针跟随（悬浮球窗口内指针即拖拽），保留呼吸、眨眼与视线游移。
-import { useEffect, useRef, useState } from 'react'
+// 保留呼吸、眨眼与视线游移，并在悬停时让眼球跟随指针（按下拖拽时
+// 交还给 comet，不追踪）。
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { BotEngine } from './bloub/bot/engine'
 import { NOTIF_BLUE } from './bloub/bot/decor'
 import { EXPRESSION_BY_ID } from './bloub/bot/expressions'
 import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from './bloub/bot/skins'
 import { DEMI_VIEWBOX, RAYON } from './bloub/bot/repere'
-import { BLOUB_CUE_DURATION_MS, bloubStateForOrbState } from './bloub-orb.js'
+import { bloubCueDurationMs, bloubStateForOrbState } from './bloub-orb.js'
 
 // 眼睛是身体上的「洞」，洞里露出这层底色——即原版 x.ai 机器人的纸色。
 const PAPER = '#f9f9f9'
@@ -27,13 +28,26 @@ export default function DesktopBloubOrb({
 }) {
   const onCueCompleteRef = useRef(onCueComplete)
   onCueCompleteRef.current = onCueComplete
+  const dragDirectionRef = useRef(dragDirection)
+  useEffect(() => { dragDirectionRef.current = dragDirection })
+  const [hexCue, setHexCue] = useState(null)
+  const hexTimerRef = useRef(null)
 
   const shapeEntry = SHAPE_BY_ID.get(shape)
   const colorEntry = COLOR_BY_ID.get(color)
   const expressionEntry = EXPRESSION_BY_ID.get(expression)
   const shapeRadii = shapeEntry ? shapeEntry.radii : null
   const expressionPose = expressionEntry ?? null
-  const ink = colorEntry ? colorEntry.hex : '#0a0a0c'
+  const inkTarget = colorEntry ? colorEntry.hex : '#0a0a0c'
+
+  // 身体颜色与形状/表情一样走 morph，而不是瞬切：形状在 0.45s 里滑动时
+  // 颜色同步渐变（与引擎 BotEngine.SHAPE_MORPH 同时长、同缓动）。
+  const INK_MORPH_S = 0.45
+  const easeOutQuint = t => 1 - (1 - t) ** 5
+  const inkRef = useRef(inkTarget)
+  const inkFromRef = useRef(inkTarget)
+  const inkTargetRef = useRef(inkTarget)
+  const inkAtRef = useRef(-1e9)
 
   const engineRef = useRef(null)
   if (!engineRef.current) {
@@ -58,14 +72,30 @@ export default function DesktopBloubOrb({
       const dt = last ? Math.min((ms - last) / 1000, 0.064) : 0
       last = ms
       clockRef.current += dt
+      const k = Math.min(
+        Math.max((clockRef.current - inkAtRef.current) / INK_MORPH_S, 0),
+        1,
+      )
+      inkRef.current = k >= 1
+        ? inkTargetRef.current
+        : mixHex(inkFromRef.current, inkTargetRef.current, easeOutQuint(k))
       setFrame(engine.sample(clockRef.current))
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [engine])
 
+  // 颜色目标变化：从当前显示的颜色出发插值，保证连续。
+  useEffect(() => {
+    if (inkTargetRef.current === inkTarget) return
+    inkFromRef.current = inkRef.current
+    inkTargetRef.current = inkTarget
+    inkAtRef.current = clockRef.current
+  }, [inkTarget])
+
   // 语音状态变化：引擎自带指数缓出变形，这里只递交目标状态。
-  const target = bloubStateForOrbState({ state, dragDirection, cue })
+  const effectiveCue = hexCue || cue
+  const target = bloubStateForOrbState({ state, dragDirection, cue: effectiveCue })
   const targetRef = useRef(target)
   useEffect(() => {
     if (targetRef.current === target) return
@@ -88,19 +118,40 @@ export default function DesktopBloubOrb({
     expressionRef.current = expressionPose
   }, [expressionPose, engine])
 
-  // 悬停彩蛋：burst 播满一个完整时长再交还状态机。
+  // 彩蛋（悬停爆开 / 唤醒孵化 / 六边形脉冲）按各自时长播满再交还状态机。
+  // 回调带上 cue.id：上层以 id 比对清除，不传则彩蛋永远留在状态里。
   useEffect(() => {
     if (!cue?.id) return undefined
+    const cueId = cue.id
     const timer = setTimeout(
-      () => onCueCompleteRef.current?.(),
-      BLOUB_CUE_DURATION_MS,
+      () => onCueCompleteRef.current?.(cueId),
+      bloubCueDurationMs(cue?.name),
     )
     return () => clearTimeout(timer)
-  }, [cue?.id])
+  }, [cue?.id, cue?.name])
+
+  // 本地六边形彩蛋完成后清掉 hexCue，让周期定时器能再次触发。
+  useEffect(() => {
+    if (!hexCue?.id) return
+    const timer = setTimeout(() => setHexCue(null), bloubCueDurationMs('hexagon'))
+    return () => clearTimeout(timer)
+  }, [hexCue?.id])
+
+  // 工作态（orbit）周期彩蛋：每 5 秒变一次六边形再复原，增加画面节奏。
+  // 只在真正处于 orbit 且没有更高优先级彩蛋时运行。
+  useEffect(() => {
+    if (target !== 'orbit') return undefined
+    if (hexCue) return undefined
+    const id = setInterval(() => {
+      setHexCue({ id: Date.now(), name: 'hexagon' })
+    }, 5000)
+    return () => clearInterval(id)
+  }, [target, hexCue])
 
   const uid = useRef(Math.random().toString(36).slice(2, 8)).current
   const maskId = `bot-mask-${uid}`
   const VB = DEMI_VIEWBOX
+  const ink = inkRef.current
 
   const renderDot = (dot, index, prefix) => {
     const fill = dot.color
@@ -128,8 +179,31 @@ export default function DesktopBloubOrb({
     )
   }
 
+  // 悬停时眼球跟随指针，按下拖拽或指针离开时交还游移。
+  const handlePointerMove = useCallback((event) => {
+    if (dragDirectionRef.current || !engineRef.current) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const nx = (event.clientX - rect.left - rect.width / 2) / (rect.width / 2)
+    const ny = (event.clientY - rect.top - rect.height / 2) / (rect.height / 2)
+    const yaw = Math.max(-40, Math.min(40, nx * 40))
+    const pitch = Math.max(-25, Math.min(25, -ny * 25))
+    engineRef.current.setLook(
+      { yaw, pitch, mix: 0.7, spin: 0, wander: 0.3 },
+      clockRef.current,
+    )
+  }, [])
+
+  const handlePointerLeave = useCallback(() => {
+    if (!engineRef.current) return
+    engineRef.current.setLook(null, clockRef.current)
+  }, [])
+
   return (
-    <div className="bloub-orb">
+    <div
+      className="bloub-orb"
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+    >
       <svg
         className="bloub-orb-svg"
         viewBox={`${-VB} ${-VB} ${VB * 2} ${VB * 2}`}

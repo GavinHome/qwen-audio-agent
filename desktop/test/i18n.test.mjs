@@ -35,3 +35,11 @@ test('translates desktop settings text while preserving product names', () => {
   assert.equal(english('Qwen Audio'), 'Qwen Audio')
   assert.equal(desktopTranslator('zh-CN')('设置'), '设置')
 })
+
+test('translates the Bloub appearance settings rows for the English UI', () => {
+  const english = desktopTranslator('en')
+  assert.equal(english('Bloub 外观'), 'Bloub appearance')
+  assert.equal(english('自由切换'), 'Auto switching')
+  assert.equal(english('跟随状态'), 'Follow voice state')
+  assert.equal(english('固定形状'), 'Lock shape')
+})
