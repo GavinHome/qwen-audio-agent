@@ -48,7 +48,20 @@ tells you:
 Conversation doesn't stop for background tasks; when a task completes, the
 result naturally returns to the current conversation:
 
-https://github.com/user-attachments/assets/ab570531-8da9-4af4-93fa-244bb6614c05
+<table>
+  <tr>
+    <th width="50%">办公</th>
+    <th width="50%">智能座舱</th>
+  </tr>
+  <tr>
+    <td width="50%">
+      <video src="https://github.com/user-attachments/assets/ab570531-8da9-4af4-93fa-244bb6614c05" controls width="100%"></video>
+    </td>
+    <td width="50%">
+      <video src="https://github.com/user-attachments/assets/29375a62-d5d0-46e8-a963-e00118688002" controls width="100%"></video>
+    </td>
+  </tr>
+</table>
 
 ### Core Features
 

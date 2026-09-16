@@ -41,7 +41,20 @@
 
 对话不会因为后台任务而停下；任务完成后，结果会自然回到当前对话：
 
-https://github.com/user-attachments/assets/ab570531-8da9-4af4-93fa-244bb6614c05
+<table>
+  <tr>
+    <th width="50%">办公</th>
+    <th width="50%">智能座舱</th>
+  </tr>
+  <tr>
+    <td width="50%">
+      <video src="https://github.com/user-attachments/assets/ab570531-8da9-4af4-93fa-244bb6614c05" controls width="100%"></video>
+    </td>
+    <td width="50%">
+      <video src="https://github.com/user-attachments/assets/29375a62-d5d0-46e8-a963-e00118688002" controls width="100%"></video>
+    </td>
+  </tr>
+</table>
 
 ### 核心特色
 
