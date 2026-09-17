@@ -2,12 +2,15 @@
 
 Install dependencies with `npm ci`, install Chromium with
 `npx playwright install chromium`, then run `npm run test:web-browser`.
-The script starts its own Vite server on loopback port 4174. Set
+The script builds the WebUI and starts Vite preview on loopback port 4174. Set
 `QWEN_BROWSER_SMOKE_PORT` if that port is occupied.
 
-Chromium loads the real React page. Gateway, microphone, and AudioContext are
-test doubles: this suite checks client wiring and lifecycle, not physical audio
-devices or native Web Audio rendering. No cloud API key is needed.
+Chromium loads the production React bundle. Gateway is a test double; lifecycle
+scenarios also use controlled microphone and AudioContext doubles, with native
+MessageChannels for worklet messages. A separate scenario uses Chromium's fake
+microphone and native Web Audio/AudioWorklet to verify production module loading,
+non-silent PCM delivery, socket backpressure/recovery, and microphone mute.
+No physical microphone or cloud API key is needed.
 The Gateway double uses the shared protocol version and checks that the client
 requests that version during the handshake.
 

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
+import { build } from 'vite'
 import { GATEWAY_CLIENT_PROTOCOL_VERSION } from '../../shared/protocol/gateway-client-protocol.mjs'
 
 const projectRoot = resolve(import.meta.dirname, '../..')
@@ -12,11 +13,12 @@ const port = Number(process.env.QWEN_BROWSER_SMOKE_PORT || 4174)
 const baseUrl = `http://127.0.0.1:${port}`
 
 // Keep the browser test deterministic and offline: the page gets a local
-// protocol/media double, while Chromium still exercises the real React page,
-// permission branch, Web Audio wiring, and cleanup lifecycle.
+// protocol double. Lifecycle cases use controlled media doubles; the real-audio
+// case uses Chromium's fake microphone with native Web Audio and AudioWorklet.
 const MOCK_BROWSER_APIS = String.raw`
 (() => {
   const protocolVersion = ${JSON.stringify(GATEWAY_CLIENT_PROTOCOL_VERSION)}
+  const realAudio = location.search.includes('browser-smoke=real-audio')
   const state = {
     mediaRequests: 0,
     trackStops: 0,
@@ -27,6 +29,7 @@ const MOCK_BROWSER_APIS = String.raw`
     processorConnects: 0,
     processorDisconnects: 0,
     audioAppends: 0,
+    nonSilentAudioAppends: 0,
     playbackStarts: 0,
     playbackStops: 0,
     socketMessages: 0,
@@ -82,6 +85,7 @@ const MOCK_BROWSER_APIS = String.raw`
     constructor(url) {
       this.url = url
       this.readyState = MockWebSocket.CONNECTING
+      this.bufferedAmount = 0
       eventListeners(this)
       increment('socketConnections')
       this.id = state.socketConnections
@@ -122,7 +126,12 @@ const MOCK_BROWSER_APIS = String.raw`
       }
       if (message.type === 'audio.append') {
         increment('audioAppends')
+        if ([...atob(message.audio)].some(byte => byte.charCodeAt(0) !== 0)) {
+          increment('nonSilentAudioAppends')
+        }
         document.documentElement.dataset.audioSocket = String(this.id)
+        if (this.replied) return
+        this.replied = true
         setTimeout(() => {
           const responseId = 'response-browser-smoke-' + this.id
           serverEvent(this, {
@@ -159,6 +168,35 @@ const MOCK_BROWSER_APIS = String.raw`
     }
   }
 
+  class MockAudioWorkletNode {
+    constructor() {
+      const channel = new MessageChannel()
+      this.port = channel.port1
+      this.producer = channel.port2
+      this.connected = false
+    }
+
+    input() {
+      if (!this.connected) return
+      const samples = Float32Array.from([0.1, 0.2, 0.3, 0.4]).buffer
+      this.producer.postMessage({ type: 'samples', samples }, [samples])
+    }
+
+    connect() {
+      if (this.connected) return
+      this.connected = true
+      increment('processorConnects')
+      state.processor = this
+      setTimeout(() => this.input(), 0)
+    }
+
+    disconnect() {
+      this.connected = false
+      this.producer.close()
+      increment('processorDisconnects')
+    }
+  }
+
   class MockAudioContext {
     constructor() {
       increment('audioContexts')
@@ -166,6 +204,7 @@ const MOCK_BROWSER_APIS = String.raw`
       this.currentTime = 0
       this.sampleRate = 48_000
       this.destination = {}
+      this.audioWorklet = { addModule: async () => {} }
     }
 
     resume() {
@@ -184,29 +223,6 @@ const MOCK_BROWSER_APIS = String.raw`
         connect() { increment('sourceConnects') },
         disconnect() { increment('sourceDisconnects') },
       }
-    }
-
-    createScriptProcessor() {
-      const processor = {
-        onaudioprocess: null,
-        connected: false,
-        connect() {
-          if (processor.connected) return
-          processor.connected = true
-          increment('processorConnects')
-          state.processor = processor
-          setTimeout(() => processor.onaudioprocess?.({
-            inputBuffer: {
-              getChannelData: () => Float32Array.from([0.1, 0.2, 0.3, 0.4]),
-            },
-          }), 0)
-        },
-        disconnect() {
-          processor.connected = false
-          increment('processorDisconnects')
-        },
-      }
-      return processor
     }
 
     createBuffer(_channels, length, sampleRate) {
@@ -258,25 +274,29 @@ const MOCK_BROWSER_APIS = String.raw`
     },
   })
 
-  try {
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: mediaDevices,
-    })
-  } catch {
-    navigator.mediaDevices.getUserMedia = mediaDevices.getUserMedia
+  if (realAudio) {
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      increment('mediaRequests')
+      const media = await getUserMedia(constraints)
+      for (const track of media.getTracks()) {
+        const stop = track.stop.bind(track)
+        track.stop = () => { increment('trackStops'); stop() }
+      }
+      return media
+    }
+  } else {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: mediaDevices })
+    window.AudioContext = MockAudioContext
+    window.webkitAudioContext = MockAudioContext
+    window.AudioWorkletNode = MockAudioWorkletNode
   }
   window.WebSocket = MockWebSocket
-  window.AudioContext = MockAudioContext
-  window.webkitAudioContext = MockAudioContext
   window.browserSmoke = {
     connection: () => ({ id: state.activeSocket?.id, ready: state.activeSocket?.handshakeReady }),
     disconnect() { state.oldSocket = state.activeSocket; state.oldSocket.close() },
-    input() {
-      if (state.processor?.connected) state.processor.onaudioprocess?.({
-        inputBuffer: { getChannelData: () => Float32Array.from([0.4, 0.3, 0.2, 0.1]) },
-      })
-    },
+    input() { state.processor?.input() },
+    setBufferedAmount(bytes) { state.activeSocket.bufferedAmount = bytes },
     stale() {
       // Deliberately bypass the mock transport guard to exercise the SDK's guard.
       state.oldSocket.emit('message', { data: JSON.stringify({
@@ -291,7 +311,7 @@ const MOCK_BROWSER_APIS = String.raw`
 function startVite() {
   const vite = spawn(
     process.execPath,
-    [resolve(projectRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    [resolve(projectRoot, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
     { cwd: webRoot, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   let output = ''
@@ -441,15 +461,45 @@ async function testPermissionDenied(context, diagnostics) {
   await finishPage(page, diagnostics)
 }
 
-const server = startVite()
+async function testNativeAudioWorklet(context, diagnostics) {
+  const page = await preparePage(context, '?browser-smoke=real-audio', diagnostics)
+  await page.getByRole('button', { name: '开启麦克风', exact: true }).click()
+  await page.getByRole('button', { name: '麦克风静音', exact: true })
+    .waitFor({ state: 'visible' })
+  // Native capture, processor module loading, MessagePort delivery, resampling,
+  // and Gateway serialization must all work in the production bundle.
+  await waitForAttribute(page, 'data-non-silent-audio-appends', value => Number(value) > 0)
+  await page.evaluate(() => window.browserSmoke.setBufferedAmount(128 * 1024))
+  await delay(100)
+  const paused = await page.locator('html').getAttribute('data-audio-appends')
+  await delay(150)
+  assert.equal(await page.locator('html').getAttribute('data-audio-appends'), paused,
+    'Capture must respect socket backpressure')
+  await page.evaluate(() => window.browserSmoke.setBufferedAmount(0))
+  await waitForAttribute(page, 'data-audio-appends', value => Number(value) > Number(paused))
+  await page.getByRole('button', { name: '麦克风静音', exact: true }).click()
+  await waitForAttribute(page, 'data-track-stops', value => value === '1')
+  const stopped = await page.locator('html').getAttribute('data-audio-appends')
+  await delay(150)
+  assert.equal(await page.locator('html').getAttribute('data-audio-appends'), stopped,
+    'Muted capture must not forward queued worklet samples')
+  await finishPage(page, diagnostics)
+}
+
+let server
 let browser
 let context
 let tracingActive = false
 const diagnostics = []
 const diagnosticsDirectory = resolve(projectRoot, 'output/playwright/browser-webui-smoke', String(Date.now()))
 try {
+  await build({ root: webRoot, logLevel: 'warn' })
+  server = startVite()
   await waitForServer(server.vite, server.getOutput)
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, args: [
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ] })
   context = await browser.newContext({ locale: 'zh-CN' })
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
   tracingActive = true
@@ -457,11 +507,12 @@ try {
   await testReconnectInterruptsPlayback(context, diagnostics)
   await testEndedTrackIsReacquired(context, diagnostics)
   await testPermissionDenied(context, diagnostics)
+  await testNativeAudioWorklet(context, diagnostics)
   await context.tracing.stop()
   tracingActive = false
   await context.close()
   context = null
-  console.log('Browser WebUI voice smoke passed: happy path, reconnect continuation, track recovery, and permission denial.')
+  console.log('Browser WebUI voice smoke passed: happy path, reconnect continuation, track recovery, permission denial, and native AudioWorklet capture with backpressure in the production build.')
 } catch (error) {
   await mkdir(diagnosticsDirectory, { recursive: true })
   const pages = context?.pages?.() || []
@@ -489,7 +540,7 @@ try {
     ].join('\n'),
     'utf8',
   )
-  await writeFile(join(diagnosticsDirectory, 'vite.log'), server.getOutput(), 'utf8')
+  await writeFile(join(diagnosticsDirectory, 'vite.log'), server?.getOutput() || '', 'utf8')
   if (error instanceof Error) {
     error.message = `${error.message} (diagnostics: ${diagnosticsDirectory})`
   }
@@ -497,5 +548,5 @@ try {
 } finally {
   await context?.close()
   await browser?.close()
-  if (server.vite.exitCode === null) server.vite.kill()
+  if (server?.vite.exitCode === null) server.vite.kill()
 }
