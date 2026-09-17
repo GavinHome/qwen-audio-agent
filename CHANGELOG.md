@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 后台任务进展改为仅在状态实际变化时合并推送，不再用每秒完整 Task 快照承担连接
+  保活；WebSocket 沿用 Session 心跳，兼容性的 Task SSE 使用不进入回放与 Session
+  Journal 的轻量注释心跳，避免长任务重复写入旧进度文本。
+
 - 新增实验性 Muse Code MSP 后台适配器，复用统一任务、权限和补充输入接口。
   Muse SDK 仅在用户安装该后台时单独安装、启用时加载，不加入框架默认依赖。
 
