@@ -324,7 +324,7 @@ UI 仅消费公共 Task 与对话事件。包级别的 `shared` 模块是基础�
 裁剪记忆或知识库时，删除模块目录，并取消 `app/optional-modules.mjs` 与
 `frontend/optional-features.mjs` 中对应的 import 和数组项；运行时服务、工具、路由和
 专属提示同步移除。这是两处显式装配入口，不是新的插件框架。精简发行包还应清理对应
-包导出、专属测试/文档和依赖。语音传输层只发布通用会话生命周期事实，记忆模块自行
+包导出、专属测试/文档和依赖。前台运行时只发布通用会话生命周期事实，记忆模块自行
 管理学习观察器，退出时先等待观察完成再关闭 Provider。测试会真实删除其中一个或
 两个模块，验证网关仍能完成对话。
 
@@ -345,9 +345,19 @@ BackendWorkRuntime 只负责把执行请求转换为 BackendPort 调用，系统
 重连可重新领取结果，不会再次执行工作；结果可用与播放确认仍是两个独立阶段。
 公开任务事件继续经过传输投影器发给客户端。
 
-以上是 [#477](https://github.com/QwenAudio/qwen-audio-agent/issues/477) 的前两个增量。
-连接级前台/会话装配仍位于 `realtime-gateway.mjs`，后续单独提取。协调器测试仅模拟模型边界，
-直接覆盖生产投递路径，不再复制网关订阅逻辑。
+`voice/realtime-gateway.mjs` 现在只保留传输职责：鉴权、能力协商、连接归属、心跳、协议
+编解码和公开事件投影。它为每条客户端连接接入独立的
+`voice/realtime-session-runtime.mjs` 前台运行时（`createRealtimeSessionRuntime`）。运行时
+复用已有组件，管理模型会话与上下文、工具调用、音频轮次、播放、恢复和客户端休眠状态；
+接收解码后的事件与可信身份，通过回调发出内部事件，不持有 Socket、凭据或协议握手。
+
+静音、语音打断、休眠和前台断连不取消已受理的后台工作。关闭前台会清理定时器、未完成的
+前台工具调用、订阅和投递领取；迟到的模型回调不能创建新工作。显式任务取消仍由
+TaskOperations 处理。`app/` 仍是组合根，不新增服务、线上协议或共享模型会话。
+
+[#477](https://github.com/QwenAudio/qwen-audio-agent/issues/477) 的三个增量均直接测试生产中的
+任务操作、协调器和前台运行时，只模拟模型与后台边界，不依赖网络。已有 WebSocket 和
+WebRTC 集成测试则验证传输层如何接入同一套运行时。
 
 `server/src/client` 管理北向 Client Event Registry、客户端命令到任务操作的转换、
 `ClientActionPort` 与幂等 Presence 状态机。Client Action 描述一次环境操作并等待
