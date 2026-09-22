@@ -8,10 +8,11 @@ Put these settings in the `config.env` shown by `qwenaudio config`, or select a 
 
 | Service | Provider value | Required configuration or preparation | Guide |
 | --- | --- | --- | --- |
-| Qwen Audio / Omni | `dashscope` (default) | `DASHSCOPE_API_KEY` | [Audio](../voice-frontends/qwen-audio-realtime.md) / [Omni vision](../voice-frontends/qwen-omni-realtime.md) |
+| Qwen Audio / Omni 3.5 / Omni 3.8 | `dashscope` (default) | `DASHSCOPE_API_KEY`; Omni 3.8 also requires a workspace-specific `QWEN_AUDIO_REALTIME_BASE_URL` | [Audio](../voice-frontends/qwen-audio-realtime.md) / [Omni vision](../voice-frontends/qwen-omni-realtime.md) |
 | StepAudio 3 | `stepfun` | `STEPFUN_API_KEY` | [StepFun](../voice-frontends/stepfun.md) |
 | OpenAI Realtime | `gpt-live` | `OPENAI_API_KEY` | [GPT-Live](../voice-frontends/gpt-live.md) |
 | Gemini Live | `google-live` | `GOOGLE_API_KEY` | [Google Live](../voice-frontends/google-live.md) |
+| Doubao Seeduplex | `doubao-seeduplex` | `DOUBAO_API_KEY` | Configure its model, voice, and endpoint below |
 | Hugging Face speech-to-speech | `speech-to-speech` | Start the service; default: `ws://127.0.0.1:8765/v1/realtime` | [Local model pipeline](../voice-frontends/speech-to-speech.md) |
 | MiniCPM-o 4.5 | `minicpm-o` | Start the service; default: `ws://127.0.0.1:8006/v1/realtime?mode=audio` | [Audio/video modes and limits](../voice-frontends/minicpm-o.md) |
 
@@ -40,10 +41,11 @@ You can keep all provider settings in the same file. Switch using `QWEN_AUDIO_RE
 | StepFun | `STEPFUN_REALTIME_MODEL` | `STEPFUN_REALTIME_VOICE` | `STEPFUN_REALTIME_URL` |
 | GPT-Live | `GPT_LIVE_REALTIME_MODEL` | `GPT_LIVE_REALTIME_VOICE` | `GPT_LIVE_REALTIME_URL` |
 | Google Live | `GOOGLE_LIVE_REALTIME_MODEL` | `GOOGLE_LIVE_REALTIME_VOICE` | `GOOGLE_LIVE_REALTIME_URL` |
+| Doubao Seeduplex | `DOUBAO_SEEDUPLEX_REALTIME_MODEL` | `DOUBAO_SEEDUPLEX_REALTIME_VOICE` | `DOUBAO_SEEDUPLEX_REALTIME_URL` |
 | speech-to-speech | Configure upstream | Configure upstream | `SPEECH_TO_SPEECH_REALTIME_URL` |
 | MiniCPM-o | Configure upstream | Configure upstream | `MINICPM_O_REALTIME_URL` |
 
-Empty endpoint and model fields use provider defaults. For self-hosted services behind Bearer authentication, set `SPEECH_TO_SPEECH_AUTH_TOKEN` or `MINICPM_O_AUTH_TOKEN`. Aliases and protocol details are listed in each service guide.
+Empty endpoint and model fields use provider defaults, except Qwen3.8 Omni, which requires a [workspace-specific endpoint](../voice-frontends/qwen-omni-realtime.md#setup). For self-hosted services behind Bearer authentication, set `SPEECH_TO_SPEECH_AUTH_TOKEN` or `MINICPM_O_AUTH_TOKEN`. Aliases and protocol details are listed in each service guide.
 
 Current built-in DashScope model profiles:
 
@@ -53,8 +55,9 @@ Current built-in DashScope model profiles:
 | `qwen-audio-3.0-realtime-flash` | Text, audio |
 | `qwen3.5-omni-flash-realtime` | Text, audio, live visual frames |
 | `qwen3.5-omni-plus-realtime` | Text, audio, live visual frames |
+| `qwen3.8-omni-flash-realtime` | Text, audio, live visual frames |
 
-All four profiles support tool calls. Live vision also requires client and transport support; see [Visual Input](../guides/vision.md).
+All profiles support tool calls. Live vision also requires client and transport support; see [Visual Input](../guides/vision.md).
 
 ## Apply and Verify
 
