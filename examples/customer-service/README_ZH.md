@@ -13,9 +13,7 @@
 **从自然对话，到业务办结。** 通过语音取消订单，展示身份核验与口头纠错、订单查询、
 取消与退款预览，以及客户确认后的结果反馈。
 
-<!-- Keep the GitHub video attachment in its own paragraph for inline playback. -->
-
-https://github.com/user-attachments/assets/e0f9fefa-f24b-47e5-bc2c-8402fc107df4
+https://github.com/user-attachments/assets/ddb4cc30-e02c-4b3c-ba2a-63b3933cdaed
 
 ## 示例范围
 
